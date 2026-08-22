@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>心理健康助手 · C4 架构图</title>
+<style>
+:root{
+  --bg:#0f1417; --surface:#171e22; --surface2:#1d262b;
+  --line:rgba(140,160,155,.1); --line2:rgba(140,160,155,.22);
+  --ink:#e0e8e3; --dim:rgba(200,216,209,.5); --faint:rgba(200,216,209,.25);
+  --amber:#e8b45a; --teal:#7fb8a8; --rose:#e08477; --blue:#8fb3d9; --mauve:#b79ac9;
+  --sans:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  --mono:"Source Code Pro",ui-monospace,Consolas,monospace;
+  --serif:"Noto Serif SC",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  min-height:100vh;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  background-image:
+    linear-gradient(rgba(140,160,155,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(140,160,155,.04) 1px,transparent 1px);
+  background-size:28px 28px;
+}
+::selection{background:rgba(232,180,90,.3);}
+
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:50;height:44px;
+  display:flex;align-items:center;gap:8px;padding:8px 16px;
+  backdrop-filter:blur(14px);background:rgba(15,20,23,.9);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:11px;
+}
+nav .logo{font-family:var(--serif);font-size:15px;font-weight:900;margin-right:8px;white-space:nowrap;}
+nav .logo span{color:var(--amber);}
+.breadcrumb{
+  border:0;background:transparent;color:var(--dim);font-family:var(--mono);font-size:11px;
+  padding:4px 10px;border-radius:6px;cursor:pointer;transition:all .15s;letter-spacing:.03em;white-space:nowrap;
+}
+.breadcrumb:hover:not(:disabled){color:var(--ink);}
+.breadcrumb.active{color:var(--amber);border:1px solid rgba(232,180,90,.25);}
+.breadcrumb:disabled{color:var(--faint);cursor:default;}
+nav .sp{flex:1;}
+.level-tag{font-family:var(--mono);font-size:10px;color:var(--amber);border:1px solid rgba(232,180,90,.3);padding:3px 9px;border-radius:999px;white-space:nowrap;}
+
+main{position:fixed;top:44px;left:0;right:0;bottom:0;overflow:auto;padding:16px;}
+.view{display:none;}
+.view.active{display:block;animation:fadeIn .4s ease;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.view svg{display:block;margin:0 auto;max-width:100%;height:auto;}
+#v-l1 svg{width:min(930px,100%);}
+#v-l2 svg{width:min(1500px,100%);}
+
+.clickable{cursor:pointer;}
+.clickable:hover{filter:brightness(1.3) drop-shadow(0 0 8px rgba(232,180,90,.15));}
+
+/* component icon strip (SVG group shown under a container) */
+.comp-strip rect.unit{
+  fill:rgba(23,30,34,.95);stroke:var(--line2);cursor:pointer;
+}
+.comp-strip rect.unit:hover{stroke:#e8b45a;fill:rgba(232,180,90,.08);}
+.comp-strip .uname{font-size:8.5px;fill:var(--dim);text-anchor:middle;}
+.comp-strip .uname:hover{fill:var(--ink);}
+
+.hint{
+  position:fixed;bottom:8px;left:50%;transform:translateX(-50%);z-index:5;
+  font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.04em;pointer-events:none;
+  white-space:nowrap;
+}
+
+/* ── spec view ── */
+.spec-wrap{max-width:1060px;margin:0 auto;padding:8px 0 30px;}
+.spec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:12px;}
+.spec-head h1{font-family:var(--serif);font-size:22px;font-weight:900;letter-spacing:.03em;}
+.spec-head h1 span{color:var(--amber);}
+.spec-head .m{font-family:var(--mono);font-size:11px;color:var(--dim);}
+.spec-sec{margin:26px 0 12px;}
+.spec-sec .sec-title{font-family:var(--mono);font-size:12px;color:var(--amber);letter-spacing:.1em;margin-bottom:10px;}
+.spec-sec .sec-title::after{content:"";display:block;width:100%;height:1px;background:var(--line);margin-top:6px;}
+.spec-layer{
+  border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden;background:var(--surface);
+}
+.spec-layer .lh{
+  display:flex;align-items:center;gap:12px;padding:12px 18px;cursor:pointer;user-select:none;
+}
+.spec-layer .lh:hover{background:rgba(255,255,255,.02);}
+.spec-layer .lh .ln{font-family:var(--mono);font-size:17px;font-weight:700;width:34px;text-align:center;}
+.spec-layer .lh .lt{font-size:14.5px;font-weight:600;}
+.spec-layer .lh .ld{font-size:11px;color:var(--dim);margin-left:6px;flex:1;}
+.spec-layer .lh .chev{color:var(--faint);transition:transform .2s;}
+.spec-layer.open .lh .chev{transform:rotate(90deg);}
+.spec-layer .lbody{display:none;padding:4px 18px 18px;border-top:1px solid var(--line);}
+.spec-layer.open .lbody{display:block;}
+.spec-field{display:grid;grid-template-columns:72px 1fr;gap:12px;padding:7px 0;font-size:12px;line-height:1.65;}
+.spec-field .k{font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:.08em;padding-top:2px;}
+.spec-field .v{color:var(--dim);}
+.spec-field .v b{color:var(--ink);font-weight:600;}
+.spec-comps{border-top:1px dashed var(--line);margin-top:10px;padding-top:10px;}
+.spec-comps .comps-label{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.08em;margin-bottom:6px;}
+.spec-comp{padding:6px 0;}
+.spec-comp .cn{font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;}
+.spec-comp .cn::before{content:"";width:5px;height:5px;border-radius:50%;flex:none;}
+.spec-comp .cd{font-size:11.5px;color:var(--dim);margin:3px 0 0 12px;line-height:1.6;}
+.spec-comp .cd .ct{font-family:var(--mono);font-size:10px;color:var(--faint);}
+
+/* component detail tip */
+.comp-tip{
+  position:fixed;z-index:60;background:rgba(23,30,34,.98);border:1px solid var(--line2);
+  border-radius:10px;box-shadow:0 18px 50px -18px rgba(0,0,0,.8);padding:12px 14px;
+  animation:cardIn .18s ease;max-width:340px;
+}
+.comp-tip .ct-h{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.comp-tip .ct-x{margin-left:auto;cursor:pointer;color:var(--faint);font-size:14px;line-height:1;padding:2px 4px;border-radius:4px;}
+.comp-tip .ct-x:hover{color:var(--ink);background:rgba(255,255,255,.06);}
+.comp-tip .ct-row{font-size:11.5px;line-height:1.55;color:var(--dim);margin:4px 0;}
+.comp-tip .ct-row .k{font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.08em;display:block;margin-bottom:1px;}
+
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">心理健康助手 · <span>C4 架构</span></span>
+  <button class="breadcrumb active" id="bc-l1" data-level="l1">系统上下文</button>
+  <span class="breadcrumb sep">/</span>
+  <button class="breadcrumb" id="bc-l2" data-level="l2" disabled>容器图</button>
+  <button class="breadcrumb" id="bc-spec" data-level="spec">规格文档</button>
+  <span class="sp"></span>
+  <span class="level-tag" id="levelTag">L1 · 系统上下文</span>
+</nav>
+
+<main>
+
+<!-- ═══════════════ L1: SYSTEM CONTEXT ═══════════════ -->
+<div class="view active" id="v-l1">
+<svg viewBox="0 0 620 500" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="aw" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="rgba(200,216,209,.3)"/></marker>
+</defs>
+<text x="310" y="28" text-anchor="middle" font-size="11" fill="var(--faint)" font-family="Source Code Pro,monospace" letter-spacing=".08em">C4 · Level 1 — 系统上下文</text>
+
+<!-- Person (user icon) -->
+<g>
+  <circle cx="310" cy="92" r="22" fill="none" stroke="#8fb3d9" stroke-width="2.4"/>
+  <path d="M256 156 Q256 100 310 100 Q364 100 364 156" fill="none" stroke="#8fb3d9" stroke-width="2.2"/>
+  <text x="310" y="188" text-anchor="middle" font-size="14" font-weight="600" fill="#e0e8e3">有情绪困扰的用户</text>
+  <text x="310" y="206" text-anchor="middle" font-size="10" fill="var(--dim)">[ Person ] 文字 / 语音交互</text>
+</g>
+
+<line x1="310" y1="222" x2="310" y2="258" stroke="rgba(200,216,209,.3)" stroke-width="1.6" marker-end="url(#aw)"/>
+<text x="322" y="246" font-size="9" fill="var(--faint)" font-family="Source Code Pro,monospace">输入</text>
+
+<!-- System -->
+<g class="clickable" id="sysbox">
+  <rect x="180" y="268" width="260" height="122" rx="12" fill="rgba(23,30,34,.85)" stroke="#e8b45a" stroke-width="2.6"/>
+  <text x="310" y="302" text-anchor="middle" font-size="16" font-weight="700" fill="#e0e8e3" font-family="Noto Serif SC,serif">心理健康助手</text>
+  <text x="310" y="324" text-anchor="middle" font-size="10" fill="var(--dim)">[ Software System ]</text>
+  <text x="310" y="344" text-anchor="middle" font-size="10.5" fill="var(--dim)">多Agent协作 · 实时交互 · 情感陪伴</text>
+  <text x="310" y="362" text-anchor="middle" font-size="10" fill="var(--dim)">非医疗诊断 · 辅助支持工具</text>
+  <text x="310" y="378" text-anchor="middle" font-size="9.5" fill="var(--amber)" font-family="Source Code Pro,monospace">点击 → 进入容器图</text>
+</g>
+
+<text x="310" y="482" text-anchor="middle" font-size="9.5" fill="var(--faint)">外部系统（语音引擎 · LLM · 热线）在 L2 中按其连接位置就近展示</text>
+</svg>
+</div>
+
+<!-- ═══════════════ L2: CONTAINER DIAGRAM ═══════════════ -->
+<div class="view" id="v-l2">
+<svg id="l2svg" viewBox="0 0 1160 760" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <marker id="aw2" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="rgba(200,216,209,.3)"/></marker>
+  <marker id="awR" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="rgba(224,132,119,.4)"/></marker>
+  <marker id="awB" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="rgba(143,179,217,.35)"/></marker>
+
+  <!-- lucide-style icon sprite -->
+  <symbol id="ic-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+  <symbol id="ic-heart" viewBox="0 0 24 24"><path d="M19 14c1.5-1.5 2-3.5 2-5.5A5.5 5.5 0 0 0 15.5 3c-1.5 0-3 .5-4 2-1-1.5-2.5-2-4-2A5.5 5.5 0 0 0 2 8.5c0 2 1 4 2 5.5l8 8z"/></symbol>
+  <symbol id="ic-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
+  <symbol id="ic-server" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></symbol>
+  <symbol id="ic-branch" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="ic-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+  <symbol id="ic-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4h4"/><circle cx="12" cy="4" r="1"/><circle cx="9" cy="14" r="1"/><circle cx="15" cy="14" r="1"/></symbol>
+  <symbol id="ic-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+  <symbol id="ic-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="22"/></symbol>
+  <symbol id="ic-vol" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></symbol>
+  <symbol id="ic-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 1 3 .4.6.4 1.4 0 2L8.6 10a16 16 0 0 0 6 6l1.3-1.4a2 2 0 0 1 2 0c1 .6 2 1 3 1a2 2 0 0 1 1.7 2z"/></symbol>
+  <symbol id="ic-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="ic-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="ic-archive" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="ic-filter" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="ic-refresh" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="ic-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></symbol>
+  <symbol id="ic-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></symbol>
+  <symbol id="ic-activity" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+  <symbol id="ic-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+</defs>
+
+<text x="580" y="20" text-anchor="middle" font-size="11" fill="var(--faint)" font-family="Source Code Pro,monospace" letter-spacing=".08em">C4 · Level 2 — 容器图</text>
+
+<!-- User -->
+<g>
+  <use href="#ic-user" x="211" y="22" width="28" height="28" fill="none" stroke="#8fb3d9" stroke-width="2"/>
+  <text x="225" y="72" text-anchor="middle" font-size="11" font-weight="600" fill="#e0e8e3">用户</text>
+</g>
+<line x1="225" y1="84" x2="225" y2="146" stroke="rgba(200,216,209,.3)" stroke-width="1.5" marker-end="url(#aw2)"/>
+
+<!-- Boundary -->
+<rect x="30" y="130" width="690" height="600" rx="10" fill="none" stroke="rgba(232,180,90,.18)" stroke-dasharray="8 5"/>
+<text x="375" y="122" text-anchor="middle" font-size="10" fill="var(--amber)" font-family="Source Code Pro,monospace">心理健康助手 · MVP</text>
+
+<!-- ── Main flow containers (compact) ── -->
+<!-- L1 -->
+<g class="clickable" id="c-l1">
+  <rect x="50" y="150" width="350" height="52" rx="8" fill="var(--surface)" stroke="#e8b45a" stroke-width="2"/>
+  <text x="66" y="172" font-size="13" font-weight="600" fill="#e0e8e3">L1 · 用户交互层</text>
+  <text x="66" y="190" font-size="9" fill="var(--dim)" font-family="Source Code Pro,monospace">Live2D·黑板(多模板)·语音(模型配置可调)</text>
+  <text x="392" y="190" text-anchor="end" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">▼ 组件</text>
+</g>
+<line x1="225" y1="202" x2="225" y2="232" stroke="rgba(200,216,209,.3)" stroke-width="1.5" marker-end="url(#aw2)"/>
+<!-- L2 -->
+<g class="clickable" id="c-l2">
+  <rect x="50" y="236" width="350" height="52" rx="8" fill="var(--surface)" stroke="#7fb8a8" stroke-width="2"/>
+  <text x="66" y="258" font-size="13" font-weight="600" fill="#e0e8e3">L2 · 接入与网关层</text>
+  <text x="66" y="276" font-size="9" fill="var(--dim)" font-family="Source Code Pro,monospace">可靠连接承载流水线：单连接多消息·会话管理</text>
+  <text x="392" y="276" text-anchor="end" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">▼ 组件</text>
+</g>
+<line x1="225" y1="288" x2="225" y2="318" stroke="rgba(200,216,209,.3)" stroke-width="1.5" marker-end="url(#aw2)"/>
+<!-- L3 -->
+<g class="clickable" id="c-l3">
+  <rect x="50" y="322" width="350" height="52" rx="8" fill="var(--surface)" stroke="#e08477" stroke-width="2"/>
+  <text x="66" y="344" font-size="13" font-weight="600" fill="#e0e8e3">L3 · 智能路由决策器</text>
+  <text x="66" y="362" font-size="9" fill="var(--dim)" font-family="Source Code Pro,monospace">安全前置：危机闸门·三分支(危机/简单/复杂)</text>
+  <text x="392" y="362" text-anchor="end" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">▼ 组件</text>
+</g>
+<!-- Channel C: 复杂 → L5 (main down) -->
+<line x1="225" y1="374" x2="225" y2="404" stroke="rgba(200,216,209,.3)" stroke-width="1.5" marker-end="url(#aw2)"/>
+<text x="238" y="394" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">C. 复杂</text>
+<!-- L5 -->
+<g class="clickable" id="c-l5">
+  <rect x="50" y="408" width="350" height="52" rx="8" fill="var(--surface)" stroke="#b79ac9" stroke-width="2"/>
+  <text x="66" y="430" font-size="13" font-weight="600" fill="#e0e8e3">L5 · 异步推理层 · 多Agent</text>
+  <text x="66" y="448" font-size="9" fill="var(--dim)" font-family="Source Code Pro,monospace">监督者门控路由·按需激活专业团队(LangGraph)</text>
+  <text x="392" y="448" text-anchor="end" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">▼ 组件</text>
+</g>
+<line x1="225" y1="460" x2="225" y2="490" stroke="rgba(200,216,209,.3)" stroke-width="1.5" marker-end="url(#aw2)"/>
+<!-- L6 -->
+<g class="clickable" id="c-l6">
+  <rect x="50" y="494" width="350" height="52" rx="8" fill="var(--surface)" stroke="#e8b45a" stroke-width="2"/>
+  <text x="66" y="516" font-size="13" font-weight="600" fill="#e0e8e3">L6 · 工具与执行层</text>
+  <text x="66" y="534" font-size="9" fill="var(--dim)" font-family="Source Code Pro,monospace">给Agent可靠工具：RAG·规则引擎·语音引擎</text>
+  <text x="392" y="534" text-anchor="end" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">▼ 组件</text>
+</g>
+<line x1="225" y1="546" x2="225" y2="576" stroke="rgba(200,216,209,.3)" stroke-width="1.5" marker-end="url(#aw2)"/>
+<!-- L7 (wide) -->
+<g class="clickable" id="c-l7">
+  <rect x="50" y="580" width="650" height="80" rx="8" fill="var(--surface)" stroke="#7fb8a8" stroke-width="2"/>
+  <text x="66" y="604" font-size="13" font-weight="600" fill="#e0e8e3">L7 · 数据与知识层</text>
+  <text x="66" y="622" font-size="9" fill="var(--dim)" font-family="Source Code Pro,monospace">四级存储记忆金字塔：热·温·冷·外挂(Redis/SQLite/Chroma)</text>
+  <text x="66" y="638" font-size="9" fill="var(--faint)" font-family="Source Code Pro,monospace">Key隔离 · 版本号 · 音频不落库 · 用户可清除</text>
+  <text x="692" y="638" text-anchor="end" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">▼ 组件</text>
+</g>
+<!-- L5/L6 → L7 dashed (memory access, offset) -->
+<line x1="300" y1="460" x2="300" y2="580" stroke="rgba(200,216,209,.2)" stroke-width="1" stroke-dasharray="4 5"/>
+<line x1="360" y1="546" x2="360" y2="580" stroke="rgba(200,216,209,.2)" stroke-width="1" stroke-dasharray="4 5"/>
+
+<!-- Channel B: 简单 → 直答 (left loop) -->
+<path d="M50 348 L14 348 L14 176 L46 176" fill="none" stroke="rgba(200,216,209,.2)" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#aw2)"/>
+<text x="10" y="262" font-size="7.5" fill="var(--faint)" font-family="Source Code Pro,monospace" transform="rotate(-90 10 262)">B. 简单→规则直答</text>
+
+<!-- ── L4 cross-cutting (middle-right) ── -->
+<g class="clickable" id="c-l4">
+  <rect x="470" y="250" width="220" height="80" rx="8" fill="var(--surface)" stroke="#8fb3d9" stroke-width="2" stroke-dasharray="6 3"/>
+  <text x="580" y="272" text-anchor="middle" font-size="12.5" font-weight="600" fill="#8fb3d9">L4 · 空窗期策略</text>
+  <text x="580" y="290" text-anchor="middle" font-size="9" fill="var(--dim)" font-family="Source Code Pro,monospace">第一帧 + 黑板绘制 + 语音安抚</text>
+  <text x="580" y="306" text-anchor="middle" font-size="9" fill="var(--faint)" font-family="Source Code Pro,monospace">协同L1 · 触发L3 · 回调L5</text>
+  <text x="580" y="322" text-anchor="middle" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">▼ 组件</text>
+</g>
+<!-- L4 dashed wires (offset x corridor 454 / 442 / 430) -->
+<path d="M470 264 L450 264 L450 164 L404 164" fill="none" stroke="rgba(143,179,217,.25)" stroke-width="1" stroke-dasharray="4 5" marker-end="url(#awB)"/>
+<path d="M470 282 L442 282 L442 344 L404 344" fill="none" stroke="rgba(143,179,217,.25)" stroke-width="1" stroke-dasharray="4 5" marker-end="url(#awB)"/>
+<path d="M470 300 L430 300 L430 420 L404 420" fill="none" stroke="rgba(143,179,217,.25)" stroke-width="1" stroke-dasharray="4 5" marker-end="url(#awB)"/>
+
+<!-- Channel A: 危机 → 热线 (drops below L4) -->
+<path d="M400 358 L440 358 L440 360 L726 360" fill="none" stroke="rgba(224,132,119,.35)" stroke-width="1.4" marker-end="url(#awR)"/>
+<text x="560" y="350" font-size="8" fill="var(--rose)" font-family="Source Code Pro,monospace">A. 危机 → 安全通道</text>
+
+<!-- ── Externals (near their containers) ── -->
+<!-- edge-tts near L1 -->
+<g>
+  <rect x="730" y="150" width="210" height="46" rx="8" fill="var(--surface)" stroke="rgba(200,216,209,.2)" stroke-dasharray="5 4"/>
+  <text x="835" y="170" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dim)">edge-tts</text>
+  <text x="835" y="186" text-anchor="middle" font-size="8" fill="var(--faint)">[Ext] TTS 语音合成</text>
+  <line x1="400" y1="176" x2="726" y2="176" stroke="rgba(200,216,209,.2)" stroke-width="1" marker-end="url(#aw2)"/>
+  <text x="566" y="168" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">L1 语音输出</text>
+</g>
+<!-- faster-whisper (route below L4, near L5) -->
+<g>
+  <rect x="730" y="410" width="210" height="46" rx="8" fill="var(--surface)" stroke="rgba(200,216,209,.2)" stroke-dasharray="5 4"/>
+  <text x="835" y="430" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dim)">faster-whisper</text>
+  <text x="835" y="446" text-anchor="middle" font-size="8" fill="var(--faint)">[Ext] ASR 语音识别</text>
+  <path d="M400 190 L440 190 L440 433 L726 433" fill="none" stroke="rgba(200,216,209,.2)" stroke-width="1" marker-end="url(#aw2)"/>
+  <text x="470" y="320" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace" transform="rotate(-90 470 320)">L1 语音输入</text>
+</g>
+<!-- Hotline near L3 -->
+<g>
+  <rect x="730" y="330" width="210" height="46" rx="8" fill="var(--surface)" stroke="#7fb8a8" stroke-dasharray="5 4"/>
+  <text x="835" y="350" text-anchor="middle" font-size="11" font-weight="600" fill="var(--teal)">热线 12356</text>
+  <text x="835" y="366" text-anchor="middle" font-size="8" fill="var(--faint)">[Ext] 危机干预</text>
+</g>
+<!-- LLM near L6 -->
+<g>
+  <rect x="730" y="494" width="210" height="46" rx="8" fill="var(--surface)" stroke="rgba(200,216,209,.2)" stroke-dasharray="5 4"/>
+  <text x="835" y="514" text-anchor="middle" font-size="11" font-weight="600" fill="var(--dim)">LLM API</text>
+  <text x="835" y="530" text-anchor="middle" font-size="8" fill="var(--faint)">[Ext] 模型推理</text>
+  <line x1="400" y1="517" x2="726" y2="517" stroke="rgba(200,216,209,.2)" stroke-width="1" marker-end="url(#aw2)"/>
+  <text x="566" y="509" font-size="8" fill="var(--faint)" font-family="Source Code Pro,monospace">L6 模型调用</text>
+</g>
+
+<text x="580" y="745" text-anchor="middle" font-size="9.5" fill="var(--faint)">点击容器展开图标化组件单元 · 外部系统就近连接 · 三通道 A/B/C 分离</text>
+</svg>
+</div>
+
+<!-- ═══════════════ SPEC VIEW ═══════════════ -->
+<div class="view" id="v-spec">
+  <div class="spec-wrap" id="specContent"></div>
+</div>
+
+</main>
+
+<div class="hint">点击系统/容器钻取 · 点击容器查看内嵌组件单元 · 点击组件看详情 · 规格文档可切换</div>
+
+<script>
+/* ================================================================
+   完整规格数据 (SPEC) — 容器字段 + 组件字段
+   ================================================================ */
+const SPEC = {
+  l1:{name:'用户交互层',color:'#e8b45a',icon:'ic-monitor',
+    desc:'情绪表达与治疗性可视化前端——把「理解」翻译成「被看见」。',
+    tech:'Vue 3 + Vite + TypeScript · Live2D(开源封装) · SVG/rough.js · edge-tts/faster-whisper',
+    mech:'Live2D情绪表达(情绪JSON一源三用) · 黑板情感标签驱动多模板 · 语音可插拔+模型配置UI统一管理',
+    contract:'输入=用户文字/语音；输出=Live2D表情参数 / draw绘制指令 / audio音频块',
+    io:'上游←用户 · 下游→L2(WebSocket) · 外部→edge-tts/faster-whisper · 协同→L4空窗期策略',
+    phase2:'场景化意象黑板模板库扩充 · 情感标签体系完善 · Live2D表情/口型精细调校',
+    comps:[
+      {h:'Live2D 立绘',ic:'ic-user',c:'#e8b45a',d:'Live2D虚拟形象承载情绪表达（MVP直接上）。参考 Project AIRI / Open-LLM-VTuber。',
+        ct:'情绪JSON → Live2D表情参数',cs:'情绪一源三用接口不变，只是渲染器从静态立绘升级为Live2D'},
+      {h:'黑板·多模板',ic:'ic-monitor',c:'#e8b45a',d:'情感标签驱动模板：知识库打心理情绪标签→标签→模板映射→黑板选意象模板呈现。',
+        ct:'情感标签 → 模板家族 → 绘制指令流',cs:'标签聚类→模板库(非每标签一模板)；LLM只填数据不画坐标；可推拉扩展'},
+      {h:'语音I/O·可配置',ic:'ic-mic',c:'#e8b45a',d:'ASR/TTS 默认预设(edge-tts+faster-whisper)，可自定义切换。与LLM一起归入模型配置UI。',
+        ct:'音频→ASR文字；回复文本→TTS音频块',cs:'模型配置UI统一管理三个引擎；敏感凭证加密存储；音频转写即弃不落库'}
+    ]},
+  l2:{name:'接入与网关层',color:'#7fb8a8',icon:'ic-server',
+    desc:'一条可靠连接承载整个流水线——实时感交给应用层，传输层只负责搬消息。',
+    tech:'FastAPI · WebSocket 单连接 · JSON 帧协议',
+    mech:'单连接5种消息类型路由分发；会话管理提供 sessionId 上下文',
+    contract:'5种消息：first_frame / text_delta / draw / audio_chunk / done',
+    io:'上游←L1 · 下游→L3',
+    phase2:'WebRTC全双工实时语音（支持「说话随意打断」，需信令+STUN/TURN）',
+    comps:[
+      {h:'WS 单连接',ic:'ic-server',c:'#7fb8a8',d:'TCP全双工长连接，单连接承载流水线全部消息。',
+        ct:'客户端⇄后端 ⇄ 5种JSON帧',cs:'校园网/演示环境稳定；二期→WebRTC'},
+      {h:'消息分发',ic:'ic-branch',c:'#7fb8a8',d:'按消息类型路由到对应处理通道。',
+        ct:'消息type → 通道映射(first_frame→流水线/text_delta→前端/draw→黑板/audio→播放)',cs:'—'},
+      {h:'会话管理',ic:'ic-archive',c:'#7fb8a8',d:'连接保持、会话创建与恢复。',
+        ct:'sessionId → 记忆层上下文',cs:'—'}
+    ]},
+  l3:{name:'智能路由决策器',color:'#e08477',icon:'ic-shield',
+    desc:'安全前置——危机信号第一时间被确定性规则捕获走专用通道，一条消息三种命运。',
+    tech:'规则引擎(危机词典+严重度打分) · 轻量分类器(<50ms)',
+    mech:'危机规则闸门最优先；多信号叠加或显式自伤表达才触发完整危机通道；蓄意测试也降级安抚',
+    contract:'输入=路由判定请求；输出=危机安全通道 / 简单直答 / 复杂流水线 三分支',
+    io:'上游←L2 · 危机→热线12356 · 简单→回L1直答 · 复杂→L5',
+    phase2:'语义级LLM意图升级（替代关键词规则，处理含蓄/隐喻表达）',
+    comps:[
+      {h:'危机闸门',ic:'ic-shield',c:'#e08477',d:'危机词典+严重度打分，安全第一优先级。',
+        ct:'用户消息 → 危机/非危机判定',cs:'规则硬判个位数ms；蓄意测试也温和回应，不过激处理'},
+      {h:'轻量分类器',ic:'ic-filter',c:'#e08477',d:'简单/复杂二分类，极速路由。',
+        ct:'消息 → 简单(直答) / 复杂(流水线)',cs:'<50ms；二期→语义级LLM'},
+      {h:'三路输出',ic:'ic-branch',c:'#e08477',d:'A危机→安全通道 B简单→规则直答回L1 C复杂→L5流水线。',
+        ct:'路由结果 → 对应下游',cs:'—'}
+    ]},
+  l4:{name:'空窗期策略',color:'#8fb3d9',icon:'ic-heart',
+    desc:'等待即治疗——第一帧缓冲 + 黑板渐进绘制 + 语音安抚三者协同，把空窗期转化为治疗过程。',
+    tech:'异步任务 + WebSocket 流式推送 · 与 L1 黑板/语音协同',
+    mech:'L4策略=第一帧缓冲(300ms安抚语) + 黑板按情感标签渐进绘制(协同L1黑板) + 语音安抚(协同L1语音) + Agent回调流式增量',
+    contract:'输入=L3复杂路由结果 / Agent执行回调；输出=first_frame / text_delta / draw / audio_chunk',
+    io:'横切策略：触发←L3 · 回调源←L5 · 协同→L1黑板+语音 · 贯穿全流程',
+    phase2:'多模态节奏协同（黑板/语音/Live2D表情联动节奏编排，强化沉浸感）',
+    comps:[
+      {h:'第一帧缓冲',ic:'ic-zap',c:'#8fb3d9',d:'复杂请求300ms内推送安抚语，情绪连接不中断。',
+        ct:'L3复杂判定 → 立即第一帧',cs:'<300ms；简单诉求走L3直答(完整答复)，不走此缓冲'},
+      {h:'黑板渐进绘制',ic:'ic-monitor',c:'#8fb3d9',d:'空窗期黑板按情感标签绘制意象模板(协同L1黑板)，用户看到思考被可视化。',
+        ct:'情绪标签 → 黑板绘制指令流',cs:'与L1黑板共用DrawProtocol；LLM只填数据'},
+      {h:'语音安抚',ic:'ic-vol',c:'#8fb3d9',d:'第一帧+黑板的同步语音安抚，多模态陪伴(协同L1语音)。',
+        ct:'安抚语文本 → TTS语音块',cs:'与L1语音共用模型配置引擎'},
+      {h:'流式增量',ic:'ic-refresh',c:'#8fb3d9',d:'Agent回调→text_delta/draw/audio_chunk增量输出，回复是流水线终点。',
+        ct:'执行回调 → 增量消息 → 前端',cs:'不做整体替换'}
+    ]},
+  l5:{name:'异步推理层 · 多Agent',color:'#b79ac9',icon:'ic-users',
+    desc:'监督者门控路由、按需激活专业团队——不做全员出动，延迟响应可控。',
+    tech:'LangGraph 1.x · langgraph-supervisor · 按需 handoff',
+    mech:'监督者每回合只做编排；共情默认激活；知识分析师动态RAG门控；风险评估者降频巡检',
+    contract:'输入=复杂诉求；输出=Agent执行回调流(→L4)',
+    io:'上游←L3 · 下游→L6工具 · 存取→L7记忆',
+    phase2:'计划制定者Agent(长期支持场景) · 多Agent并行协作(parallel handoff) · 图谱接口接入',
+    comps:[
+      {h:'监督者',ic:'ic-users',c:'#b79ac9',d:'LangGraph create_supervisor：读消息→决定激活谁→汇总。',
+        ct:'复杂诉求 → 激活决策 → 专业Agent handoff',cs:'不做重活只做编排；典型回合=监督者+共情±知识±风险'},
+      {h:'共情陪伴者',ic:'ic-smile',c:'#b79ac9',d:'温暖共情/情绪确认/安抚，建议式非命令式。',
+        ct:'每个复杂回合默认激活',cs:'避免命令式口吻（「也许可以」而非「你应该」）'},
+      {h:'知识分析师',ic:'ic-search',c:'#b79ac9',d:'动态RAG：先判断需不需要查→需要才走Chroma+BM25+重排。',
+        ct:'门控判定 → RAG三段检索',cs:'普通聊天不查库，省Token省延迟'},
+      {h:'风险评估者',ic:'ic-activity',c:'#b79ac9',d:'危机闸门命中→深度LLM复核；常规对话每N轮巡检。',
+        ct:'危机信号 → LLM复核 → 升级/降级',cs:'不做每轮全跑；二期→计划制定者'}
+    ]},
+  l6:{name:'工具与执行层',color:'#e8b45a',icon:'ic-wrench',
+    desc:'给Agent装上可靠的双手——RAG给答案、规则保安全、语音做表达。',
+    tech:'Chroma向量 + BM25关键词 + 重排序 · 规则引擎 · edge-tts/faster-whisper',
+    mech:'动态RAG（咨询/风险才检索）；规则引擎硬性兜底安全底线；语音引擎可插拔双引擎',
+    contract:'输入=Agent工具调用；输出=检索结果 / 规则判定 / 语音合成',
+    io:'上游←L5 · 外部→LLM API · 读取→L7知识库',
+    phase2:'知识图谱Neo4j（knowledge.query接口缝）· 知识库语料扩充 · Vosk轻量备胎',
+    comps:[
+      {h:'RAG 引擎',ic:'ic-search',c:'#e8b45a',d:'语义检索+关键词检索融合→本地重排序提升精度。',
+        ct:'查询 → 向量+BM25 → 重排序 → 精排结果',cs:'咨询/风险场景才检索；普通聊天跳过'},
+      {h:'规则引擎',ic:'ic-shield',c:'#e8b45a',d:'危机词典/严重度分级/降级话术库。',
+        ct:'消息 → 确定性规则判定',cs:'硬性规则不受LLM幻觉影响，安全底线'},
+      {h:'语音引擎',ic:'ic-vol',c:'#e8b45a',d:'TTS=edge-tts(免费/中文/词边界)；ASR=faster-whisper(CPU/int8)。',
+        ct:'文本→TTS音频；音频→ASR文本',cs:'接口化预留云服务切换'}
+    ]},
+  l7:{name:'数据与知识层',color:'#7fb8a8',icon:'ic-db',
+    desc:'四级存储做速度/成本(Token)/一致性动态平衡——记忆是用户的资产，模型配置是受管资产。',
+    tech:'Redis · SQLite · Chroma',
+    mech:'记忆金字塔：热(会话) → 温(摘要) → 冷(画像) → 外挂(知识库)；Key隔离+版本号防并发；音频不落库；用户可清除；模型配置敏感字段AES-GCM加密入库',
+    contract:'Key体系：mem:{uid}:{layer} · 版本号 · TTL分层 · 模型配置加密字段',
+    io:'上游←L5(记忆存取)/L6(知识检索) · 模型配置→L1模型配置UI/L6引擎读取',
+    phase2:'语义级记忆检索(向量索引) · 多人并发账号体系(SQLite→MySQL)',
+    comps:[
+      {h:'热·会话记忆',ic:'ic-zap',c:'#7fb8a8',d:'当前Session原始上下文，保证多轮流畅。',
+        ct:'mem:{uid}:{sid}:context',cs:'TTL 30min 自动清理'},
+      {h:'温·会话摘要',ic:'ic-archive',c:'#7fb8a8',d:'长对话LLM压缩为要点，省Token。',
+        ct:'mem:{uid}:{sid}:summary',cs:'TTL 7天；粗摘要不存原文'},
+      {h:'冷·长期画像',ic:'ic-user',c:'#7fb8a8',d:'用户画像+情绪趋势+主题，跨会话沉淀。',
+        ct:'mem:{uid}:profile',cs:'SQLite强一致无TTL；不走缓存避免幻读'},
+      {h:'外挂·知识库',ic:'ic-db',c:'#7fb8a8',d:'心理知识问答对，供RAG「开卷考试」。',
+        ct:'向量检索',cs:'与用户记忆分离，不受记忆管理影响'},
+      {h:'模型配置存储',ic:'ic-cpu',c:'#7fb8a8',d:'LLM/ASR/TTS 引擎配置与敏感凭证，AES-GCM字段加密存SQLite。',
+        ct:'模型配置CRUD API → 加密字段',cs:'密钥环境变量注入不入库；前端零密钥；日志脱敏'},
+      {h:'治理与安全',ic:'ic-lock',c:'#7fb8a8',d:'Key隔离/版本号防并发/音频不落库/用户可查看清除。',
+        ct:'记忆管理接口',cs:'用户对AI记忆有完全控制权'}
+    ]}
+};
+const COMP_DATA = Object.fromEntries(Object.entries(SPEC).map(([k,v]) => [k, v.comps]));
+
+/* 开源参考（四条件筛选：知名度/活跃/架构/star，≥3条第一梯队，2条第二梯队）*/
+const REF = {
+  tier1: [
+    {n:'Project AIRI', u:'moeru-ai/airi', star:'47.4k★', hit:'4/4', use:'L1 Live2D 核心参考', note:'Web全栈(Vue/TS/WebGPU)·Live2D+AI+记忆+语音+桌宠+MCP·stage-web/stage-tamagotchi模块可对标'},
+    {n:'Open-LLM-VTuber', u:'Open-LLM-VTuber/Open-LLM-VTuber', star:'13.2k★', hit:'4/4', use:'Live2D+语音AI 对照基准', note:'跨平台口碑最全·已改名·v2.0重写中'},
+    {n:'BongoCat', u:'ayangweb/BongoCat', star:'22.5k★', hit:'4/4', use:'桌宠交互/Tauri打包', note:'近3月提交放缓'},
+    {n:'live2d-widget', u:'stevenjoezhang/live2d-widget', star:'10.9k★', hit:'4/4', use:'Web看板娘最简参考', note:'GPL-3.0传染协议'},
+    {n:'心语 emotional_chat', u:'congde/emotional_chat', star:'160★', hit:'4/4', use:'心理健康应用主参考', note:'Agent Runtime+Skills(Planner/Reflector/ToolCaller)·Memory Hub·ChromaDB RAG·A/B测试质量闭环'},
+    {n:'HF speech-to-speech', u:'huggingface/speech-to-speech', star:'10k+★', hit:'4/4', use:'语音延迟工程参考', note:'VAD→STT→LLM→TTS 多线程队列级联·barge-in打断·speculative turns预测性回合·OpenAI Realtime兼容'},
+    {n:'Qwen-Audio-Agent', u:'QwenAudio/qwen-audio-agent', star:'1.8k★', hit:'3/4', use:'执行链路/Agent presence 参考', note:'预测性音频缓冲降40%延迟(850→420ms)·简单/复杂分流·前后台并行·全双工可打断'}
+  ],
+  tier2: [
+    'TheraMind (2/4, 27★) — 双循环架构(会话内+跨会话+长期记忆调策略) → 答辩创新点理论背书',
+    'Awesome-Mental-Health-LLMs (3/4, 111★, 活跃) — LLM×心理健康领域综述地图',
+    'Alife (2/4, 136★, B站60.8万播放) — 桌宠交互参考·AGPL-3.0·社区热度与star不匹配',
+    'psycho / PsyChat / resonant-soul (2/4) — 设计思路参考(多Agent门控/强制RAG防漂移/情绪+SAS量表)'
+  ],
+  drop: ['Warashi (93★) 无社区背书','AIFE (17★) 无社区背书','MindChat/SoulChat 维护停摆·仅模型维度','SadTalker/Wav2Lip 停更·仅算法引用']
+};
+const NS = 'http://www.w3.org/2000/svg';
+let activeStrip = null;
+let activeCompTip = null;
+
+function setLevel(lv){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const target = document.getElementById('v-'+lv);
+  if (target) target.classList.add('active');
+  clearStrip(); closeCompTip();
+  ['bc-l1','bc-l2','bc-spec'].forEach(id => {
+    const b = document.getElementById(id);
+    b.classList.toggle('active', b.dataset.level === lv);
+    b.disabled = b.dataset.level === lv;
+  });
+  const labels = {l1:'L1 · 系统上下文',l2:'L2 · 容器图',spec:'规格文档'};
+  document.getElementById('levelTag').textContent = labels[lv] || '';
+}
+document.getElementById('sysbox').addEventListener('click', () => setLevel('l2'));
+document.getElementById('bc-l1').addEventListener('click', () => setLevel('l1'));
+document.getElementById('bc-l2').addEventListener('click', () => setLevel('l2'));
+document.getElementById('bc-spec').addEventListener('click', () => setLevel('spec'));
+
+function clearStrip(){ if(activeStrip){ activeStrip.remove(); activeStrip=null; } }
+
+function toggleStrip(layerId, containerG){
+  if (activeStrip && activeStrip.dataset.layer === layerId){ clearStrip(); return; }
+  clearStrip();
+  const data = COMP_DATA[layerId];
+  if (!data) return;
+  const svg = document.getElementById('l2svg');
+  const rect = containerG.querySelector('rect');
+  const rb = rect.getBBox();
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', 'comp-strip');
+  g.dataset.layer = layerId;
+
+  const uw = 74, uh = 54, gap = 6, pad = 8;
+  const stripW = data.length * (uw + gap) - gap + pad * 2;
+  const x0 = rb.x + rb.width / 2 - stripW / 2;
+  const y0 = rb.y + rb.height + 8;
+
+  // backdrop
+  const bg = document.createElementNS(NS, 'rect');
+  bg.setAttribute('x', x0 - 6); bg.setAttribute('y', y0 - 6);
+  bg.setAttribute('width', stripW + 12); bg.setAttribute('height', uh + 14);
+  bg.setAttribute('rx', '9'); bg.setAttribute('fill', 'rgba(15,20,23,.96)');
+  bg.setAttribute('stroke', 'rgba(232,180,90,.3)');
+  g.appendChild(bg);
+
+  data.forEach((c, i) => {
+    const ux = x0 + pad + i * (uw + gap);
+    const uy = y0;
+    const unit = document.createElementNS(NS, 'rect');
+    unit.setAttribute('class', 'unit');
+    unit.setAttribute('x', ux); unit.setAttribute('y', uy);
+    unit.setAttribute('width', uw); unit.setAttribute('height', uh);
+    unit.setAttribute('rx', '7');
+    const tip = document.createElementNS(NS, 'title');
+    tip.textContent = c.d + '\n' + (c.ct || '') + '\n' + (c.cs || '');
+    unit.appendChild(tip);
+    g.appendChild(unit);
+    // icon
+    const ic = document.createElementNS(NS, 'use');
+    ic.setAttribute('href', '#' + c.ic);
+    ic.setAttribute('x', ux + uw/2 - 9); ic.setAttribute('y', uy + 6);
+    ic.setAttribute('width', 18); ic.setAttribute('height', 18);
+    ic.setAttribute('fill', 'none'); ic.setAttribute('stroke', c.c); ic.setAttribute('stroke-width', '2');
+    ic.setAttribute('pointer-events', 'none');
+    g.appendChild(ic);
+    // name
+    const nm = document.createElementNS(NS, 'text');
+    nm.setAttribute('class', 'uname');
+    nm.setAttribute('x', ux + uw/2); nm.setAttribute('y', uy + uh - 8);
+    nm.setAttribute('pointer-events', 'none');
+    nm.textContent = c.h;
+    g.appendChild(nm);
+    // click unit → show detail tip
+    unit.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showCompTip(c, e.clientX, e.clientY);
+    });
+  });
+
+  svg.appendChild(g);
+  activeStrip = g;
+}
+
+// container click → toggle icon strip
+for (let i = 1; i <= 7; i++){
+  const el = document.getElementById('c-l'+i);
+  if (el) el.addEventListener('click', (e) => { e.stopPropagation(); toggleStrip('l'+i, el); });
+}
+
+document.addEventListener('click', (e) => {
+  if (activeStrip && !e.target.closest('.clickable') && !e.target.closest('.unit')) clearStrip();
+  if (activeCompTip && !e.target.closest('.comp-tip')) closeCompTip();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { clearStrip(); closeCompTip(); }
+  if (e.key === 'ArrowRight' ) setLevel('l2');
+  if (e.key === 'ArrowLeft') setLevel('l1');
+});
+
+/* ================================================================
+   组件详情气泡 (click component unit)
+   ================================================================ */
+function closeCompTip(){ if(activeCompTip){ activeCompTip.remove(); activeCompTip=null; } }
+function showCompTip(c, x, y){
+  closeCompTip();
+  const tip = document.createElement('div');
+  tip.className = 'comp-tip';
+  tip.innerHTML = `
+    <div class="ct-h"><span style="width:8px;height:8px;border-radius:50%;background:${c.c};display:inline-block;"></span>${c.h}
+      <span class="ct-x" title="关闭">✕</span></div>
+    <div class="ct-row"><span class="k">职责</span>${c.d}</div>
+    ${c.ct ? `<div class="ct-row"><span class="k">契约</span>${c.ct}</div>` : ''}
+    ${c.cs ? `<div class="ct-row"><span class="k">约束</span>${c.cs}</div>` : ''}`;
+  tip.querySelector('.ct-x').addEventListener('click', closeCompTip);
+  document.body.appendChild(tip);
+  // position near click, clamp
+  const w = Math.min(340, window.innerWidth - 24);
+  let left = x + 14;
+  if (left + w > window.innerWidth - 10) left = Math.max(10, x - w - 14);
+  tip.style.left = left + 'px';
+  tip.style.top = Math.min(y + 14, window.innerHeight - tip.offsetHeight - 10) + 'px';
+  tip.style.width = w + 'px';
+  activeCompTip = tip;
+}
+
+/* ================================================================
+   规格视图 (spec)
+   ================================================================ */
+function renderSpec(){
+  const box = document.getElementById('specContent');
+  const order = ['l1','l2','l3','l4','l5','l6','l7'];
+  box.innerHTML = `
+    <div class="spec-head">
+      <h1>心理健康助手 · <span>架构规格文档</span></h1>
+      <span class="m">C4 Container/Component 规格 · Arc42 风格 · 与架构图同源</span>
+    </div>` +
+  order.map(k => {
+    const L = SPEC[k];
+    const rows = [
+      ['职责', L.desc],
+      ['技术栈', L.tech],
+      ['关键机制', L.mech],
+      ['数据契约', L.contract],
+      ['上下游', L.io],
+      ['二期', L.phase2]
+    ].map(([k2,v]) => `<div class="spec-field"><div class="k">${k2}</div><div class="v">${v}</div></div>`).join('');
+    const comps = L.comps.map(c => `
+      <div class="spec-comp">
+        <div class="cn" style="--c:${c.c}"><span style="width:5px;height:5px;border-radius:50%;background:${c.c};flex:none;"></span>${c.h}</div>
+        <div class="cd">${c.d}<br><span class="ct">契约 ${c.ct || '—'}</span> · <span class="ct">约束 ${c.cs || '—'}</span></div>
+      </div>`).join('');
+    return `
+      <div class="spec-layer" id="spec-${k}">
+        <div class="lh" data-target="spec-${k}">
+          <div class="ln" style="color:${L.color}">${k.toUpperCase()}</div>
+          <div class="lt">${L.name}</div>
+          <div class="ld">${L.desc}</div>
+          <div class="chev">▶</div>
+        </div>
+        <div class="lbody">
+          ${rows}
+          <div class="spec-comps"><div class="comps-label">内部组件 (${L.comps.length})</div>${comps}</div>
+        </div>
+      </div>`;
+  }).join('');
+  // toggle expand
+  box.querySelectorAll('.lh').forEach(h => {
+    h.addEventListener('click', () => {
+      const layer = document.getElementById(h.dataset.target);
+      layer.classList.toggle('open');
+    });
+  });
+}
+
+/* 开源参考章节渲染（与 architecture-spec.md §7 同源） */
+function renderRef(){
+  const box = document.getElementById('specContent');
+  const t1 = REF.tier1.map(r => `
+    <div class="spec-comp">
+      <div class="cn"><span style="width:5px;height:5px;border-radius:50%;background:var(--amber);flex:none;"></span>${r.n} <span class="ct" style="font-size:10px;color:var(--faint)">${r.u}</span></div>
+      <div class="cd"><span class="ct">star ${r.star} · 满足 ${r.hit} · ${r.use}</span><br>${r.note}</div>
+    </div>`).join('');
+  const t2 = REF.tier2.map(x => `<div class="spec-comp"><div class="cd" style="margin-left:0">· ${x}</div></div>`).join('');
+  const drop = REF.drop.map(x => `<div class="spec-comp"><div class="cd" style="margin-left:0">✗ ${x}</div></div>`).join('');
+
+  box.insertAdjacentHTML('beforeend', `
+    <div class="spec-layer" id="spec-ref">
+      <div class="lh" data-target="spec-ref">
+        <div class="ln" style="color:var(--amber)">REF</div>
+        <div class="lt">开源参考（四条件筛选）</div>
+        <div class="ld">知名度/活跃/架构/star · ≥3条第一梯队可答辩背书 · 数据 2026-08-09 实测</div>
+        <div class="chev">▶</div>
+      </div>
+      <div class="lbody">
+        <div class="comps-label" style="margin-bottom:6px;">第一梯队（达标可答辩背书）</div>
+        ${t1}
+        <div class="spec-comps"><div class="comps-label">第二梯队（2/4 压线，设计思路参考）</div>${t2}</div>
+        <div class="spec-comps"><div class="comps-label">淘汰 / 谨慎</div>${drop}</div>
+      </div>
+    </div>`);
+
+  const layer = document.getElementById('spec-ref');
+  layer.querySelector('.lh').addEventListener('click', () => layer.classList.toggle('open'));
+}
+
+// init spec view lazily
+document.getElementById('bc-spec').addEventListener('click', () => {
+  if (!document.getElementById('specContent').children.length){ renderSpec(); renderRef(); }
+});
+</script>
+</body>
+</html>

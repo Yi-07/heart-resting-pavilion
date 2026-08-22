@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>心栖 · 桌面客户端预览</title>
+<style>
+:root{
+  --desk:#1A1D21; --ink:#3E3A35; --muted:#6E675E; --line:#EDE6DB;
+  --primary:#8BAE97; --primary-deep:#6E937C; --accent:#D58A63;
+  --sans:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  --serif:"Noto Serif SC","Songti SC",serif;
+  --ease:cubic-bezier(.23,1,.32,1);
+  --glass-bg:linear-gradient(140deg,rgba(255,255,255,.82),rgba(255,255,255,.55));
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  min-height:100vh;color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;
+  background:linear-gradient(180deg,#1A1D21,#23272C);
+  display:flex;align-items:center;justify-content:center;padding:28px;overflow:hidden;
+}
+.glass{background:var(--glass-bg);backdrop-filter:blur(20px) saturate(1.5);-webkit-backdrop-filter:blur(20px) saturate(1.5);border:1px solid rgba(255,255,255,.72);}
+
+/* ══ 桌面任务栏（底部） ══ */
+.taskbar{position:fixed;left:0;right:0;bottom:0;height:44px;background:rgba(20,23,27,.85);backdrop-filter:blur(14px);display:flex;align-items:center;padding:0 16px;gap:8px;z-index:60;}
+.taskbar .tray{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.taskbar .tray .tic{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#9AA5A0;cursor:pointer;}
+.taskbar .tray .tic:hover{background:rgba(255,255,255,.1);}
+.taskbar .tray .time{font-size:11px;color:#9AA5A0;font-family:ui-monospace,monospace;}
+.app-btn{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:transparent;transition:background .2s;}
+.app-btn:hover{background:rgba(255,255,255,.12);}
+.app-btn .mark{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#A3B18A,#6E937C);box-shadow:0 2px 6px rgba(110,147,124,.5);}
+
+/* ══ 应用窗口 ══ */
+.window{
+  width:min(1180px,94vw);height:min(740px,90vh);border-radius:14px;overflow:hidden;
+  box-shadow:0 40px 100px -30px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06);
+  display:flex;flex-direction:column;position:relative;background:#FAF6EF;z-index:10;
+}
+/* 标题栏 */
+.titlebar{height:38px;flex:none;display:flex;align-items:center;padding:0 10px;background:rgba(247,243,237,.9);border-bottom:1px solid var(--line);-webkit-app-region:drag;}
+.titlebar .t-logo{display:flex;align-items:center;gap:7px;font-family:var(--serif);font-size:12.5px;font-weight:700;color:var(--ink);}
+.titlebar .t-logo .mark{width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#A3B18A,#6E937C);}
+.titlebar .t-title{font-size:11px;color:var(--muted);margin-left:10px;}
+.titlebar .sp{flex:1;}
+.titlebar .t-btn{width:34px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8A857D;font-size:12px;-webkit-app-region:no-drag;}
+.titlebar .t-btn:hover{background:rgba(0,0,0,.06);}
+.titlebar .t-btn.close:hover{background:#E05B4B;color:#fff;}
+
+/* ══ 首启欢迎页 ══ */
+.onboard{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;background:
+  radial-gradient(100% 75% at 55% -10%,rgba(167,155,192,.22),transparent 60%),
+  radial-gradient(80% 60% at 15% -8%,rgba(176,224,212,.26),transparent 55%),
+  linear-gradient(135deg,#EFEAF4 0%,#F6EFE3 48%,#FAF4E6 100%);text-align:center;}
+.onboard .ob-logo{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#A3B18A,#6E937C);box-shadow:0 10px 30px -8px rgba(110,147,124,.6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px;font-family:var(--serif);margin-bottom:18px;}
+.onboard h1{font-family:var(--serif);font-size:26px;font-weight:700;margin-bottom:8px;}
+.onboard .ob-sub{font-size:13px;color:var(--muted);margin-bottom:26px;max-width:440px;line-height:1.8;}
+.onboard .ob-disclaimer{background:rgba(255,255,255,.65);border:1px solid var(--line);border-radius:12px;padding:14px 18px;font-size:12px;color:var(--muted);line-height:1.8;max-width:520px;margin-bottom:22px;text-align:left;}
+.onboard .ob-disclaimer b{color:var(--ink);}
+.onboard .ob-actions{display:flex;gap:12px;}
+.onboard button{border:0;padding:11px 28px;border-radius:999px;cursor:pointer;font-size:13px;font-family:inherit;transition:all .25s var(--ease);}
+.ob-primary{background:var(--primary);color:#fff;box-shadow:0 4px 14px -3px rgba(110,147,124,.5);}
+.ob-primary:hover{transform:translateY(-2px);}
+.ob-secondary{background:rgba(255,255,255,.7);color:var(--ink);border:1px solid var(--line)!important;}
+.ob-secondary:hover{transform:translateY(-2px);}
+
+/* ══ 主界面（窗口内） ══ */
+.main{flex:1;display:none;flex-direction:column;background:
+  radial-gradient(100% 75% at 55% -10%,rgba(167,155,192,.22),transparent 60%),
+  radial-gradient(80% 60% at 15% -8%,rgba(176,224,212,.26),transparent 55%),
+  linear-gradient(135deg,#EFEAF4 0%,#F6EFE3 48%,#FAF4E6 100%);}
+.main.show{display:flex;}
+
+/* 窗口内工具栏 */
+.m-toolbar{display:flex;align-items:center;gap:6px;padding:9px 16px;margin:12px 12px 0;border-radius:999px;flex:none;}
+.m-toolbar .logo{font-family:var(--serif);font-weight:700;font-size:15px;display:flex;align-items:center;gap:9px;margin-right:8px;}
+.m-toolbar .logo .mark{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#A3B18A,#6E937C);}
+.m-toolbar .tb{font-size:12px;color:var(--muted);padding:6px 12px;border-radius:999px;cursor:pointer;transition:all .2s;}
+.m-toolbar .tb:hover{color:var(--ink);background:rgba(255,255,255,.6);}
+.m-toolbar .sp{flex:1;}
+.m-toolbar .mood{font-size:11.5px;color:#5E6B58;background:rgba(227,237,226,.9);padding:6px 13px;border-radius:999px;}
+.m-toolbar .sos{font-size:11.5px;color:#fff;background:var(--accent);padding:6px 13px;border-radius:999px;cursor:pointer;}
+
+/* 窗口内舞台 */
+.m-stage{flex:1;display:flex;gap:14px;padding:12px;min-height:0;position:relative;}
+.m-board{width:66%;flex:none;border-radius:18px;background:linear-gradient(160deg,#41503F,#2F3A31 60%);position:relative;overflow:hidden;box-shadow:0 20px 50px -24px rgba(47,58,49,.5);}
+.m-board .bt{position:absolute;left:22px;top:16px;font-family:var(--serif);font-size:17px;color:#F3EBDD;z-index:3;}
+.m-board .tree{position:absolute;inset:50px 34px 40px;z-index:2;}
+.m-board .tree svg{width:100%;height:100%;}
+.m-board .tree text{font-family:var(--serif);fill:#F3EBDD;font-size:14px;}.m-board .tree .dim{fill:#B9C4B4;}
+.m-board .bnote{position:absolute;left:22px;bottom:16px;font-size:11.5px;color:#B9C4B4;z-index:3;}
+.m-l2d{position:absolute;left:calc(66% - 40px);bottom:8px;width:300px;height:420px;z-index:12;filter:drop-shadow(0 16px 22px rgba(47,58,49,.35));}
+.m-l2d canvas{width:100%;height:100%;}
+.m-l2d .name{position:absolute;bottom:-22px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);background:rgba(255,255,255,.6);padding:2px 10px;border-radius:999px;}
+.m-l2d::after{content:"";position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);width:70%;height:12px;border-radius:50%;background:rgba(47,58,49,.16);filter:blur(6px);}
+.m-bubble{position:absolute;left:calc(66% + 20px);top:60px;width:185px;padding:11px 14px;border-radius:16px 16px 4px 16px;font-size:12px;line-height:1.7;color:var(--ink);background:#FFFDF8;border:1px solid var(--line);box-shadow:0 10px 28px -14px rgba(62,58,53,.3);z-index:13;}
+.m-bubble::after{content:"";position:absolute;right:32%;bottom:-9px;width:0;height:0;border-top:9px solid #FFFDF8;border-left:7px solid transparent;border-right:7px solid transparent;}
+.m-bubble .who{font-size:9.5px;color:var(--primary-deep);letter-spacing:.06em;display:block;margin-bottom:3px;}
+
+/* 窗口内执行链（竖条） */
+.m-rail{position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:20;width:36px;border-radius:12px 0 0 12px;padding:10px 0;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;}
+.m-rail .dots{display:flex;flex-direction:column;gap:6px;}
+.m-rail .dots .d{width:6px;height:6px;border-radius:50%;background:#D9D2C6;}
+.m-rail .dots .d.on{background:var(--primary);animation:pulse 1.6s infinite;}
+.m-rail .dots .d.done{background:var(--primary-deep);opacity:.6;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.m-rail span{writing-mode:vertical-rl;font-size:8.5px;color:var(--muted);letter-spacing:.14em;}
+
+/* 底部输入条 */
+.m-input{display:flex;align-items:center;gap:12px;padding:10px 18px;margin:0 12px 12px;border-radius:999px;flex:none;}
+.m-input .mic{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);}
+.m-input input{flex:1;border:0;background:transparent;outline:none;font-size:13px;color:var(--ink);font-family:inherit;}
+.m-input input::placeholder{color:var(--muted);}
+.m-input .send{border:0;background:var(--primary);color:#fff;font-size:12.5px;padding:9px 22px;border-radius:999px;cursor:pointer;font-family:inherit;}
+
+/* ══ 系统通知（右上角滑入） ══ */
+.notify{position:fixed;top:14px;right:14px;z-index:200;width:300px;border-radius:14px;padding:13px 15px;display:flex;gap:11px;align-items:flex-start;box-shadow:0 16px 44px -16px rgba(0,0,0,.4);opacity:0;transform:translateX(120%);transition:all .5s var(--ease);}
+.notify.show{opacity:1;transform:none;}
+.notify .n-ic{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#A3B18A,#6E937C);display:flex;align-items:center;justify-content:center;color:#fff;flex:none;}
+.notify .n-ic svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;}
+.notify .n-b{flex:1;}
+.notify .n-t{font-size:12.5px;font-weight:600;color:var(--ink);}
+.notify .n-d{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.6;}
+
+/* 托盘菜单 */
+.tray-menu{position:fixed;right:14px;bottom:50px;z-index:250;width:220px;border-radius:12px;padding:6px;box-shadow:0 20px 60px -20px rgba(0,0,0,.6);opacity:0;transform:translateY(8px);pointer-events:none;transition:all .2s var(--ease);}
+.tray-menu.show{opacity:1;transform:none;pointer-events:auto;}
+.tray-menu .tm-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;font-size:12px;color:var(--ink);cursor:pointer;}
+.tray-menu .tm-item:hover{background:rgba(255,255,255,.7);}
+.tray-menu .tm-item svg{width:15px;height:15px;stroke:var(--primary-deep);fill:none;stroke-width:2;stroke-linecap:round;}
+.tray-menu .tm-sep{height:1px;background:rgba(255,255,255,.5);margin:4px 8px;}
+.tray-menu .tm-item.quit{color:#C05548;}
+.tray-menu .tm-item.quit svg{stroke:#C05548;}
+</style>
+</head>
+<body>
+<!-- 桌面背景文字 -->
+<div style="position:fixed;top:14px;left:18px;color:#6B7470;font-size:11px;font-family:ui-monospace,monospace;z-index:5;">心栖 · 桌面客户端（Tauri 预览）<br>窗口 · 首启 · 托盘 · 通知</div>
+
+<!-- ══ 应用窗口 ══ -->
+<div class="window">
+  <!-- 标题栏 -->
+  <div class="titlebar">
+    <div class="t-logo"><div class="mark"></div>心栖</div>
+    <div class="t-title">心理健康陪伴 · 本地运行</div>
+    <div class="sp"></div>
+    <div class="t-btn">─</div>
+    <div class="t-btn">□</div>
+    <div class="t-btn close">✕</div>
+  </div>
+
+  <!-- 首启欢迎页 -->
+  <div class="onboard" id="onboard">
+    <div class="ob-logo">栖</div>
+    <h1>欢迎来到心栖</h1>
+    <div class="ob-sub">一个会记住你、陪你说话的本地陪伴者。数据留在你的电脑上，不经过任何服务器。</div>
+    <div class="ob-disclaimer">
+      <b>使用前请了解：</b><br>
+      · 心栖是情感陪伴与心理科普工具，<b>不提供医疗诊断</b>，不能替代专业咨询<br>
+      · 你的对话记录存储在本地，不上传云端<br>
+      · 出现危机情绪时，请拨打<b>全国心理援助热线 12356</b>
+    </div>
+    <div class="ob-actions">
+      <button class="ob-primary" id="btnStart">我理解了，开始</button>
+      <button class="ob-secondary" id="btnSettings">先配置</button>
+    </div>
+  </div>
+
+  <!-- 主界面 -->
+  <div class="main" id="main">
+    <div class="m-toolbar glass">
+      <div class="logo"><div class="mark"></div>心栖</div>
+      <div class="tb">今日心情</div>
+      <div class="tb">心灵练习</div>
+      <div class="tb">留言墙</div>
+      <span class="sp"></span>
+      <div class="mood">此刻 · 平静</div>
+      <div class="sos">需要帮助</div>
+    </div>
+    <div class="m-stage">
+      <div class="m-board">
+        <div class="bt">心里的那棵树</div>
+        <div class="tree"><svg viewBox="0 0 640 400" xmlns="http://www.w3.org/2000/svg"><g stroke="#F3EBDD" stroke-width="2.4" fill="none" stroke-linecap="round"><line x1="320" y1="86" x2="320" y2="142"/><line x1="190" y1="238" x2="190" y2="292"/><line x1="450" y1="238" x2="450" y2="292"/><line x1="320" y1="142" x2="190" y2="238"/><line x1="320" y1="142" x2="450" y2="238"/></g><g fill="none" stroke="#F3EBDD" stroke-width="2.4"><ellipse cx="320" cy="58" rx="130" ry="28"/><ellipse cx="190" cy="266" rx="150" ry="30"/><ellipse cx="450" cy="266" rx="140" ry="30"/></g><text x="320" y="66" text-anchor="middle" font-size="16">对方一次敷衍的回应</text><text x="190" y="272" text-anchor="middle" font-size="15">"TA 是不是不在乎我"</text><text x="450" y="272" text-anchor="middle" font-size="15">"我不配被认真对待"</text><text x="320" y="370" text-anchor="middle" font-size="14" class="dim">一次敷衍 ≠ 不被在乎</text></svg></div>
+        <div class="bnote">✎ 我们把它拆开看看——那句话，是不是你心里对"自己"说的？</div>
+      </div>
+      <div class="m-l2d"><canvas id="l2dCanvas"></canvas><div class="name">小栖 · Live2D</div></div>
+      <div class="m-bubble"><span class="who">小栖</span>嗯，我在听。<br>先不急着想办法——</div>
+      <div class="m-rail glass" id="mRail">
+        <div class="dots"><span class="d on"></span><span class="d done"></span><span class="d"></span><span class="d"></span></div>
+        <span>小栖在做的事</span>
+      </div>
+    </div>
+    <div class="m-input glass">
+      <div class="mic"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/></svg></div>
+      <input placeholder="想说什么都可以，我在听…">
+      <button class="send">发送</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 系统通知 ══ -->
+<div class="notify" id="notify">
+  <div class="n-ic"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></div>
+  <div class="n-b"><div class="n-t">小栖回了你的留言</div><div class="n-d">"谢谢你告诉我。累不是软弱，是身体在提醒你歇歇。我一直都在。"</div></div>
+</div>
+
+<!-- ══ 托盘菜单 ══ -->
+<div class="tray-menu" id="trayMenu">
+  <div class="tm-item"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>打开心栖</div>
+  <div class="tm-item"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>最近对话</div>
+  <div class="tm-item"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>查看留言</div>
+  <div class="tm-sep"></div>
+  <div class="tm-item quit"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>退出心栖</div>
+</div>
+
+<!-- ══ 桌面任务栏 ══ -->
+<div class="taskbar">
+  <div class="app-btn" id="dockApp"><div class="mark"></div></div>
+  <div style="font-size:10px;color:#7B8580;margin-left:6px;">心栖</div>
+  <div class="tray">
+    <div class="tic" id="trayIcon" title="托盘">💚</div>
+    <div class="tic" title="WiFi">▤</div>
+    <div class="tic" title="音量">◗</div>
+    <div class="time">14:32</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js"></script>
+<script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/cubism4.min.js"></script>
+<script>
+/* 首启 → 主界面 */
+document.getElementById('btnStart').onclick=()=>{
+  document.getElementById('onboard').style.display='none';
+  document.getElementById('main').classList.add('show');
+  initL2d();
+  setTimeout(()=>document.getElementById('notify').classList.add('show'),2200);
+};
+document.getElementById('btnSettings').onclick=()=>{
+  document.getElementById('onboard').style.display='none';
+  document.getElementById('main').classList.add('show');
+  initL2d();
+};
+
+/* 托盘图标 → 菜单 */
+document.getElementById('trayIcon').onclick=e=>{ e.stopPropagation(); document.getElementById('trayMenu').classList.toggle('show'); };
+document.addEventListener('click',()=>document.getElementById('trayMenu').classList.remove('show'));
+
+/* Live2D */
+const HARU="https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json";
+window.PIXI=window.PIXI||{};
+async function initL2d(){
+  const canvas=document.getElementById('l2dCanvas'), stage=document.querySelector('.m-l2d');
+  try{
+    const app=new PIXI.Application({view:canvas,transparent:true,autoStart:true,resizeTo:stage,antialias:true});
+    const m=await PIXI.live2d.Live2DModel.from(HARU);
+    m.anchor.set(0.5,0.5); app.stage.addChild(m);
+    m.scale.set(1); m.x=app.screen.width/2; m.y=app.screen.height/2;
+    app.renderer.render(app.stage);
+    let bw=600,bh=700; try{const b=m.getBounds();if(b.width>0)bw=b.width;if(b.height>0)bh=b.height;}catch{}
+    m.scale.set(Math.min((app.screen.width*0.82)/bw,(app.screen.height*0.9)/bh));
+    m.anchor.set(0.5,0.94); m.x=app.screen.width/2; m.y=app.screen.height-4;
+  }catch(e){ stage.innerHTML='<div style="color:var(--muted);font-size:11px;padding-top:180px;text-align:center">小栖（占位）</div>'; }
+}
+</script>
+</body>
+</html>

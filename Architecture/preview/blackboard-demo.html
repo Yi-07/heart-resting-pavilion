@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>黑板 · DrawProtocol 预览 — 路线 B</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#141b1a; --bg2:#1d2825;
+    --frame-1:#5a4432; --frame-2:#2e2117;
+    --chalk:#f2ede0; --chalk-dim:rgba(242,237,224,.55); --chalk-faint:rgba(242,237,224,.32);
+    --amber:#e8b45a; --rose:#e08477; --mauve:#b79ac9; --teal:#7fb8a8; --blue:#8fb3d9;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    min-height:100vh;
+    background:
+      radial-gradient(1100px 700px at 28% -10%, var(--bg2), transparent 60%),
+      radial-gradient(900px 600px at 110% 110%, #182221, transparent 55%),
+      var(--bg);
+    color:var(--chalk);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:26px clamp(16px, 4vw, 60px) 40px;
+  }
+  ::selection{ background:rgba(232,180,90,.3); }
+
+  /* ---------- header ---------- */
+  .top{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  .wordmark{ font-family:"Noto Serif SC",serif; font-weight:700; font-size:26px; letter-spacing:.06em; }
+  .wordmark .zh{ }
+  .wordmark .en{ font-family:Georgia,serif; font-weight:400; font-style:italic; color:var(--chalk-dim); font-size:15px; margin-left:10px; letter-spacing:.04em; }
+  .proto-chip{
+    font-family:ui-monospace,Consolas,monospace; font-size:11.5px; color:var(--chalk-dim);
+    border:1px solid rgba(242,237,224,.2); border-radius:999px; padding:6px 14px;
+    background:rgba(242,237,224,.04);
+  }
+  .proto-chip b{ color:var(--amber); font-weight:600; }
+  .step-indicator{ font-size:12.5px; color:var(--chalk-dim); letter-spacing:.05em; }
+  .step-indicator b{ color:var(--chalk); }
+
+  /* ---------- main grid ---------- */
+  .stage{ display:grid; grid-template-columns:320px 1fr; gap:18px; }
+
+  /* chat panel */
+  .chat{
+    background:rgba(242,237,224,.035); border:1px solid rgba(242,237,224,.12);
+    border-radius:16px; padding:16px 14px;
+    display:flex; flex-direction:column; gap:12px; max-height:600px; overflow:hidden;
+    position:relative;
+  }
+  .chat-title{ font-size:11.5px; letter-spacing:.22em; color:var(--chalk-faint); margin-bottom:2px; }
+  .chat-scroll{ display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:4px; flex:1; }
+  .chat-scroll::-webkit-scrollbar{ width:4px; } .chat-scroll::-webkit-scrollbar-thumb{ background:rgba(242,237,224,.15); border-radius:2px; }
+  .msg{ max-width:88%; padding:9px 12px; font-size:13px; line-height:1.6; opacity:0; transform:translateY(6px); transition:opacity .5s ease, transform .5s ease; }
+  .msg.on{ opacity:1; transform:none; }
+  .msg.user{ align-self:flex-end; background:rgba(232,180,90,.14); border:1px solid rgba(232,180,90,.28); border-radius:14px 14px 4px 14px; color:#f6ecd8; }
+  .msg.sys{ align-self:flex-start; border:1px solid rgba(242,237,224,.2); border-radius:14px 14px 14px 4px; color:var(--chalk); background:rgba(242,237,224,.05); }
+  .msg .who{ display:block; font-size:10px; letter-spacing:.14em; color:var(--chalk-faint); margin-bottom:3px; }
+  .thinking-line{ display:flex; align-items:center; gap:8px; font-size:11px; color:var(--amber); opacity:0; transition:opacity .4s; }
+  .thinking-line.on{ opacity:1; }
+  .thinking-line .dot{ width:4px; height:4px; border-radius:50%; background:var(--amber); animation:pulse 1.4s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.25} }
+
+  /* ---------- blackboard ---------- */
+  .board-wrap{
+    background:linear-gradient(160deg, var(--frame-1), var(--frame-2));
+    padding:10px; border-radius:14px;
+    box-shadow:0 24px 60px -22px rgba(0,0,0,.75), inset 0 0 0 1px rgba(255,255,255,.04);
+  }
+  .board{
+    position:relative; border-radius:8px; overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #22302c, #17201f 55%, #131a19 100%);
+    height:600px;
+  }
+  .board::before{ /* chalk dust grain */
+    content:""; position:absolute; inset:0; pointer-events:none; opacity:.5; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  }
+  .board::after{ /* vignette */
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(90% 90% at 50% 40%, transparent 60%, rgba(0,0,0,.35) 100%);
+  }
+  #boardSvg{ position:absolute; inset:0; width:100%; height:100%; }
+  #chalkcursor circle{ transition:cx .42s cubic-bezier(.33,1,.68,1), cy .42s cubic-bezier(.33,1,.68,1), opacity .5s ease; }
+  .dash{ stroke-dasharray:10000; stroke-dashoffset:10000; transition:stroke-dashoffset .8s cubic-bezier(.4,0,.2,1); }
+  .dash.on{ stroke-dashoffset:0; }
+  .node{ opacity:0; transition:opacity .55s ease; }
+  .node.on{ opacity:1; }
+  .anno{
+    position:absolute; left:22px; right:22px; bottom:18px; z-index:3;
+    font-family:"Ma Shan Zheng","Noto Serif SC",serif; font-size:19px; line-height:1.5; color:#f6ecd8;
+    opacity:0; transform:translateY(8px); transition:opacity .7s ease, transform .7s ease;
+    text-shadow:0 1px 8px rgba(0,0,0,.55); letter-spacing:.03em;
+  }
+  .anno.on{ opacity:1; transform:none; }
+  .anno::before{ content:"✎ "; color:var(--amber); }
+
+  /* ---------- footer / controls ---------- */
+  .controls{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:18px; }
+  .tabs{ display:flex; gap:6px; background:rgba(242,237,224,.05); border:1px solid rgba(242,237,224,.12); padding:5px; border-radius:12px; }
+  .tab{ border:0; background:transparent; color:var(--chalk-dim); font-family:inherit; font-size:13px; padding:7px 16px; border-radius:8px; cursor:pointer; transition:all .2s; }
+  .tab:hover{ color:var(--chalk); }
+  .tab.active{ background:rgba(232,180,90,.16); color:var(--amber); }
+  .spacer{ flex:1; }
+  .navbtn{
+    border:1px solid rgba(242,237,224,.25); background:transparent; color:var(--chalk);
+    font-family:inherit; font-size:13px; padding:8px 16px; border-radius:10px; cursor:pointer; transition:all .2s;
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .navbtn:hover:not(:disabled){ border-color:var(--amber); color:var(--amber); }
+  .navbtn:disabled{ opacity:.3; cursor:default; }
+  .navbtn.primary{ background:rgba(232,180,90,.14); border-color:rgba(232,180,90,.4); color:var(--amber); }
+  .step-label{ font-size:13px; color:var(--chalk-dim); min-width:86px; text-align:center; }
+  .step-label b{ color:var(--chalk); }
+
+  .proto{
+    margin-top:16px; border:1px solid rgba(242,237,224,.14); border-radius:12px; overflow:hidden;
+    background:rgba(10,14,13,.5);
+  }
+  .proto summary{ cursor:pointer; padding:10px 16px; font-size:12px; color:var(--chalk-dim); letter-spacing:.08em; list-style:none; display:flex; align-items:center; gap:8px; user-select:none; }
+  .proto summary::-webkit-details-marker{ display:none; }
+  .proto summary:hover{ color:var(--chalk); }
+  .proto summary .tag{ font-family:ui-monospace,Consolas,monospace; color:var(--amber); }
+  .proto pre{ margin:0; padding:14px 18px 18px; font-family:ui-monospace,Consolas,monospace; font-size:12px; line-height:1.65; color:#cfe0d8; overflow-x:auto; border-top:1px dashed rgba(242,237,224,.12); }
+
+  .hint{ margin-top:14px; font-size:11.5px; color:var(--chalk-faint); letter-spacing:.05em; }
+
+  /* free conversation composer */
+  .composer{ display:flex; gap:8px; margin-top:12px; border-top:1px solid rgba(242,237,224,.1); padding-top:12px; }
+  .composer input{
+    flex:1; background:rgba(242,237,224,.06); border:1px solid rgba(242,237,224,.16); border-radius:10px;
+    color:var(--chalk); font-family:inherit; font-size:13px; padding:9px 12px; outline:none; min-width:0;
+  }
+  .composer input::placeholder{ color:var(--chalk-faint); }
+  .composer input:focus{ border-color:var(--amber); }
+  .composer button{
+    border:1px solid rgba(232,180,90,.45); background:rgba(232,180,90,.14); color:var(--amber);
+    font-family:inherit; font-size:13px; padding:9px 14px; border-radius:10px; cursor:pointer; white-space:nowrap;
+  }
+  .composer button:hover{ background:rgba(232,180,90,.22); }
+  .hotline{
+    align-self:flex-start; max-width:92%; border:1px solid rgba(232,180,90,.4); background:rgba(232,180,90,.08);
+    border-radius:12px; padding:10px 12px; font-size:12.5px; line-height:1.65; color:#f0dcb6;
+    opacity:0; transform:translateY(6px); transition:opacity .5s ease, transform .5s ease;
+  }
+  .hotline.on{ opacity:1; transform:none; }
+  .hotline b{ color:var(--amber); }
+
+  @media (max-width:900px){
+    .stage{ grid-template-columns:1fr; }
+    .chat{ max-height:220px; }
+    .board{ height:430px; }
+  }
+</style>
+</head>
+<body>
+
+  <header class="top">
+    <div class="wordmark">
+      黑板 · Blackboard
+      <span class="en">a therapeutic canvas</span>
+    </div>
+    <div class="proto-chip">DrawProtocol <b>v0.1</b> · 模板库 { emotion_wheel · cognitive_tree · stage_map }</div>
+  </header>
+
+  <div class="stage">
+    <aside class="chat">
+      <div class="chat-title">对话 · SESSION</div>
+      <div class="chat-scroll" id="chatScroll"></div>
+      <div class="composer">
+        <input id="chatInput" placeholder="想说什么都可以，我在听…" autocomplete="off">
+        <button id="sendBtn">发送</button>
+      </div>
+    </aside>
+
+    <section class="board-wrap">
+      <div class="board">
+        <svg id="boardSvg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <filter id="chalk" x="-5%" y="-5%" width="110%" height="110%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" result="n"/>
+              <feDisplacementMap in="SourceGraphic" in2="n" scale="1.3"/>
+            </filter>
+          </defs>
+          <g id="chalkcursor" opacity="0">
+            <circle cx="0" cy="0" r="9" fill="rgba(242,237,224,.08)"/>
+            <circle cx="0" cy="0" r="3.5" fill="rgba(242,237,224,.85)"/>
+          </g>
+        </svg>
+        <div class="anno" id="anno"></div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="controls">
+    <div class="tabs" id="tabs"></div>
+    <div class="spacer"></div>
+    <button class="navbtn" id="prevBtn">◀ 上一步</button>
+    <span class="step-label" id="stepLabel">步骤 <b>1</b> / 3</span>
+    <button class="navbtn" id="nextBtn">下一步 ▶</button>
+    <button class="navbtn primary" id="playBtn">⏵ 自动演示</button>
+  </footer>
+
+  <details class="proto">
+    <summary>渲染协议 <span class="tag">DrawProtocol</span> — 当前步骤下发到黑板的数据（点击展开）</summary>
+    <pre id="protoJson"></pre>
+  </details>
+
+  <div class="hint">下方输入框可自由对话测试黑板 · ← → 方向键 / 场景 Tab 查看剧本演示 · 每一条粉笔笔迹都由渲染协议 JSON 中的结构化数据驱动（路线 B：LLM 只填数据，不画图）</div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const svg=document.getElementById('boardSvg');
+const rootEl=svg.querySelector('#chalkcursor');
+let root;
+let timers=[];
+let interval=null;
+
+const C={ amber:'#e8b45a', rose:'#e08477', mauve:'#b79ac9', teal:'#7fb8a8', blue:'#8fb3d9', chalk:'#f2ede0', dim:'#b9c2bb' };
+const HAND='"Ma Shan Zheng","Noto Serif SC",serif';
+const SERIF='"Noto Serif SC",serif';
+
+/* ================= data: 3 scenarios × 3 templates ================= */
+const SCENARIOS=[
+{
+  id:'low', label:'情绪低谷',
+  templates:[
+  { type:'emotion_wheel', title:'情绪轮盘',
+    user:'最近总觉得很累，什么都不想做，觉得自己很差劲',
+    sys:'嗯，我在听。先不急着想办法——我陪你先把这些感受看清楚，好吗？',
+    anno:'这些感受同时存在，不是你的错。长期透支之后，身体会拉响这样的警报。',
+    data:{ emotions:[
+      {label:'疲惫',level:.88,color:'amber'},{label:'自我怀疑',level:.82,color:'rose'},
+      {label:'无望',level:.70,color:'mauve'},{label:'麻木',level:.60,color:'teal'},
+      {label:'自责',level:.78,color:'blue'} ] } },
+  { type:'cognitive_tree', title:'认知结构树',
+    user:'哪怕只是没完成一件小事，我也觉得自己彻底失败了',
+    sys:'你对自己说了一些很重的话。我们把它拆开看看，它经得起推敲吗？',
+    anno:'一次没完成，不等于你这个人失败。你只是在用最严厉的声音，责备一个已经很累的自己。',
+    data:{ trigger:'没完成计划里的一件事', thought:['我又搞砸了','我什么都做不好'], emotion:'自我攻击 → 无力感', reframe:'没完成 ≠ 失败，你的感受是真的' } },
+  { type:'stage_map', title:'阶段地图',
+    user:'不知道什么时候才会好，感觉看不到头',
+    sys:'看不到头是正常的——但路不是直线，你已经走了一段了。',
+    anno:'低谷不是终点，是你正在走的一段路。我在这里，陪你把这一段走完。',
+    data:{ nodes:['低谷','途中','微光'], current:0, from:'你现在在这里' } }
+  ]
+},
+{
+  id:'stress', label:'压力失眠',
+  templates:[
+  { type:'emotion_wheel', title:'情绪轮盘',
+    user:'睡前脑子里全是明天的事，越想越睡不着',
+    sys:'身体在用失眠提醒你：你撑得太久了。',
+    anno:'紧绷和自责，是身体在说：休息不是偷懒，是必要的修复。',
+    data:{ emotions:[
+      {label:'焦虑',level:.90,color:'amber'},{label:'紧绷',level:.85,color:'rose'},
+      {label:'内疚',level:.70,color:'mauve'},{label:'烦躁',level:.65,color:'teal'} ] } },
+  { type:'cognitive_tree', title:'认知结构树',
+    user:'一停下来就慌，觉得自己会被落下',
+    sys:'我们看看这个念头是怎么绊住你的。',
+    anno:'紧绷不会让你更高效，只会偷走你的睡眠和判断。',
+    data:{ trigger:'睡前反复想明天的任务', thought:['停下来就会被落下','我输不起'], emotion:'焦虑 → 身体紧绷', reframe:'停下来，是为了明天更有力' } },
+  { type:'stage_map', title:'阶段地图',
+    user:'想好好睡一觉，但好像控制不了',
+    sys:'睡眠不是靠用力能赢的。我们先只做一件事：允许自己放松。',
+    anno:'你现在最需要的，不是再撑一撑，而是允许自己停下来。',
+    data:{ nodes:['紧绷期','放松练习','修复'], current:0, from:'你在这里' } }
+  ]
+},
+{
+  id:'relate', label:'关系冲突',
+  templates:[
+  { type:'emotion_wheel', title:'情绪轮盘',
+    user:'TA 那么敷衍地回我，我觉得自己不被在乎',
+    sys:'被这样回应，很难不委屈。你的感受是真的。',
+    anno:'愤怒和委屈，是边界被触碰时，身体发出的真实声音。',
+    data:{ emotions:[
+      {label:'委屈',level:.86,color:'rose'},{label:'愤怒',level:.80,color:'amber'},
+      {label:'孤独',level:.72,color:'blue'},{label:'被否定',level:.76,color:'mauve'} ] } },
+  { type:'cognitive_tree', title:'认知结构树',
+    user:'我是不是不配被认真对待',
+    sys:'把这一句拆开看看，它是不是在放大什么？',
+    anno:'一次敷衍，不等于「不被在乎」。但你的感受，值得先被安放。',
+    data:{ trigger:'对方一次敷衍的回应', thought:['TA 不在乎我','我不配被认真对待'], emotion:'受伤 → 想退缩', reframe:'一次敷衍 ≠ 不被在乎' } },
+  { type:'stage_map', title:'阶段地图',
+    user:'想表达，又怕吵架，干脆不说了',
+    sys:'先安放好自己的情绪，再去说想说的话——顺序很重要。',
+    anno:'先照顾自己的感受，再谈对错。你的边界，值得被守住。',
+    data:{ nodes:['冲突','情绪平复','表达与边界'], current:0, from:'你在这里' } }
+  ]
+}];
+
+/* ================= sketch primitives (粉笔手绘) ================= */
+let items=[];
+
+function el(name,attrs,parent=root){
+  const e=document.createElementNS(NS,name);
+  for(const k in attrs)e.setAttribute(k,attrs[k]);
+  parent.appendChild(e); return e;
+}
+function addPrim(e,o={}){
+  e.classList.add('node'); if(o.draw)e.classList.add('dash');
+  items.push({el:e,delay:o.delay||0,cursor:o.cursor||null});
+}
+function roughLine(x1,y1,x2,y2,o={}){
+  const dist=Math.hypot(x2-x1,y2-y1);
+  const steps=Math.max(2,Math.round(dist/24));
+  let d='';
+  for(let i=0;i<=steps;i++){
+    const t=i/steps, x=x1+(x2-x1)*t, y=y1+(y2-y1)*t;
+    if(i>0&&i<steps){ /* jitter */ }
+    d+=(i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1);
+  }
+  const p=el('path',{d,stroke:o.stroke||C.chalk,'stroke-width':o.width||2,'fill':'none',
+    'stroke-linecap':'round','stroke-linejoin':'round'});
+  addPrim(p,{draw:true,delay:o.delay||0,cursor:o.cursor||[(x1+x2)/2,(y1+y2)/2]});
+  return p;
+}
+function roughCircle(cx,cy,r,o={}){
+  const rr=r+(Math.random()-.5)*1.6;
+  const e=el('ellipse',{cx,cy,rx:rr,ry:rr*(1+(Math.random()-.5)*.05),
+    fill:o.fill||'none',stroke:o.stroke||C.chalk,'stroke-width':o.width||2});
+  addPrim(e,{delay:o.delay||0,cursor:[cx,cy]});
+  return e;
+}
+function roughEllipse(cx,cy,rx,ry,o={}){
+  const e=el('ellipse',{cx,cy,rx:rx+(Math.random()-.5)*1.4,ry:ry+(Math.random()-.5)*1.4,
+    fill:o.fill||'none',stroke:o.stroke||C.chalk,'stroke-width':o.width||2,
+    'stroke-dasharray':o.dashed?'7 6':undefined});
+  addPrim(e,{delay:o.delay||0,cursor:[cx,cy]});
+  return e;
+}
+function chalkText(x,y,str,o={}){
+  const t=el('text',{x,y,'text-anchor':o.anchor||'middle',
+    'font-size':o.size||17,'fill':o.color||C.chalk,'font-family':o.font||HAND,
+    'letter-spacing':'.03em'});
+  if(o.rotate)t.setAttribute('transform',`rotate(${o.rotate} ${x} ${y})`);
+  t.textContent=str;
+  addPrim(t,{delay:o.delay||0,cursor:o.cursor||[x,y]});
+  return t;
+}
+
+/* ================= template renderers ================= */
+function renderEmotionWheel(d){
+  const cx=400, cy=250, R=150;
+  roughCircle(cx,cy,30,{delay:.2,stroke:C.chalk,width:2.4});
+  chalkText(cx,cy, '此刻的我', {delay:.45,size:15,color:C.chalk});
+  const n=d.emotions.length;
+  d.emotions.forEach((em,i)=>{
+    const ang=-90+i*(360/n)*Math.PI/180;
+    const r=88+em.level*72;
+    const x=cx+Math.cos(ang)*r, y=cy+Math.sin(ang)*r;
+    const col=C[em.color];
+    roughLine(cx,cy,x,y,{delay:.7+i*.6,stroke:col,width:1.6});
+    const rNode=13+em.level*11;
+    roughCircle(x,y,rNode,{delay:1.05+i*.6,stroke:col,width:2.4,fill:col+'2e'});
+    const lx=x, ly=y+rNode+26;
+    chalkText(lx,ly,em.label,{delay:1.25+i*.6,size:16,color:col,rotate:(Math.random()-.5)*7});
+  });
+}
+function renderTree(d){
+  // trigger
+  roughEllipse(400,92,128,28,{delay:.35,stroke:C.chalk,width:2});
+  chalkText(400,97,d.trigger,{delay:.55,size:15,color:C.chalk});
+  roughLine(400,120,400,150,{delay:.85,stroke:C.dim,width:1.8});
+  // thought
+  roughEllipse(400,205,150,42,{delay:1.05,stroke:C.rose,width:2.2});
+  chalkText(400,196,d.thought[0],{delay:1.3,size:16,color:C.rose});
+  chalkText(400,222,d.thought[1],{delay:1.42,size:16,color:C.rose});
+  roughLine(400,247,400,276,{delay:1.65,stroke:C.dim,width:1.8});
+  // emotion
+  roughEllipse(400,330,118,30,{delay:1.85,stroke:C.amber,width:2});
+  chalkText(400,335,d.emotion,{delay:2.1,size:15,color:C.amber});
+  // reframe
+  roughLine(548,205,612,205,{delay:2.45,stroke:C.teal,width:1.8,dashed:true});
+  roughEllipse(700,205,92,44,{delay:2.6,stroke:C.teal,width:2.2,fill:'rgba(127,184,168,.08)'});
+  chalkText(700,183,'重新看见',{delay:2.8,size:13,color:C.teal});
+  chalkText(700,212,d.reframe.split('，')[0],{delay:2.95,size:14.5,color:C.teal});
+  chalkText(700,234,d.reframe.split('，')[1]||'',{delay:3.05,size:13,color:C.dim});
+}
+function renderMap(d){
+  // wavy path 低谷→微光
+  const path=el('path',{d:'M120 400 Q290 430 420 330 Q520 250 720 195',fill:'none',
+    stroke:C.chalk,'stroke-width':2.4,'stroke-linecap':'round'});
+  addPrim(path,{draw:true,delay:.4,cursor:[420,330]});
+  // dotted continuation beyond light
+  const ahead=el('path',{d:'M720 195 Q820 160 880 150',fill:'none',stroke:C.chalk,
+    'stroke-width':2,'stroke-dasharray':'3 9','stroke-linecap':'round',opacity:.5});
+  addPrim(ahead,{delay:2.1});
+  // nodes along path
+  const pts=[{x:120,y:400},{x:420,y:330},{x:720,y:195}];
+  pts.forEach((p,i)=>{
+    const delay=.9+i*.55;
+    roughCircle(p.x,p.y, i===0?16:14,{delay,stroke:i===0?C.rose:C.chalk,width:2.2,fill:i===0?'rgba(224,132,119,.18)':undefined});
+    chalkText(p.x,p.y+34,d.nodes[i],{delay:delay+.22,size:17,color:i===0?C.rose:C.chalk});
+  });
+  // 微光
+  roughCircle(728,183,26,{delay:2.0,stroke:C.amber,width:2,fill:'rgba(232,180,90,.16)'});
+  chalkText(762,178,'微光',{delay:2.25,size:14,color:C.amber});
+  // current marker
+  chalkText(60,432,'① 你在这里',{delay:1.35,size:15,color:C.rose,anchor:'start'});
+}
+
+/* ================= orchestration ================= */
+let state={scenario:0,step:0};
+const els={ svg, board:document.querySelector('.board'), chatScroll:document.getElementById('chatScroll'),
+  anno:document.getElementById('anno'), tabs:document.getElementById('tabs'),
+  stepLabel:document.querySelector('#stepLabel'), proto:document.getElementById('protoJson'),
+  prevBtn:document.getElementById('prevBtn'), nextBtn:document.getElementById('nextBtn'), playBtn:document.getElementById('playBtn') };
+const templateRenderers={ emotion_wheel:renderEmotionWheel, cognitive_tree:renderTree, stage_map:renderMap };
+
+function clearTimers(){ timers.forEach(clearTimeout); timers=[]; if(interval){clearInterval(interval);interval=null;} }
+function chalkGoto(pts){ const g=rootEl; g.style.opacity=1; const cs=g.children;
+  if(cs[0])cs[0].setAttribute('cx',pts[0]); if(cs[0])cs[0].setAttribute('cy',pts[1]);
+  if(cs[1])cs[1].setAttribute('cx',pts[0]); if(cs[1])cs[1].setAttribute('cy',pts[1]); }
+function chalkHide(){ rootEl.style.opacity=0; }
+
+function renderStep(){
+  clearTimers();
+  // fresh drawing root
+  while(svg.lastChild!==rootEl) svg.removeChild(svg.lastChild);
+  root=document.createElementNS(NS,'g'); root.setAttribute('filter','url(#chalk)'); svg.appendChild(root);
+  items=[];
+  const sc=SCENARIOS[state.scenario], t=sc.templates[state.step];
+
+  templateRenderers[t.type](t.data);
+  // annotation
+  els.anno.textContent=t.anno; els.anno.classList.remove('on');
+  const annoDelay=Math.max(...items.map(i=>i.delay))+1.0;
+  timers.push(setTimeout(()=>els.anno.classList.add('on'), annoDelay*1000));
+
+  // schedule drawing
+  items.forEach(it=>{
+    timers.push(setTimeout(()=>{
+      it.el.classList.add('on');
+      if(it.cursor) chalkGoto(it.cursor);
+    }, it.delay*1000));
+  });
+  const end=Math.max(...items.map(i=>i.delay))+1.6;
+  timers.push(setTimeout(chalkHide,end*1000));
+
+  // chat transcript
+  renderChat(sc,state.step);
+  // header + protocol
+  els.stepLabel.innerHTML=`步骤 <b>${state.step+1}</b> / ${sc.templates.length} · ${t.title}`;
+  els.proto.textContent=JSON.stringify({
+    type:t.type, step:state.step+1, scenario:sc.label, model_output:'<LLM 只输出结构化数据>',
+    data:t.data
+  },null,2);
+  els.prevBtn.disabled=state.step===0;
+  els.nextBtn.disabled=state.step===sc.templates.length-1;
+}
+
+function renderChat(sc,upto){
+  els.chatScroll.innerHTML='';
+  for(let s=0;s<=upto;s++){
+    const t=sc.templates[s];
+    const u=document.createElement('div'); u.className='msg user'; u.innerHTML=`<span class="who">你</span>${t.user}`;
+    const th=document.createElement('div'); th.className='thinking-line'; th.innerHTML=`<span class="dot"></span>黑板起笔 · 绘制「${t.title}」`;
+    const sy=document.createElement('div'); sy.className='msg sys'; sy.innerHTML=`<span class="who">陪伴者</span>${t.sys}`;
+    [u,th,sy].forEach((n,i)=>els.chatScroll.appendChild(n));
+    requestAnimationFrame(()=>{ u.classList.add('on'); setTimeout(()=>th.classList.add('on'),320); setTimeout(()=>sy.classList.add('on'),700); });
+  }
+  els.chatScroll.scrollTop=els.chatScroll.scrollHeight;
+}
+
+function buildTabs(){
+  SCENARIOS.forEach((sc,i)=>{
+    const b=document.createElement('button'); b.className='tab'; b.textContent=sc.label;
+    b.onclick=()=>{ state.scenario=i; state.step=0; sync(); };
+    els.tabs.appendChild(b);
+  });
+  sync();
+}
+function sync(){
+  [...els.tabs.children].forEach((b,i)=>b.classList.toggle('active',i===state.scenario));
+  renderStep();
+}
+
+/* navigation */
+els.prevBtn.onclick=()=>{ if(state.step>0){state.step--;sync();} };
+els.nextBtn.onclick=()=>{ const sc=SCENARIOS[state.scenario];
+  if(state.step<sc.templates.length-1){state.step++;sync();} };
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='SUMMARY')return;
+  if(e.key==='ArrowLeft')els.prevBtn.onclick();
+  if(e.key==='ArrowRight')els.nextBtn.onclick();
+});
+els.playBtn.onclick=()=>{
+  if(interval){ clearInterval(interval); interval=null; els.playBtn.textContent='⏵ 自动演示'; return; }
+  els.playBtn.textContent='⏸ 停止';
+  interval=setInterval(()=>{
+    const sc=SCENARIOS[state.scenario];
+    if(state.step<sc.templates.length-1){ state.step++; sync(); }
+    else{ clearInterval(interval); interval=null; els.playBtn.textContent='⏵ 自动演示'; }
+  },5600);
+};
+
+/* ================= free conversation (模拟推理引擎) ================= */
+const TEMPLATE_TITLES={ emotion_wheel:'情绪轮盘', cognitive_tree:'认知结构树', stage_map:'阶段地图' };
+const RULES=[
+{ test:/自杀|不想活|活不下去|撑不下去|解脱|结束自己|自残|伤害自己/,
+  mode:'crisis', firstFrame:'我在的。这句话很重要，我不会假装没听到。',
+  template:'stage_map',
+  data:{nodes:['现在','拨打热线','专业支持'], current:0, from:'你不是一个人'},
+  anno:'你说的这些话，值得被认真对待。现在请拨打心理援助热线 12356——那里有受过训练的人，24 小时都在。',
+  reply:'我不想只对你说"想开点"，因为那没有用。你现在需要的不是硬撑，是有人陪你走出这一步。请先联系 12356，或者告诉我，你愿意让我陪你聊聊，现在发生了什么吗？' },
+{ test:/累|疲惫|没力气|什么都不想做|好丧|没劲|没精神/,
+  mode:'wheel', firstFrame:'嗯，我在听。这个"累"，不是矫情。',
+  template:'emotion_wheel',
+  data:{emotions:[{label:'疲惫',level:.9,color:'amber'},{label:'无力',level:.8,color:'rose'},{label:'无望',level:.65,color:'mauve'},{label:'麻木',level:.55,color:'teal'}]},
+  anno:'累到"什么都不想做"，是身体在告诉你：你已经撑了很久。这不是懒惰。',
+  reply:'如果"累"是身体的警报，那你的警报已经响了很久了。今天不用强迫自己做任何事——先允许自己只是"在"这里。' },
+{ test:/焦虑|睡不着|失眠|担心|慌|紧张|考试|压力|ddl|任务|工作|论文/,
+  mode:'tree', firstFrame:'先别急着赶它走——焦虑来了，我们看看它在怕什么。',
+  template:'cognitive_tree',
+  data:{trigger:'那件让你焦虑的事', thought:['万一搞砸了怎么办','我承受不了这个结果'], emotion:'焦虑 → 身体紧绷', reframe:'焦虑在提醒你在乎，不是在预告失败'},
+  anno:'焦虑不是你的敌人——它在说：这件事对你很重要。',
+  reply:'你现在的紧绷，是因为把"可能"当成了"一定会"。我们把它拆开看看：最坏的结果，真的像你想的那么高概率发生吗？' },
+{ test:/难过|想哭|伤心|委屈|难受/,
+  mode:'wheel', firstFrame:'听起来你心里压了很多东西。',
+  template:'emotion_wheel',
+  data:{emotions:[{label:'难过',level:.9,color:'rose'},{label:'委屈',level:.8,color:'mauve'},{label:'孤独',level:.7,color:'blue'},{label:'麻木',level:.5,color:'teal'}]},
+  anno:'眼泪是有源头的。你的难过，值得被看见。',
+  reply:'想哭就哭一会儿，不用解释。你不需要在我面前"坚强"——在这里，你可以只是你自己。' },
+{ test:/生气|愤怒|烦死了|讨厌|不爽|气死/,
+  mode:'wheel', firstFrame:'你现在有资格生气。',
+  template:'emotion_wheel',
+  data:{emotions:[{label:'愤怒',level:.9,color:'amber'},{label:'烦躁',level:.8,color:'rose'},{label:'被冒犯',level:.75,color:'mauve'},{label:'委屈',level:.7,color:'blue'}]},
+  anno:'愤怒是边界被触碰时，身体发出的声音。它在保护你。',
+  reply:'愤怒不是坏情绪——它是你的内心在说"我被越过了"。先别急着压下去，我们一起看看它想保护什么。' },
+{ test:/TA|他|她|对象|朋友|爸妈|妈妈|爸爸|分手|室友|同事|闺蜜|男友|女友/,
+  mode:'tree', firstFrame:'关系里的事，最伤人也最绕。我们慢慢捋。',
+  template:'cognitive_tree',
+  data:{trigger:'对方的一次回应或一个行为', thought:['TA 是不是不在乎我','我是不是不被需要'], emotion:'受伤 → 想退缩', reframe:'对方的行为 ≠ 你的价值'},
+  anno:'对方的行为不等于你的价值——这句话很难，但我们一起练。',
+  reply:'被在乎的人伤到，委屈是真的。但先别急着下"TA 不爱我"的结论——我们先把"TA 做了什么"和"你感受到了什么"分开看，好吗？' },
+{ test:/你好|hi|hello|嗨|早安|晚安|谢谢|哈哈|在吗|辛苦了/,
+  mode:'simple', firstFrame:'我在的，很高兴见到你。',
+  template:null, data:null, anno:'',
+  reply:'今天过得怎么样？不急着说大事，想聊什么都可以，我都在。' },
+{ test:/.*/,
+  mode:'wheel', firstFrame:'我在听，你继续说。',
+  template:'emotion_wheel',
+  data:{emotions:[{label:'说不清',level:.6,color:'blue'},{label:'有点堵',level:.7,color:'mauve'},{label:'需要被听见',level:.8,color:'amber'}]},
+  anno:'有些感受还没有名字，没关系，我们一起给它找个名字。',
+  reply:'你刚刚说的，我收到了。还没想清楚的感觉也是感觉——我们一点一点来。' }
+];
+
+function matchRule(text){ for(const r of RULES){ if(r.test.test(text)) return r; } return RULES[RULES.length-1]; }
+
+function freshDraw(tplType,data){
+  clearTimers();
+  while(svg.lastChild!==rootEl) svg.removeChild(svg.lastChild);
+  root=document.createElementNS(NS,'g'); root.setAttribute('filter','url(#chalk)'); svg.appendChild(root);
+  items=[];
+  templateRenderers[tplType](data);
+  els.anno.classList.remove('on');
+  const annoDelay=Math.max(...items.map(i=>i.delay))+1.0;
+  timers.push(setTimeout(()=>els.anno.classList.add('on'),annoDelay*1000));
+  items.forEach(it=>{ timers.push(setTimeout(()=>{ it.el.classList.add('on'); if(it.cursor) chalkGoto(it.cursor); }, it.delay*1000)); });
+  const end=Math.max(...items.map(i=>i.delay))+1.6;
+  timers.push(setTimeout(chalkHide,end*1000));
+  els.stepLabel.innerHTML=`自由对话 · 绘制「${TEMPLATE_TITLES[tplType]}」`;
+  els.proto.textContent=JSON.stringify({type:tplType, step:'free', scenario:'自由对话', data},null,2);
+}
+
+function appendMsg(who,text,label){
+  const m=document.createElement('div'); m.className='msg '+who;
+  m.innerHTML=`<span class="who">${label||(who==='user'?'你':'陪伴者')}</span>${text}`;
+  els.chatScroll.appendChild(m);
+  requestAnimationFrame(()=>m.classList.add('on'));
+  els.chatScroll.scrollTop=els.chatScroll.scrollHeight;
+  return m;
+}
+function appendThinking(label){
+  const th=document.createElement('div'); th.className='thinking-line';
+  th.innerHTML=`<span class="dot"></span>黑板起笔 · 绘制「${label}」`;
+  els.chatScroll.appendChild(th);
+  requestAnimationFrame(()=>th.classList.add('on'));
+  els.chatScroll.scrollTop=els.chatScroll.scrollHeight;
+}
+function appendHotline(){
+  const h=document.createElement('div'); h.className='hotline';
+  h.innerHTML=`<b>心理援助热线 12356</b> · 24 小时<br>你说的话很重要，请现在联系受过训练的专业人员。我会一直在这里，直到你安全。`;
+  els.chatScroll.appendChild(h);
+  requestAnimationFrame(()=>h.classList.add('on'));
+  els.chatScroll.scrollTop=els.chatScroll.scrollHeight;
+}
+
+function sendMessage(){
+  const input=document.getElementById('chatInput');
+  const text=input.value.trim(); if(!text) return;
+  input.value='';
+  appendMsg('user',text);
+  const rule=matchRule(text);
+  appendMsg('sys',rule.firstFrame, rule.mode==='crisis'?'陪伴者 · 郑重':'陪伴者');
+  if(rule.template){
+    appendThinking(TEMPLATE_TITLES[rule.template]);
+    els.anno.textContent=rule.anno; els.anno.classList.remove('on');
+    freshDraw(rule.template,rule.data);
+    timers.push(setTimeout(()=>appendMsg('sys',rule.reply),1600));
+    if(rule.mode==='crisis') timers.push(setTimeout(appendHotline,2000));
+  }else{
+    els.anno.textContent=rule.anno||''; els.anno.classList.remove('on');
+    timers.push(setTimeout(()=>appendMsg('sys',rule.reply),600));
+  }
+}
+document.getElementById('sendBtn').onclick=sendMessage;
+document.getElementById('chatInput').addEventListener('keydown',e=>{ if(e.key==='Enter') sendMessage(); });
+
+buildTabs();
+</script>
+</body>
+</html>

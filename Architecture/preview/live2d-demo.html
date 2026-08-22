@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live2D Demo · 心栖立绘</title>
+<style>
+:root{--primary:#8BAE97;--ink:#3E3A35;--muted:#6E675E;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  min-height:100vh;color:var(--ink);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:radial-gradient(80% 60% at 50% 0%,rgba(139,174,151,.25),transparent 60%),linear-gradient(135deg,#EFEAF4,#F6EFE3 50%,#FAF4E6);
+  display:flex;align-items:center;justify-content:center;flex-direction:column;padding:30px;
+}
+.stage{position:relative;width:min(420px,92vw);height:520px;border-radius:26px;background:linear-gradient(160deg,rgba(255,255,255,.5),rgba(255,255,255,.25));backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.7);box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 30px 80px -30px rgba(62,58,53,.35);overflow:hidden;}
+canvas{width:100%;height:100%;display:block;}
+.status{position:absolute;top:16px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+.status .dot{width:8px;height:8px;border-radius:50%;background:#C8A24C;animation:pulse 1.4s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.status.ok .dot{background:var(--primary);}
+.status.err .dot{background:#C9806B;}
+.hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);font-size:12px;color:var(--muted);text-align:center;width:90%;}
+.controls{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center;}
+.controls button{border:1px solid rgba(139,174,151,.5);background:rgba(255,255,255,.7);color:var(--ink);padding:9px 18px;border-radius:999px;cursor:pointer;font-size:12.5px;font-family:inherit;transition:all .25s;backdrop-filter:blur(8px);}
+.controls button:hover{background:var(--primary);color:#fff;transform:translateY(-1px);}
+.controls button:disabled{opacity:.4;cursor:default;}
+.note{font-size:11px;color:var(--muted);margin-top:14px;text-align:center;line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="stage">
+  <canvas id="canvas"></canvas>
+  <div class="status" id="status"><span class="dot"></span>正在唤醒小栖…</div>
+  <div class="hint" id="hint">加载 Live2D 模型（Haru · 官方免费素材）</div>
+</div>
+<div class="controls">
+  <button id="btnWave">👋 打招呼</button>
+  <button id="btnTap">🖐 拍拍头</button>
+  <button id="btnSmile">😊 微笑</button>
+  <button id="btnCry">🥺 难过</button>
+</div>
+<div class="note">模型：Live2D 官方 Haru（Free Material License）· 库：pixi-live2d-display<br>加载失败会自动回退到 SVG 占位角色（不影响舞台式布局预览）</div>
+
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js"></script>
+<script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/cubism4.min.js"></script>
+<script>
+const HARU = "https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json";
+const statusEl = document.getElementById('status'), hintEl = document.getElementById('hint');
+let model = null;
+
+window.PIXI = window.PIXI || {};
+
+async function init(){
+  const canvas = document.getElementById('canvas');
+  const app = new PIXI.Application({ view: canvas, transparent: true, autoStart: true, resizeTo: canvas.parentElement, antialias: true });
+  try {
+    const m = await PIXI.live2d.Live2DModel.from(HARU);
+    m.anchor.set(0.5, 0.9);
+    m.scale.set(1);
+    app.stage.addChild(m);
+    m.x = app.screen.width / 2;
+    m.y = app.screen.height + 40;
+    m.scale.set(Math.min(app.screen.width, app.screen.height) / 500);
+    model = m;
+    statusEl.classList.add('ok'); statusEl.innerHTML = '<span class="dot"></span>小栖已唤醒';
+    hintEl.textContent = 'Live2D Haru 已加载 · 点击"打招呼/拍拍头/表情"互动';
+    // 交互
+    m.on('hit', areas => { if (areas.includes('Body')) { try{m.motion('TapBody');}catch{} } });
+    enable(true);
+  } catch(err) {
+    statusEl.classList.add('err'); statusEl.innerHTML = '<span class="dot"></span>Live2D 加载失败，回退占位角色';
+    hintEl.textContent = '网络/CDN 受限，显示 SVG 占位 · 不影响舞台式布局预览';
+    showFallback();
+  }
+}
+function showFallback(){
+  const stage = document.querySelector('.stage');
+  stage.innerHTML = `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+    <svg width="180" height="230" viewBox="0 0 120 150" xmlns="http://www.w3.org/2000/svg">
+      <path d="M22 58 Q22 16 60 16 Q98 16 98 58 L93 62 Q84 30 60 29 Q36 31 27 62 Z" fill="#8B5E3C"/>
+      <ellipse cx="60" cy="72" rx="32" ry="35" fill="#F5DCC8"/>
+      <ellipse cx="48" cy="70" rx="5.5" ry="6.5" fill="#3A2E26"/><ellipse cx="72" cy="70" rx="5.5" ry="6.5" fill="#3A2E26"/>
+      <circle cx="50" cy="68" r="1.6" fill="#fff"/><circle cx="74" cy="68" r="1.6" fill="#fff"/>
+      <path d="M47 85 Q60 95 73 85" stroke="#C9705B" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+      <path d="M32 133 Q29 102 60 102 Q91 102 88 133 L88 148 L32 148 Z" fill="#E8C9B0"/>
+    </svg></div>`;
+  statusEl.classList.add('err'); statusEl.innerHTML = '<span class="dot"></span>占位角色（SVG）';
+}
+function enable(on){ document.querySelectorAll('.controls button').forEach(b=>b.disabled=!on); }
+function expr(name){
+  if(!model) return;
+  try { model.expression(name); } catch(e){ try{ model.expression(0); }catch{} }
+}
+document.getElementById('btnWave').onclick = ()=>{ if(model){ try{ model.motion('Idle', 1); }catch{} } };
+document.getElementById('btnTap').onclick  = ()=>{ if(model){ try{ model.motion('TapBody'); }catch{} } };
+document.getElementById('btnSmile').onclick = ()=>expr('Angry');   // Haru 无标准表情名，fallback 到 0
+document.getElementById('btnCry').onclick   = ()=>expr('Sleepy');
+init();
+</script>
+</body>
+</html>

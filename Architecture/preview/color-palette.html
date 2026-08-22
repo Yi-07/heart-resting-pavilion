@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>治愈系配色预览 · 心理健康助手</title>
+<style>
+:root{
+  --font-sans:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  --font-serif:"Noto Serif SC","Songti SC","STSong",serif;
+}
+/* ── 主题变量（默认=综合推荐） ── */
+[data-theme="recommended"]{
+  --bg:#FAF6EF; --bg-2:#F4EDE1; --card:#FFFDF8; --card-2:#FBF7EF;
+  --primary:#8BAE97; --primary-deep:#6E937C;
+  --accent:#D58A63; --accent-2:#8FA9C6;
+  --text:#3E3A35; --muted:#8A847B; --border:#EDE6DB;
+  --board:#3A4638; --chalk:#F3EBDD; --board-sub:#9FB3A5;
+  --glow:rgba(184,167,201,.35);
+  --shadow:0 1px 2px rgba(62,58,53,.05),0 12px 40px -20px rgba(62,58,53,.18);
+  --shadow-soft:0 2px 12px rgba(62,58,53,.06);
+  --radius:16px;
+  --font-head:var(--font-serif);
+}
+[data-theme="classic"]{
+  --bg:#F7F1E9; --bg-2:#F0E7DA; --card:#FCF9F3; --card-2:#F7F1E9;
+  --primary:#A9705C; --primary-deep:#8C5B49;
+  --accent:#D9B27E; --accent-2:#9FB4C7;
+  --text:#4A4039; --muted:#8A7E72; --border:#E8DFD2;
+  --board:#5A5248; --chalk:#F5EDE2; --board-sub:#B5AEA2;
+  --glow:rgba(169,112,92,.28);
+  --shadow:0 1px 2px rgba(74,64,57,.06),0 12px 40px -22px rgba(74,64,57,.25);
+  --shadow-soft:0 2px 10px rgba(74,64,57,.08);
+  --radius:14px;
+  --font-head:var(--font-serif);
+}
+[data-theme="modern"]{
+  --bg:#F7F8FA; --bg-2:#EEF0F4; --card:#FFFFFF; --card-2:#FAFAFC;
+  --primary:#6C7FA8; --primary-deep:#52688F;
+  --accent:#F0A98E; --accent-2:#6FB5A4;
+  --text:#232936; --muted:#6E7683; --border:#E6E8EC;
+  --board:#3C4756; --chalk:#EEF1F4; --board-sub:#A9B2BF;
+  --glow:rgba(108,127,168,.25);
+  --shadow:0 1px 2px rgba(35,41,54,.04),0 10px 30px -18px rgba(35,41,54,.2);
+  --shadow-soft:0 1px 4px rgba(35,41,54,.05);
+  --radius:12px;
+  --font-head:var(--font-sans);
+}
+[data-theme="future"]{
+  --bg:linear-gradient(160deg,#F5F3FB 0%,#EAF4F4 100%); --bg-2:linear-gradient(160deg,#EFEDF8,#E6F1F1);
+  --card:rgba(255,255,255,.55); --card-2:rgba(255,255,255,.72);
+  --primary:#A79BC0; --primary-deep:#8A7FA8;
+  --accent:#F0B8C8; --accent-2:#6FC9BE;
+  --text:#2B2835; --muted:#857E9C; --border:rgba(255,255,255,.5);
+  --board:#3A3F52; --chalk:#ECECF4; --board-sub:#9BA0B8;
+  --glow:rgba(167,155,192,.35);
+  --shadow:0 8px 32px -12px rgba(43,40,53,.15);
+  --shadow-soft:0 4px 16px rgba(43,40,53,.08);
+  --radius:20px;
+  --font-head:var(--font-sans);
+}
+/* 参考 · Dribbble LazyInterface（AI mental health app，2026-08-09 实抓色板）*/
+[data-theme="lazy"]{
+  --bg:#F0EFEE; --bg-2:#E9E7E5; --card:#FFFFFF; --card-2:#F6F5F3;
+  --primary:#B35437; --primary-deep:#5E2214;
+  --accent:#CC8B70; --accent-2:#AEBBB8;
+  --text:#0A0604; --muted:#615A55; --border:#E2DEDB;
+  --board:#2B211D; --chalk:#F0EFEE; --board-sub:#AEBBB8;
+  --glow:rgba(179,84,55,.22);
+  --shadow:0 1px 2px rgba(10,6,4,.05),0 12px 36px -20px rgba(10,6,4,.22);
+  --shadow-soft:0 2px 10px rgba(10,6,4,.06);
+  --radius:14px;
+  --font-head:var(--font-sans);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  min-height:100vh;font-family:var(--font-sans);-webkit-font-smoothing:antialiased;
+  color:var(--text);transition:background .5s,color .3s;
+}
+body::before{content:"";position:fixed;inset:0;background:var(--bg);z-index:-2;transition:background .5s;background-size:cover;}
+body::after{content:"";position:fixed;inset:0;background:var(--glow);opacity:.18;z-index:-1;transition:opacity .5s;pointer-events:none;}
+
+.wrap{max-width:1180px;margin:0 auto;padding:34px 28px 60px;}
+
+/* ── header ── */
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:26px;}
+.head h1{font-family:var(--font-head);font-size:26px;font-weight:700;letter-spacing:.03em;}
+.head h1 span{color:var(--primary);}
+.head .sub{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.7;}
+.theme-tabs{display:flex;gap:6px;flex-wrap:wrap;background:var(--card-2);padding:5px;border-radius:999px;border:1px solid var(--border);box-shadow:var(--shadow-soft);}
+.theme-tabs button{
+  border:0;background:transparent;color:var(--muted);font-family:var(--font-sans);font-size:12.5px;
+  padding:8px 15px;border-radius:999px;cursor:pointer;transition:all .25s;white-space:nowrap;
+}
+.theme-tabs button:hover{color:var(--text);}
+.theme-tabs button.active{background:var(--primary);color:#fff;box-shadow:0 4px 14px -4px var(--primary-deep);}
+
+/* ── grid ── */
+.grid{display:grid;grid-template-columns:300px 1fr;gap:22px;align-items:start;}
+@media(max-width:900px){.grid{grid-template-columns:1fr;}}
+
+/* ── 色板 panel ── */
+.panel{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:20px;transition:background .4s;
+}
+.panel h3{font-family:var(--font-head);font-size:15px;font-weight:700;margin-bottom:4px;}
+.panel .p-sub{font-size:11.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;}
+.swatches{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.sw{
+  border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;
+  border:1px solid var(--border);cursor:default;transition:transform .2s;
+}
+.sw:hover{transform:translateY(-2px);}
+.sw .dot{width:22px;height:22px;border-radius:50%;margin-bottom:4px;}
+.sw .n{font-size:11px;font-weight:600;}
+.sw .h{font-family:ui-monospace,Consolas,monospace;font-size:10px;color:var(--muted);}
+
+/* 规范列表 */
+.spec-list{margin-top:16px;border-top:1px solid var(--border);padding-top:12px;}
+.spec-list .row{display:flex;gap:8px;font-size:11.5px;color:var(--muted);padding:4px 0;line-height:1.5;}
+.spec-list .row b{color:var(--text);font-weight:600;min-width:44px;}
+
+/* ── UI mock ── */
+.mock{
+  position:relative;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden;transition:background .4s;
+}
+.mock .mock-inner{position:relative;aspect-ratio:16/10;display:flex;flex-direction:column;padding:12px;gap:10px;}
+
+/* toolbar */
+.toolbar{display:flex;align-items:center;gap:4px;padding:7px 10px;border-radius:10px;background:var(--card-2);border:1px dashed var(--border);}
+.toolbar .tb{font-size:10.5px;color:var(--muted);padding:4px 9px;border-radius:6px;white-space:nowrap;font-family:ui-monospace,monospace;}
+.toolbar .tb.hl{color:var(--primary);}
+.toolbar .sp{flex:1;}
+.toolbar .mood{font-size:10.5px;color:var(--primary);padding:4px 9px;background:var(--primary);color:#fff;border-radius:999px;}
+
+/* body */
+.mock-body{flex:1;display:flex;gap:10px;min-height:0;}
+/* blackboard */
+.board{
+  flex:1;border-radius:12px;background:var(--board);position:relative;overflow:hidden;
+  box-shadow:inset 0 2px 30px rgba(0,0,0,.25);transition:background .4s;
+}
+.board::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 80% at 45% 30%,transparent 60%,rgba(0,0,0,.28));}
+.board .bt{position:absolute;left:18px;top:14px;font-family:var(--font-head);font-size:15px;color:var(--chalk);letter-spacing:.05em;}
+.board .bline{position:absolute;left:18px;top:44px;width:60%;height:2px;background:var(--board-sub);opacity:.6;border-radius:2px;}
+.board .bline::after{content:"";position:absolute;inset:0;background:var(--chalk);opacity:.5;transform:scaleX(var(--draw,0));transform-origin:left;transition:transform 2s ease;animation:draw 2.5s ease forwards;}
+@keyframes draw{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.board .bnode{
+  position:absolute;width:64px;height:64px;border-radius:50%;
+  border:2px solid var(--chalk);opacity:.75;
+  display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--chalk);
+}
+.board .bnode.a{left:20px;bottom:22px;}
+.board .bnode.b{right:20px;bottom:22px;}
+.board .bnode.c{left:50%;bottom:22px;transform:translateX(-50%);}
+.board .bnote{position:absolute;left:18px;bottom:14px;font-size:10px;color:var(--board-sub);letter-spacing:.03em;}
+.board .rail{position:absolute;right:8px;top:12px;bottom:12px;width:3px;background:rgba(255,255,255,.08);border-radius:2px;}
+.board .rail .th{position:absolute;left:-1px;width:5px;height:26%;background:var(--accent);opacity:.7;border-radius:2px;top:25%;}
+
+/* live2d + bubble */
+.live2d{position:relative;width:96px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:6px;}
+.l2d-fig{
+  width:70px;height:92px;border-radius:30px 30px 14px 14px;
+  background:linear-gradient(180deg,var(--primary),var(--primary-deep));position:relative;
+  box-shadow:0 0 26px var(--glow);
+}
+.l2d-fig::before{content:"";position:absolute;left:50%;top:30%;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.25);transform:translateX(-50%);}
+.l2d-fig::after{content:"";position:absolute;left:50%;top:62%;width:44px;height:20px;border-radius:10px;background:rgba(255,255,255,.2);transform:translateX(-50%);}
+.l2d-fig .breath{position:absolute;inset:-8px;border-radius:50%;border:1.5px solid var(--accent);opacity:.5;animation:breathe 4s ease-in-out infinite;}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.4}50%{transform:scale(1.15);opacity:.15}}
+.l2d-name{font-size:9.5px;color:var(--muted);margin-top:6px;}
+.bubble{
+  position:absolute;right:100%;top:12px;width:150px;padding:9px 12px;
+  background:var(--card-2);border:1px solid var(--border);border-radius:12px 12px 3px 12px;
+  font-size:11px;line-height:1.6;color:var(--text);box-shadow:var(--shadow-soft);
+  opacity:0;animation:fadeup 1s ease forwards;
+}
+.bubble::after{content:"";position:absolute;right:-6px;bottom:12px;width:0;height:0;border-left:7px solid var(--card-2);border-top:4px solid transparent;border-bottom:4px solid transparent;}
+@keyframes fadeup{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* agent chain */
+.chain{width:150px;flex:none;display:flex;flex-direction:column;gap:6px;background:var(--card-2);border-radius:10px;padding:8px;border:1px solid var(--border);}
+.chain .ch{font-family:ui-monospace,monospace;font-size:9px;color:var(--primary);letter-spacing:.06em;padding:2px 4px;}
+.chain .cn{padding:6px 8px;border-radius:7px;background:var(--card);border:1px solid var(--border);font-size:10px;line-height:1.5;}
+.chain .cn b{font-size:10.5px;}
+.chain .cn .s{font-family:ui-monospace,monospace;font-size:8.5px;color:var(--muted);display:block;margin-top:2px;}
+.chain .cn .s.on{color:var(--primary);}
+.chain .cn .s.dim{color:var(--muted);opacity:.6;}
+
+/* input */
+.inputbar{display:flex;gap:8px;align-items:center;padding:8px;border-radius:10px;background:var(--card-2);border:1px solid var(--border);}
+.inputbar input{flex:1;border:0;background:transparent;color:var(--text);font-family:var(--font-sans);font-size:12px;outline:none;padding:6px 8px;}
+.inputbar input::placeholder{color:var(--muted);}
+.inputbar .send{border:0;background:var(--primary);color:#fff;font-size:11.5px;padding:8px 16px;border-radius:999px;cursor:pointer;box-shadow:0 3px 12px -4px var(--primary-deep);transition:transform .2s;}
+.inputbar .send:hover{transform:translateY(-1px);}
+
+/* ── 情绪色 ── */
+.emotions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+.emotion{font-size:10px;padding:4px 9px;border-radius:999px;color:#5a5248;}
+.emotion span{display:block;font-size:9px;color:rgba(90,82,72,.6);}
+
+/* note */
+.note{margin-top:20px;font-size:11.5px;color:var(--muted);line-height:1.8;}
+.note b{color:var(--primary);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>治愈系配色预览 · <span>心理健康助手</span></h1>
+      <div class="sub">人文关怀 · 柔和清新简约 · 三视角取舍取优 —— 点上方切换方案，看色板与界面应用</div>
+    </div>
+    <div class="theme-tabs" id="tabs">
+      <button data-theme="recommended" class="active">综合推荐</button>
+      <button data-theme="lazy">参考 · Dribbble</button>
+      <button data-theme="classic">古典 · 莫兰迪</button>
+      <button data-theme="modern">当代 · 留白</button>
+      <button data-theme="future">未来 · 微光</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- 色板 panel -->
+    <div class="panel">
+      <h3 id="p-name">综合推荐</h3>
+      <div class="p-sub" id="p-desc"></div>
+      <div class="swatches" id="swatches"></div>
+
+      <div class="spec-list">
+        <div class="row"><b>字体</b><span id="p-font"></span></div>
+        <div class="row"><b>圆角</b><span id="p-radius"></span></div>
+        <div class="row"><b>动效</b><span id="p-motion"></span></div>
+        <div class="row"><b>黑板</b><span id="p-board"></span></div>
+      </div>
+
+      <div class="emotions" id="emotions"></div>
+    </div>
+
+    <!-- UI mock -->
+    <div class="mock">
+      <div class="mock-inner">
+        <!-- toolbar -->
+        <div class="toolbar">
+          <span class="tb hl">≡ 工具箱</span>
+          <span class="tb">方案导出</span>
+          <span class="tb">会话档案</span>
+          <span class="tb">模型配置</span>
+          <span class="sp"></span>
+          <span class="mood">情绪 · 平静</span>
+        </div>
+
+        <!-- body -->
+        <div class="mock-body">
+          <!-- blackboard -->
+          <div class="board">
+            <div class="bt">认知结构树</div>
+            <div class="bline"></div>
+            <div class="bnode a">疲惫</div>
+            <div class="bnode b">微光</div>
+            <div class="bnode c">途中</div>
+            <div class="bnote">✎ 低谷不是终点，是你正在走的一段路</div>
+            <div class="rail"><div class="th"></div></div>
+          </div>
+
+          <!-- live2d + bubble -->
+          <div class="live2d">
+            <div class="bubble">嗯，我在听。<br>先不急着想办法——<br>我陪你先把这些感受看清楚。</div>
+            <div class="l2d-fig"><div class="breath"></div></div>
+            <div class="l2d-name">Live2D · 关切</div>
+          </div>
+
+          <!-- agent chain -->
+          <div class="chain">
+            <div class="ch">▸ AGENT 执行链</div>
+            <div class="cn"><b>监督者</b><span class="s on">✓ 路由：复杂 → 知识分析师</span></div>
+            <div class="cn"><b>知识分析师</b><span class="s on">◉ 检索中 · Chroma+BM25</span></div>
+            <div class="cn"><b>共情陪伴者</b><span class="s dim">◌ 待命</span></div>
+            <div class="cn"><b>风险评估者</b><span class="s dim">◌ 降频巡检</span></div>
+          </div>
+        </div>
+
+        <!-- input -->
+        <div class="inputbar">
+          <input placeholder="想说什么都可以，我在听…">
+          <button class="send">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>设计要点</b>（源自社区调研）：低饱和 + 大留白 + 单一主色 + 情感强调色 · 动效预算给"罕见时刻"（引导/深呼吸/记录完成）· 缓动 `--ease-out(0.23,1,0.32,1)` · 呼吸感 `scale 0.97→1.02` · 情绪色低饱和 · 支持 reduced-motion 降级。
+  </div>
+</div>
+
+<script>
+const THEMES = {
+  recommended:{
+    name:'综合推荐', tab:'综合推荐',
+    desc:'暖米白纸感（古典）× 克制 token（当代）× 微光点缀（未来）。主色鼠尾草绿=平静+自然，陶土橙=唯一行动色（开始倾诉/求助）。',
+    swatches:[
+      ['背景','#FAF6EF'],['卡片','#FFFDF8'],['主色','#8BAE97'],['强调','#D58A63'],['信息','#8FA9C6'],['文本','#3E3A35'],['次级','#8A847B'],['边框','#EDE6DB'],['黑板','#3A4638'],['微光','#B8A7C9']
+    ],
+    font:'中文标题 霞鹜文楷/思源黑体 Bold · 正文 PingFang 16px+',
+    radius:'卡片 16px · 按钮胶囊 999px',
+    motion:'0.3s 呼吸淡入 · 微光背景缓慢漂移 · reduced-motion 降级',
+    board:'黑板=暖调深绿孤岛 #3A4638 + 粉笔米白，与米白 UI 形成"手写陪伴感"明暗对比',
+    emotions:[['开心','#FFE0B2'],['平静','#C8E6C9'],['治愈','#E1BEE7'],['疲惫','#D7CCC8'],['惊喜','#FFF9C4']]
+  },
+  classic:{
+    name:'古典 · 莫兰迪纸感', tab:'古典',
+    desc:'像一本有温度的纸质手账——暖米白纸面、陶土印章、鼠尾草便签。克制、低饱和，靠材质与留白传递人文温度。',
+    swatches:[
+      ['背景','#F7F1E9'],['卡片','#FCF9F3'],['主色','#A9705C'],['强调','#D9B27E'],['信息','#9FB4C7'],['文本','#4A4039'],['次级','#8A7E72'],['边框','#E8DFD2'],['黑板','#5A5248'],['微光','#A9705C']
+    ],
+    font:'中文标题 霞鹜文楷（手写温度）/宋体 · 英文 serif(Lora)',
+    radius:'12–16px 温和圆角',
+    motion:'缓慢淡入淡出 0.3–0.6s · 避免渐变与强阴影 · matte 纸堆叠阴影',
+    board:'暖棕深色黑板 #5A5248 + 米白粉笔，手账质感',
+    emotions:[['开心','#F4D9A8'],['平静','#C9D6C2'],['治愈','#DCC9DA'],['疲惫','#D3C5BA'],['惊喜','#F0E6C4']]
+  },
+  modern:{
+    name:'当代 · 干净留白', tab:'当代',
+    desc:'shadcn/ui 柔和变体——近白底、发丝边框、单一主色做标点。熟悉、可靠、低认知负担，对情绪困扰用户是"呼吸感"。',
+    swatches:[
+      ['背景','#F7F8FA'],['卡片','#FFFFFF'],['主色','#6C7FA8'],['强调','#F0A98E'],['信息','#6FB5A4'],['文本','#232936'],['次级','#6E7683'],['边框','#E6E8EC'],['黑板','#3C4756'],['微光','#6C7FA8']
+    ],
+    font:'Inter / 思源黑体 / PingFang · 字重对比拉开',
+    radius:'10–14px 方枕式',
+    motion:'极克制微交互 0.15s · 超软阴影(0 1px 2px/4%) · 层次靠边框非阴影',
+    board:'深石板黑板 #3C4756，克制冷静',
+    emotions:[['开心','#FFE3C2'],['平静','#D3E8E0'],['治愈','#E4D9EF'],['疲惫','#E0DBD3'],['惊喜','#FBF3C8']]
+  },
+  future:{
+    name:'未来 · 通透微光', tab:'未来',
+    desc:'像被晨雾包裹——半透明玻璃浮在极淡极光渐变上，微光随呼吸缓慢明暗。通透轻盈，为 Live2D 与黑板提供"氛围场"。',
+    swatches:[
+      ['背景','#F5F3FB'],['玻璃卡','rgba(255,255,255,.55)'],['主色','#A79BC0'],['强调','#F0B8C8'],['信息','#6FC9BE'],['文本','#2B2835'],['次级','#857E9C'],['边框','rgba(255,255,255,.5)'],['黑板','#3A3F52'],['微光','#B8A7C9']
+    ],
+    font:'圆润无衬线 Nunito/圆体 · 正文大字号 17–18px',
+    radius:'16–24px 大圆角（通透放大器）',
+    motion:'conic aura 缓慢旋转(15–30s) · 呼吸位移 · 3-dot 呼吸指示 · reduced-motion 必降级',
+    board:'深紫灰黑板 #3A3F52 + 柔光粉笔，梦境感',
+    emotions:[['开心','#FDE7D6'],['平静','#D9F0EC'],['治愈','#F0DCF0'],['疲惫','#E4DED8'],['惊喜','#FDF6D8']]
+  },
+  lazy:{
+    name:'参考 · Dribbble(LazyInterface)', tab:'参考 · Dribbble',
+    desc:'A modern AI mental health app —— 用户提供的参考。暖灰白底 + 陶土红棕强调（#B35437），现代 AI 产品质感，比综合推荐更暖更深。色板为 Dribbble 实抓 8 色。',
+    swatches:[
+      ['背景','#F0EFEE'],['卡片','#FFFFFF'],['主色','#B35437'],['强调','#CC8B70'],['信息','#AEBBB8'],['文本','#0A0604'],['次级','#615A55'],['边框','#E2DEDB'],['黑板','#2B211D'],['深强调','#5E2214']
+    ],
+    font:'现代无衬线（Google Sans/Inter），标题 Bold 拉开字重',
+    radius:'12–14px 现代方枕',
+    motion:'克制微交互 · 强调按钮 hover 微升 · 大面积留白',
+    board:'深暖棕黑板 #2B211D + 暖灰白粉笔，与米白 UI 形成暗色孤岛',
+    emotions:[['开心','#F6DCCB'],['平静','#D8E2DC'],['治愈','#E9D4CE'],['疲惫','#D6CFC9'],['惊喜','#EFE6C9']]
+  }
+};
+
+const body = document.body;
+const swatchBox = document.getElementById('swatches');
+
+function applyTheme(key){
+  body.setAttribute('data-theme', key);
+  const t = THEMES[key];
+  document.getElementById('p-name').textContent = t.name;
+  document.getElementById('p-desc').textContent = t.desc;
+  document.getElementById('p-font').textContent = t.font;
+  document.getElementById('p-radius').textContent = t.radius;
+  document.getElementById('p-motion').textContent = t.motion;
+  document.getElementById('p-board').textContent = t.board;
+
+  swatchBox.innerHTML = t.swatches.map(([n,h]) => `
+    <div class="sw" style="background:${n.includes('玻璃')||n.includes('背景')&&h.startsWith('rgba')?'#ffffff':h}">
+      <div class="dot" style="background:${h};${h.startsWith('rgba')?'':''}"></div>
+      <div class="n">${n}</div>
+      <div class="h">${h}</div>
+    </div>`).join('');
+
+  document.getElementById('emotions').innerHTML =
+    '<span class="emotion" style="background:var(--card-2)"><b>情绪色</b></span>' +
+    t.emotions.map(([n,h]) => `<span class="emotion" style="background:${h}">${n}</span>`).join('');
+
+  // re-trigger board draw + bubble
+  const bline = document.querySelector('.bline::after');
+  document.querySelectorAll('.bline, .bubble').forEach(el => {
+    el.style.animation = 'none'; void el.offsetWidth;
+    el.style.animation = '';
+  });
+
+  // tabs
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.theme === key));
+}
+
+document.querySelectorAll('#tabs button').forEach(b => {
+  b.addEventListener('click', () => applyTheme(b.dataset.theme));
+});
+
+applyTheme('recommended');
+</script>
+</body>
+</html>

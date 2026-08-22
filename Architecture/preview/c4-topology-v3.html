@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>心理健康助手 · 架构拓扑 v3（对齐 architecture-spec-v3）</title>
+<style>
+:root{
+  --bg:#0f1417; --surface:#171e22; --surface2:#1d262b;
+  --line:rgba(140,160,155,.1); --line2:rgba(140,160,155,.24);
+  --ink:#e0e8e3; --dim:rgba(200,216,209,.58); --faint:rgba(200,216,209,.3);
+  --amber:#e8b45a; --teal:#7fb8a8; --rose:#e08477; --blue:#8fb3d9; --mauve:#b79ac9;
+  --sans:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  --mono:"Source Code Pro",ui-monospace,Consolas,monospace;
+  --serif:"Noto Serif SC",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  min-height:100vh;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  background-image:
+    linear-gradient(rgba(140,160,155,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(140,160,155,.04) 1px,transparent 1px);
+  background-size:28px 28px;
+}
+::selection{background:rgba(232,180,90,.3);}
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:50;height:44px;
+  display:flex;align-items:center;gap:6px;padding:8px 14px;
+  backdrop-filter:blur(14px);background:rgba(15,20,23,.92);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:11px;overflow-x:auto;white-space:nowrap;
+}
+nav .logo{font-family:var(--serif);font-size:15px;font-weight:900;margin-right:6px;}
+nav .logo span{color:var(--amber);}
+nav .tag{color:var(--amber);border:1px solid rgba(232,180,90,.3);padding:3px 9px;border-radius:999px;font-size:10px;}
+nav .sp{flex:1;min-width:8px;}
+nav .sep{width:1px;height:20px;background:var(--line2);margin:0 6px;}
+nav .btn{
+  border:1px solid var(--line2);background:var(--surface);color:var(--dim);font-family:var(--mono);
+  font-size:11px;padding:5px 11px;border-radius:6px;cursor:pointer;transition:all .15s;white-space:nowrap;
+}
+nav .btn:hover{color:var(--amber);border-color:rgba(232,180,90,.4);}
+nav .btn.on{color:var(--amber);border-color:rgba(232,180,90,.4);background:rgba(232,180,90,.08);}
+nav .btn:disabled{opacity:.35;cursor:default;pointer-events:none;}
+nav .btn.warn:hover{color:var(--rose);border-color:rgba(224,132,119,.4);}
+nav .hint{color:var(--faint);font-size:10px;}
+nav .modtag{font-size:10px;padding:3px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--dim);}
+nav .modtag.edit{color:var(--amber);border-color:rgba(232,180,90,.35);}
+
+main{position:fixed;top:44px;left:0;right:0;bottom:0;overflow:auto;padding:14px 16px 40px;}
+.wrap{max-width:1460px;margin:0 auto;}
+svg{display:block;width:100%;height:auto;user-select:none;-webkit-user-select:none;}
+
+/* ── edges ── */
+.edge{fill:none;stroke-linecap:round;transition:opacity .25s,stroke .25s;pointer-events:stroke;}
+.edge.rose {stroke:var(--rose);opacity:.55;}
+.edge.teal {stroke:var(--teal);opacity:.55;}
+.edge.blue {stroke:var(--blue);opacity:.5;}
+.edge.dim  {stroke:rgba(140,160,155,.45);opacity:.65;}
+.edge.dashed{stroke-dasharray:6 6;}
+.edge.dashed2{stroke-dasharray:2 5;}
+.edge .lab{font-family:var(--mono);font-size:9.5px;fill:var(--dim);}
+.edge.lit{opacity:1;stroke-width:2.1;}
+.edge.rose.lit{filter:drop-shadow(0 0 5px rgba(224,132,119,.5));}
+.edge.teal.lit{filter:drop-shadow(0 0 5px rgba(127,184,168,.5));}
+.edge.blue.lit{filter:drop-shadow(0 0 5px rgba(143,179,217,.5));}
+.edge.dim.lit{filter:drop-shadow(0 0 5px rgba(200,216,209,.4));}
+.edge.sel{stroke-width:2.6;opacity:1;}
+.edge.sel.rose{filter:drop-shadow(0 0 7px rgba(224,132,119,.65));}
+.edge.sel.teal{filter:drop-shadow(0 0 7px rgba(127,184,168,.65));}
+.edge.sel.blue{filter:drop-shadow(0 0 7px rgba(143,179,217,.65));}
+.edge.sel.dim{filter:drop-shadow(0 0 7px rgba(200,216,209,.5));}
+.edge:hover{stroke-width:2;opacity:.95;}
+text.edge.lab{pointer-events:none;}
+
+/* flow animation */
+svg.play .edge.flow{stroke-dasharray:7 9;animation:dashflow 1.1s linear infinite;opacity:.95;}
+svg.play .edge.flow.dashed{stroke-dasharray:7 9;}
+@keyframes dashflow{to{stroke-dashoffset:-16}}
+
+/* ── nodes ── */
+svg:not(.editing) .node{cursor:pointer;}
+.node{cursor:grab;transition:opacity .25s;}
+.node:active{cursor:grabbing;}
+.node .nbox{
+  stroke-width:1.2;transition:stroke .2s,fill .2s,filter .2s;
+  filter:drop-shadow(0 8px 22px -12px rgba(0,0,0,.7));
+}
+.node .nbadge{font-family:var(--mono);font-size:9px;letter-spacing:.08em;}
+.node .ntitle{font-size:15px;font-weight:700;}
+.node .nsub{font-size:10.5px;letter-spacing:.02em;}
+.node .nrole{font-family:var(--mono);font-size:9px;opacity:.75;letter-spacing:.06em;}
+.node:hover .nbox{stroke-width:1.8;filter:drop-shadow(0 0 10px rgba(232,180,90,.28));}
+.node.dim{opacity:.32;}
+
+.node.l1 .nbox,.node.simple .nbox{fill:rgba(127,184,168,.10);stroke:rgba(127,184,168,.55);}
+.node.l1 .nbadge{fill:var(--teal);}
+.node.l2 .nbox,.node.l6 .nbox{fill:rgba(183,154,201,.10);stroke:rgba(183,154,201,.55);}
+.node.l2 .nbadge,.node.l6 .nbadge{fill:var(--mauve);}
+.node.l3 .nbox,.node.l7 .nbox{fill:rgba(232,180,90,.10);stroke:rgba(232,180,90,.55);}
+.node.l3 .nbadge,.node.l7 .nbadge{fill:var(--amber);}
+.node.crisis .nbox,.node.hotline .nbox{fill:rgba(224,132,119,.10);stroke:rgba(224,132,119,.6);}
+.node.crisis .nbadge,.node.hotline .nbadge{fill:var(--rose);}
+.node.complex .nbox,.node.l4 .nbox,.node.l5 .nbox{fill:rgba(143,179,217,.10);stroke:rgba(143,179,217,.55);}
+.node.complex .nbadge,.node.l4 .nbadge,.node.l5 .nbadge{fill:var(--blue);}
+.node.user .nbox,.node.hotline .nbox{fill:rgba(23,30,34,.4);stroke-dasharray:5 5;stroke-width:1.2;}
+.node.l4 .nbox{stroke-dasharray:5 5;}
+.node .ntitle,.node .nrole{fill:var(--ink);}
+.node .nsub{fill:var(--dim);}
+
+/* ── detail card（预览态点节点查看） ── */
+.card{
+  position:fixed;right:16px;top:56px;z-index:60;width:318px;max-height:calc(100vh - 76px);overflow:auto;
+  background:rgba(23,30,34,.97);border:1px solid var(--line2);border-radius:12px;
+  box-shadow:0 22px 60px -20px rgba(0,0,0,.85);padding:14px 16px;
+  animation:cardIn .18s ease;
+}
+.card .ch{font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.card .ch .dot{width:8px;height:8px;border-radius:50%;flex:none;}
+.card .cx{margin-left:auto;cursor:pointer;color:var(--faint);font-size:15px;line-height:1;padding:2px 5px;border-radius:5px;}
+.card .cx:hover{color:var(--ink);background:rgba(255,255,255,.07);}
+.card .row{margin:7px 0;}
+.card .k{font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.1em;display:block;margin-bottom:2px;}
+.card .v{font-size:11.5px;line-height:1.6;color:var(--dim);}
+
+/* free-line control handle */
+.cp{cursor:grab;fill:var(--amber);stroke:#0f1417;stroke-width:2;pointer-events:all;}
+.cp:active{cursor:grabbing;}
+.cp:hover{fill:#f0c77e;}
+
+/* annot (情绪JSON 一源三用) */
+.annot{font-family:var(--mono);font-size:9.5px;fill:var(--amber);opacity:.85;pointer-events:none;}
+
+/* legend */
+.legend{font-family:var(--mono);font-size:10px;fill:var(--dim);pointer-events:none;}
+.legend .sw{stroke-width:2.4;}
+.legend b{font-weight:700;fill:var(--ink);}
+
+/* ── snapshots panel ── */
+.panel{
+  position:fixed;right:14px;top:54px;z-index:60;width:300px;max-height:calc(100vh - 80px);overflow:auto;
+  background:rgba(23,30,34,.98);border:1px solid var(--line2);border-radius:12px;
+  box-shadow:0 22px 60px -20px rgba(0,0,0,.85);padding:14px 16px;display:none;animation:cardIn .18s ease;
+}
+@keyframes cardIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+.panel .ph{font-size:13px;font-weight:700;display:flex;align-items:center;margin-bottom:12px;}
+.panel .ph .cx{margin-left:auto;cursor:pointer;color:var(--faint);font-size:15px;padding:2px 5px;border-radius:5px;}
+.panel .ph .cx:hover{color:var(--ink);background:rgba(255,255,255,.07);}
+.snap{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;background:var(--surface);}
+.snap .nm{font-size:12px;color:var(--ink);flex:1;}
+.snap .tm{font-size:9px;color:var(--faint);display:block;margin-top:2px;}
+.snap .ops{display:flex;gap:4px;}
+.snap .op{border:1px solid var(--line2);background:transparent;color:var(--dim);font-family:var(--mono);font-size:9.5px;padding:3px 7px;border-radius:5px;cursor:pointer;}
+.snap .op:hover{color:var(--amber);border-color:rgba(232,180,90,.4);}
+.snap .op.del:hover{color:var(--rose);border-color:rgba(224,132,119,.4);}
+.empty{font-size:11px;color:var(--faint);text-align:center;padding:14px 0;}
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:80;
+  background:rgba(23,30,34,.97);border:1px solid rgba(232,180,90,.4);color:var(--ink);
+  font-family:var(--mono);font-size:11px;padding:8px 16px;border-radius:999px;
+  opacity:0;transition:opacity .25s;pointer-events:none;
+}
+.toast.show{opacity:1;}
+</style>
+</head>
+<body>
+<nav>
+  <div class="logo">心理助手 · <span>架构拓扑</span></div>
+  <div class="tag">v3 · 7层 + 1横切</div>
+  <div class="modtag">三路路由 · crisis / answer / collect</div>
+  <button class="btn" id="playBtn">▶ 播放消息流</button>
+  <div class="sp"></div>
+  <div class="hint">悬停节点高亮链路 · 点击查看层详情</div>
+</nav>
+<main>
+<div class="wrap">
+<svg viewBox="0 0 1520 1170" xmlns="http://www.w3.org/2000/svg">
+
+<defs>
+  <marker id="arr-dim" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto">
+    <path d="M0,0 L7,4 L0,8 z" fill="rgba(140,160,155,.75)"/></marker>
+  <marker id="arr-rose" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto">
+    <path d="M0,0 L7,4 L0,8 z" fill="#e08477"/></marker>
+  <marker id="arr-teal" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto">
+    <path d="M0,0 L7,4 L0,8 z" fill="#7fb8a8"/></marker>
+  <marker id="arr-blue" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto">
+    <path d="M0,0 L7,4 L0,8 z" fill="#8fb3d9"/></marker>
+</defs><path class="edge dim" data-eid="e-user-l1" marker-end="url(#arr-dim)" d="M710,93 L710,130"/>
+<text class="edge lab" data-lab="e-user-l1" x="720" y="123.5" text-anchor="middle"><tspan x="720" dy="-8">文字 / 语音</tspan></text>
+<path class="edge dim" data-eid="e-l1-l2" marker-end="url(#arr-dim)" d="M710,222 L710,246"/>
+<path class="edge dim" data-eid="e-l2-l3" marker-end="url(#arr-dim)" d="M710,338 L710,362"/>
+<text class="edge lab" data-lab="e-l2-l3" x="890" y="358" text-anchor="middle"><tspan x="890" dy="-8">路由判定</tspan></text>
+<path class="edge rose" data-eid="e-l3-crisis" marker-end="url(#arr-rose)" d="M570,454 L330,514"/>
+<text class="edge lab" data-lab="e-l3-crisis" x="450" y="484" text-anchor="middle"><tspan x="450" dy="-8">① 危机命中 · 硬判</tspan></text>
+<path class="edge teal" data-eid="e-l3-simple" marker-end="url(#arr-teal)" d="M710,454 L710,514"/>
+<text class="edge lab" data-lab="e-l3-simple" x="720" y="484" text-anchor="middle"><tspan x="720" dy="-8">② answer · 直接答</tspan></text>
+<path class="edge blue flow" data-eid="e-l3-complex" marker-end="url(#arr-blue)" d="M850,454 L1030,514"/>
+<text class="edge lab" data-lab="e-l3-complex" x="977" y="496" text-anchor="middle"><tspan x="977" dy="-8">③ collect · 多轮采集</tspan></text>
+<path class="edge rose" data-eid="e-crisis-hotline" marker-end="url(#arr-rose)" d="M200,598 L200,664"/>
+<text class="edge lab" data-lab="e-crisis-hotline" x="210" y="631" text-anchor="middle"><tspan x="210" dy="-8">安全通道</tspan></text>
+<path class="edge teal dashed" data-eid="e-simple-l1" marker-end="url(#arr-teal)" d="M710,514 C192.6666259765624,366.9733333333333 192.6666259765624,267.6933333333333 710,222"/>
+<text class="edge lab" data-lab="e-simple-l1" x="261.9999694824219" y="330" text-anchor="middle"><tspan x="261.9999694824219" dy="-8">直接答 · 知识走 RAG · 无黑板</tspan></text>
+<path class="edge blue flow" data-eid="e-complex-l4" marker-end="url(#arr-blue)" d="M1160,598 L1160,654"/>
+<text class="edge lab" data-lab="e-complex-l4" x="1170" y="626" text-anchor="middle"><tspan x="1170" dy="-8">collect · first_frame 安抚 + 黑板粗稿</tspan></text>
+<path class="edge blue flow" data-eid="e-complex-l5" marker-end="url(#arr-blue)" d="M1160,598 C1466.6666666666667,676.5666666666667 1466.6666666666667,754.7666666666667 1160,828"/>
+<text class="edge lab" data-lab="e-complex-l5" x="1390" y="711" text-anchor="middle"><tspan x="1390" dy="-8">共情采集 → 监督者</tspan></text>
+<path class="edge blue flow" data-eid="e-l5-l4" marker-end="url(#arr-blue)" d="M1160,828 L1160,758"/>
+<text class="edge lab" data-lab="e-l5-l4" x="1170" y="793" text-anchor="middle"><tspan x="1170" dy="-8">采集/分析回调 → 黑板增量 + 流式</tspan></text>
+<path class="edge blue flow" data-eid="e-l4-l2" marker-end="url(#arr-blue)" d="M1010,654 L850,338"/>
+<text class="edge lab" data-lab="e-l4-l2" x="930" y="486" text-anchor="middle"><tspan x="930" dy="-8">增量消息 → 回 L2</tspan></text>
+<path class="edge rose dashed2" data-eid="e-l3-l5" marker-end="url(#arr-rose)" d="M850,454 L1010,828"/>
+<text class="edge lab" data-lab="e-l3-l5" x="930" y="641" text-anchor="middle"><tspan x="930" dy="-8">软信号预筛 → 命中才 LLM 复核</tspan></text>
+<path class="edge dim flow" data-eid="e-l5-l6" marker-end="url(#arr-dim)" d="M1010,880 L960,880"/>
+<text class="edge lab" data-lab="e-l5-l6" x="985" y="805" text-anchor="middle"><tspan x="985" dy="-8">工具调用</tspan></text>
+<path class="edge dim flow" data-eid="e-l5-l7" marker-end="url(#arr-dim)" d="M1010,932 C973.4639727406118,943.7951308640999 961.4639727406118,959.6351308640998 960,998"/>
+<text class="edge lab" data-lab="e-l5-l7" x="971.8479795554588" y="979.0363481480749" text-anchor="middle"><tspan x="971.8479795554588" dy="-8">记忆存取 · 热/温/冷</tspan></text>
+<path class="edge dim flow" data-eid="e-l6-l7" marker-end="url(#arr-dim)" d="M820,932 L820,998"/>
+<text class="edge lab" data-lab="e-l6-l7" x="670" y="965" text-anchor="middle"><tspan x="670" dy="-8">RAG 检索 ⇄ 文档</tspan></text>
+<g class="node user" data-id="user" transform="translate(710,62)">
+<rect class="nbox" x="-110" y="-31" width="220" height="62" rx="14"/>
+<text class="ntitle" x="-94" y="-15">用户 · 来访者</text><text class="nsub" x="-94" y="3">文字 / 语音 · 情绪表达入口</text>
+</g>
+<g class="node l1" data-id="l1" transform="translate(710,176)">
+<rect class="nbox" x="-140" y="-46" width="280" height="92" rx="16"/>
+<text class="nbadge" x="-124" y="-30">L1</text><text class="ntitle" x="-124" y="-12">用户交互层 · 治愈感前台</text><text class="nsub" x="-124" y="6">Live2D 立绘 · 黑板·多模板 · 语音 I/O</text><text class="nrole" x="-124" y="24">情绪一源三用 · 可配置</text>
+</g>
+<g class="node l2" data-id="l2" transform="translate(710,292)">
+<rect class="nbox" x="-140" y="-46" width="280" height="92" rx="16"/>
+<text class="nbadge" x="-124" y="-30">L2</text><text class="ntitle" x="-124" y="-12">接入与网关层</text><text class="nsub" x="-124" y="6">WS 单连接 · 消息分发 · 会话管理</text><text class="nrole" x="-124" y="24">一条连接搬全链路 · 实时感交给应用层</text>
+</g>
+<g class="node l3" data-id="l3" transform="translate(710,408)">
+<rect class="nbox" x="-140" y="-46" width="280" height="92" rx="16"/>
+<text class="nbadge" x="-124" y="-30">L3</text><text class="ntitle" x="-124" y="-12">智能路由决策器 · 安全前置</text><text class="nsub" x="-124" y="6">危机闸门(硬判) · 轻量分类器</text><text class="nrole" x="-124" y="24">一条消息 · 三种命运</text>
+</g>
+<g class="node crisis" data-id="crisis" transform="translate(200,556)">
+<rect class="nbox" x="-130" y="-42" width="260" height="84" rx="16"/>
+<text class="nbadge" x="-114" y="-26">crisis</text><text class="ntitle" x="-114" y="-8">危机安全通道</text><text class="nsub" x="-114" y="10">规则硬判 · 确定性兜底</text><text class="nrole" x="-114" y="28">不进水深流水线</text>
+</g>
+<g class="node simple" data-id="simple" transform="translate(710,556)">
+<rect class="nbox" x="-130" y="-42" width="260" height="84" rx="16"/>
+<text class="nbadge" x="-114" y="-26">answer</text><text class="ntitle" x="-114" y="-8">直接答</text><text class="nsub" x="-114" y="10">普通问候直答 · 知识走 RAG</text><text class="nrole" x="-114" y="28">无黑板 · 无采集 · 流式 text_delta</text>
+</g>
+<g class="node complex" data-id="complex" transform="translate(1160,556)">
+<rect class="nbox" x="-130" y="-42" width="260" height="84" rx="16"/>
+<text class="nbadge" x="-114" y="-26">collect</text><text class="ntitle" x="-114" y="-8">多轮采集</text><text class="nsub" x="-114" y="10">共情对话 · 逐轮填 formulation</text><text class="nrole" x="-114" y="28">充分度 ≥0.7 → 精稿 → 分流</text>
+</g>
+<g class="node hotline" data-id="hotline" transform="translate(200,706)">
+<rect class="nbox" x="-130" y="-42" width="260" height="84" rx="14"/>
+<text class="ntitle" x="-114" y="-26">热线 12356</text><text class="nsub" x="-114" y="-8">国家心理援助热线</text><text class="nrole" x="-114" y="10">外部公共服务 · 降级安抚</text>
+</g>
+<g class="node l4" data-id="l4" transform="translate(1160,706)">
+<rect class="nbox" x="-150" y="-52" width="300" height="104" rx="18"/>
+<text class="nbadge" x="-134" y="-36">L4 · 横切</text><text class="ntitle" x="-134" y="-18">空窗期策略 + 多轮采集器</text><text class="nsub" x="-134" y="0">第一帧缓冲 · 黑板渐进绘制</text><text class="nsub" x="-134" y="18">边采边算 · 降级三路径</text><text class="nrole" x="-134" y="36">横切编排 · L4 管状态 / L5 管话术</text>
+</g>
+<g class="node l5" data-id="l5" transform="translate(1160,880)">
+<rect class="nbox" x="-150" y="-52" width="300" height="104" rx="18"/>
+<text class="nbadge" x="-134" y="-36">L5</text><text class="ntitle" x="-134" y="-18">异步推理层 · 多 Agent</text><text class="nsub" x="-134" y="0">监督者门控 · 共情前置(采集话术)</text><text class="nsub" x="-134" y="18">知识分析师 · 风险评估者 · 计划制定者</text><text class="nrole" x="-134" y="36">按需激活 · 不做全员出动</text>
+</g>
+<g class="node l6" data-id="l6" transform="translate(820,880)">
+<rect class="nbox" x="-140" y="-52" width="280" height="104" rx="18"/>
+<text class="nbadge" x="-124" y="-36">L6</text><text class="ntitle" x="-124" y="-18">工具与执行层</text><text class="nsub" x="-124" y="0">RAG 引擎 · 规则引擎</text><text class="nsub" x="-124" y="18">语音引擎(可插拔)</text><text class="nrole" x="-124" y="36">给 Agent 装上可靠的双手</text>
+</g>
+<g class="node l7" data-id="l7" transform="translate(820,1050)">
+<rect class="nbox" x="-140" y="-52" width="280" height="104" rx="18"/>
+<text class="nbadge" x="-124" y="-36">L7</text><text class="ntitle" x="-124" y="-18">数据与知识层</text><text class="nsub" x="-124" y="0">热·温·冷·外挂 记忆金字塔</text><text class="nsub" x="-124" y="18">模型配置(AES-GCM) · 治理层</text><text class="nrole" x="-124" y="36">记忆是用户的资产</text>
+</g>  <g class="annot">
+    <rect x="278" y="146" width="252" height="64" rx="10" fill="none" stroke="#e8b45a" stroke-opacity=".4" stroke-dasharray="4 4"/>
+    <text x="294" y="170" font-weight="700">情绪JSON · 一源三用</text>
+    <text x="294" y="188" font-size="9">→ 立绘表情 · 黑板模板 · 语音语调</text>
+  </g>
+  <path d="M530,178 C 545,178 555,178 570,180" fill="none" stroke="#e8b45a" stroke-opacity=".4" stroke-dasharray="3 4"/>  <g class="legend" transform="translate(52,1078)">
+    <text y="0" font-weight="700" fill="#e0e8e3">图例</text>
+    <line class="sw" x1="6" y1="18" x2="40" y2="18" stroke="#e08477"/>
+    <text x="48" y="22">危机通道 / 热线 / 复核</text>
+    <line class="sw" x1="6" y1="40" x2="40" y2="40" stroke="#7fb8a8"/>
+    <text x="48" y="44">简单直答 / 返回链路</text>
+    <line class="sw" x1="6" y1="62" x2="40" y2="62" stroke="#8fb3d9"/>
+    <text x="48" y="66">复杂流水线 / 数据流</text>
+    <line class="sw" x1="216" y1="18" x2="250" y2="18" stroke="#e8b45a" stroke-dasharray="5 4"/>
+    <text x="258" y="22">横切策略 / 情绪联动</text>
+    <line class="sw" x1="216" y1="40" x2="250" y2="40" stroke="rgba(140,160,155,.6)"/>
+    <text x="258" y="44">常规链路 / 传输</text>
+    <text x="216" y="66" font-size="9.5" fill="rgba(200,216,209,.4)">虚线 = 返回 / 旁路 / 复核 · 圆点 = 箭头方向</text>
+  </g>
+</svg>
+</div>
+</main>
+<script>
+const HOVER_MAP={"user":["e-user-l1"],"l1":["e-user-l1","e-l1-l2","e-simple-l1"],"l2":["e-l1-l2","e-l2-l3","e-l4-l2"],"l3":["e-l2-l3","e-l3-crisis","e-l3-simple","e-l3-complex","e-l3-l5"],"crisis":["e-l3-crisis","e-crisis-hotline"],"hotline":["e-crisis-hotline"],"simple":["e-l3-simple","e-simple-l1"],"complex":["e-l3-complex","e-complex-l4","e-complex-l5"],"l4":["e-complex-l4","e-l5-l4","e-l4-l2"],"l5":["e-complex-l5","e-l5-l4","e-l3-l5","e-l5-l6","e-l5-l7"],"l6":["e-l5-l6","e-l6-l7"],"l7":["e-l5-l7","e-l6-l7"]}, INFO={
+ "user": {
+  "h": "用户 · 来访者",
+  "dot": "#c8d8d1",
+  "rows": [
+   [
+    "输入",
+    "文字 / 语音"
+   ],
+   [
+    "背景",
+    "轻中度情绪困扰人群"
+   ],
+   [
+    "约束",
+    "非医疗诊断声明 · 危机→热线 12356 · 蓄意测试也温和回应"
+   ]
+  ]
+ },
+ "l1": {
+  "h": "L1 · 用户交互层 — 治愈感前台",
+  "dot": "#7fb8a8",
+  "rows": [
+   [
+    "职责",
+    "情绪表达与治疗性可视化前端——把「理解」翻译成「被看见」"
+   ],
+   [
+    "技术栈",
+    "Vue3 + Vite + TS · Live2D · SVG 自研渲染器(黑板) · edge-tts/faster-whisper"
+   ],
+   [
+    "关键机制",
+    "情绪 JSON 一源三用 · 黑板情感标签驱动多模板 · 语音可插拔 + 模型配置UI"
+   ],
+   [
+    "输出契约",
+    "Live2D 表情参数 / draw 绘制指令 / audio 音频块"
+   ],
+   [
+    "二期",
+    "意象黑板模板库扩充 · Live2D 表情/口型精细调校"
+   ]
+  ]
+ },
+ "l2": {
+  "h": "L2 · 接入与网关层",
+  "dot": "#b79ac9",
+  "rows": [
+   [
+    "职责",
+    "一条可靠连接承载整个流水线——实时感交给应用层"
+   ],
+   [
+    "技术栈",
+    "FastAPI · WebSocket 单连接 · JSON 帧协议"
+   ],
+   [
+    "关键机制",
+    "单连接 8 种消息路由 · session_id · seq 管理 · error 帧"
+   ],
+   [
+    "消息契约",
+    "8 种：first_frame / draw / text_delta / audio_chunk / done / error · user_input / mood_select"
+   ],
+   [
+    "二期",
+    "WebRTC 全双工实时语音（打断式）"
+   ]
+  ]
+ },
+ "l3": {
+  "h": "L3 · 智能路由决策器 — 安全前置",
+  "dot": "#e8b45a",
+  "rows": [
+   [
+    "职责",
+    "危机信号第一时间被确定性规则捕获，一条消息三种命运"
+   ],
+   [
+    "技术栈",
+    "规则引擎（危机词典+严重度打分）· 轻量分类器(&lt;50ms)"
+   ],
+   [
+    "A 危机",
+    "硬判命中 → 热线12356 + 降级安抚（规则通道，不进水深流水线）"
+   ],
+   [
+    "B answer",
+    "直接答：普通问候直答 · 知识走 RAG（动态门控）· 无黑板/无采集"
+   ],
+   [
+    "C collect",
+    "多轮采集：共情对话 → formulation → 充分度 → 分析/方案分流"
+   ],
+   [
+    "二期",
+    "语义级 LLM 意图升级（处理含蓄/隐喻表达）"
+   ]
+  ]
+ },
+ "crisis": {
+  "h": "A · 危机安全通道",
+  "dot": "#e08477",
+  "rows": [
+   [
+    "触发",
+    "危机词典 + 严重度打分硬判命中（多信号叠加 / 显式自伤表达）"
+   ],
+   [
+    "执行",
+    "规则通道闭环：热线 12356 + 降级安抚话术（L6 规则库）"
+   ],
+   [
+    "特性",
+    "确定性规则 · 个位数 ms · 不受 LLM 幻觉影响"
+   ],
+   [
+    "原则",
+    "蓄意测试也温和回应"
+   ]
+  ]
+ },
+ "simple": {
+  "h": "B · 简单直答",
+  "dot": "#7fb8a8",
+  "rows": [
+   [
+    "触发",
+    "分类器判定 answer（普通问候 / 知识型）"
+   ],
+   [
+    "执行",
+    "知识型走 RAG（动态门控，Chroma+BM25+重排）→ 流式 text_delta"
+   ],
+   [
+    "边界",
+    "无黑板 · 无心情选择器 · 无采集 · 干净利落"
+   ],
+   [
+    "二期",
+    "语义级 LLM 意图升级"
+   ]
+  ]
+ },
+ "complex": {
+  "h": "C · 复杂流水线",
+  "dot": "#8fb3d9",
+  "rows": [
+   [
+    "触发",
+    "分类器判定 collect（情绪梳理）"
+   ],
+   [
+    "走向",
+    "first_frame 安抚+心情选择器 → 共情采集(逐轮填 formulation) → 充分度≥0.4边采边算/≥0.7停 → 精稿 → 分析/方案分流"
+   ],
+   [
+    "特性",
+    "黑板逐格生长 · 共情前置(L4管状态/L5管话术) · 降级三路径"
+   ]
+  ]
+ },
+ "hotline": {
+  "h": "热线 12356 · 国家心理援助热线",
+  "dot": "#e08477",
+  "rows": [
+   [
+    "性质",
+    "外部公共服务"
+   ],
+   [
+    "调用",
+    "危机安全通道自动推送"
+   ],
+   [
+    "配套",
+    "降级安抚话术（L6 规则库）"
+   ]
+  ]
+ },
+ "l4": {
+  "h": "L4 · 空窗期策略（横切）",
+  "dot": "#8fb3d9",
+  "rows": [
+   [
+    "定位",
+    "横切策略而非独立处理阶段（R1 会议调整）"
+   ],
+   [
+    "机制①",
+    "第一帧缓冲：复杂请求 300ms 内推送安抚语"
+   ],
+   [
+    "机制②",
+    "黑板渐进绘制：按情感标签调起意象模板（协同 L1 黑板，共用 DrawProtocol）"
+   ],
+   [
+    "机制③",
+    "语音安抚：第一帧 + 黑板内容同步 TTS（协同 L1 语音）"
+   ],
+   [
+    "机制④",
+    "流式增量：Agent 回调 → text_delta / draw / audio_chunk"
+   ],
+   [
+    "采集器",
+    "状态机 / 充分度(≥0.4边采边算 · ≥0.7停) / 轮控 2~3 轮；问话由 L5 共情 Agent 出（L4 管状态 / L5 管话术）"
+   ],
+   [
+    "心情选择器",
+    "空窗期右上浮出 · 10s 超时回工具栏主动选择 · 危机不浮"
+   ],
+   [
+    "降级",
+    "答案过短/话题漂移/负面词 → 转共情陪聊 / 已采字段收尾 / 情绪变差再过闸门"
+   ],
+   [
+    "二期",
+    "多模态节奏协同编排"
+   ]
+  ]
+ },
+ "l5": {
+  "h": "L5 · 异步推理层 · 多 Agent",
+  "dot": "#8fb3d9",
+  "rows": [
+   [
+    "技术栈",
+    "LangGraph 1.x · langgraph-supervisor · 按需 handoff"
+   ],
+   [
+    "监督者",
+    "读消息 → 决定激活谁 → 汇总（不做重活）"
+   ],
+   [
+    "共情陪伴者",
+    "collect 全程 + 分析阶段；采集话术=确认情绪+下一问；分析后人话总结 · 建议式非命令式"
+   ],
+   [
+    "知识分析师",
+    "动态 RAG 门控：需不需要查 → 需要才走 Chroma+BM25+重排"
+   ],
+   [
+    "风险评估者",
+    "软信号关键词预筛 → 仅命中才 LLM 复核（V2.5，不每轮跑，控成本）"
+   ],
+   [
+    "计划制定者(MVP)",
+    "分流「建议型」才激活；安全边界=非医疗声明 / 危机绕过 / 方案基于 RAG 知识"
+   ],
+   [
+    "二期",
+    "parallel handoff · 知识图谱接口接入"
+   ]
+  ]
+ },
+ "l6": {
+  "h": "L6 · 工具与执行层",
+  "dot": "#b79ac9",
+  "rows": [
+   [
+    "RAG 引擎",
+    "Chroma 向量 + BM25 关键词 + 重排序（三段式「开卷考试」）"
+   ],
+   [
+    "规则引擎",
+    "危机词典 / 分级 / 降级话术库——硬性兜底"
+   ],
+   [
+    "语音引擎",
+    "TTS=edge-tts · ASR=faster-whisper，接口化可插拔"
+   ],
+   [
+    "二期",
+    "知识图谱 Neo4j（knowledge.query 接口缝）· Vosk 轻量备胎"
+   ]
+  ]
+ },
+ "l7": {
+  "h": "L7 · 数据与知识层",
+  "dot": "#e8b45a",
+  "rows": [
+   [
+    "热",
+    "当前会话上下文 · Redis · TTL 30min"
+   ],
+   [
+    "温",
+    "会话摘要（粗摘要不存原文）· Redis · TTL 7天"
+   ],
+   [
+    "冷",
+    "长期画像 + 情绪趋势 · SQLite · 无 TTL"
+   ],
+   [
+    "外挂",
+    "心理知识问答对 · Chroma · 与用户记忆分离"
+   ],
+   [
+    "治理",
+    "Key 隔离 + 版本号 · 音频不落库 · 用户可查看/一键清除"
+   ],
+   [
+    "模型配置",
+    "LLM/ASR/TTS 配置 · AES-GCM 字段加密存 SQLite"
+   ]
+  ]
+ }
+};
+const svg=document.querySelector('svg');
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const playBtn=document.getElementById('playBtn');
+playBtn.onclick=()=>{ const on=svg.classList.toggle('play'); playBtn.textContent=on?'⏸ 暂停消息流':'▶ 播放消息流'; playBtn.classList.toggle('on',on); };
+svg.addEventListener('mousemove',e=>{
+  const n=e.target.closest('.node');
+  const ids=n?HOVER_MAP[n.dataset.id]:null;
+  document.querySelectorAll('.edge').forEach(p=>p.classList.toggle('lit',!!ids&&ids.includes(p.dataset.eid)));
+  document.querySelectorAll('.node').forEach(o=>o.classList.toggle('dim',!!n&&o!==n));
+});
+let card=null;
+svg.addEventListener('click',e=>{
+  const n=e.target.closest('.node'); if(!n) return;
+  const d=INFO[n.dataset.id]; if(!d) return;
+  if(card) card.remove();
+  card=document.createElement('div'); card.className='card';
+  card.innerHTML='<div class="ch"><span class="dot" style="background:'+d.dot+'"></span><span>'+esc(d.h)+'</span><span class="cx">✕</span></div>'
+    + d.rows.map(r=>'<div class="row"><span class="k">'+esc(r[0])+'</span><span class="v">'+esc(r[1]).replace(/&lt;/g,'<').replace(/&gt;/g,'>')+'</span></div>').join('');
+  card.querySelector('.cx').onclick=()=>card.remove();
+  document.body.appendChild(card);
+});
+</script>
+</body>
+</html>
