@@ -39,7 +39,7 @@ backend/
       questions.py         # 预置问题库(按空缺字段组织)
       sufficiency.py       # 充分度打分(权重表)
       degrade.py           # 三降级触发检测
-    agents/                # Agent 名单/职责/安全边界单源=spec §4 L5
+    agents/
       graph.py             # LangGraph 图定义(确定性条件边)
       empath.py            # 共情陪伴者
       knowledge.py         # 知识分析师
@@ -115,7 +115,7 @@ gate/classifier 已定 route,条件边分派:
             → risk(软预筛→复核,命中升级)
             → 停采 → analysis(同步:emotion 复核 + 总结 + RAG 引用)
             → empath 总结(末尾拼心灵补给站邀请语)
-    planner = 心灵补给站方案书(用户点击触发,异步,REST 通道;安全边界见 spec §4 L5)
+    planner = 心灵补给站方案书(用户点击触发,异步,REST 通道)
 ```
 
 ---
@@ -149,7 +149,7 @@ gate/classifier 已定 route,条件边分派:
 
 ## 8. WS 网关
 
-- 每连接:建 session_id;`user_input/mood_select` 入口;`seq` 会话内全局递增(不随回合重置,对齐 ws-contract §3.2)
+- 每连接:建 session_id;`user_input/mood_select` 入口;`seq` 会话内全局递增(不随回合重置)
 - 消息路由:按 `type` 分发到对应处理通道
 - 非法消息 → `error(invalid_message)`;超时 → `error(timeout)` + 降级;异常 → `error(server_error)`
 - 新 user_input 抢占旧回合 → 发新 first_frame
