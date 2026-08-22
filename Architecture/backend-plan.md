@@ -1,6 +1,6 @@
 # 后端实施方案 · 技术原型
 
-> **版本**:v1 · **日期**:2026-08-12
+> **版本**:v1.1 · **日期**:2026-08-22(B 规范化:Agent 名单收敛单源 / 电报体量化)
 > **权威源**:`architecture-spec-v3.md`(架构)· `ws-contract.md`(契约)
 > **目标**:技术原型后端——跑通三路路由全链路(危机闸门 / 分类器 / 多轮采集 / Agent / 记忆 / 语音),日志与审计齐备。
 
@@ -37,12 +37,12 @@ backend/
       questions.py         # 预置问题库(按空缺字段组织)
       sufficiency.py       # 充分度打分(权重表)
       degrade.py           # 三降级触发检测
-    agents/
-      graph.py             # LangGraph 图定义(确定性条件边,research-v1 Q2)
-      empath.py            # 共情:采集话术(确认+下一问)/人话总结
-      knowledge.py         # 知识分析师(动态 RAG)
-      risk.py              # 风险评估(软预筛 → LLM 复核)
-      planner.py           # 计划制定者(方案生成 + 安全边界)
+    agents/                # Agent 名单/职责/安全边界单源=spec §4 L5
+      graph.py             # LangGraph 图定义(确定性条件边)
+      empath.py            # 共情陪伴者
+      knowledge.py         # 知识分析师
+      risk.py              # 风险评估者
+      planner.py           # 计划制定者
     llm/
       provider.py          # DeepSeek/Ollama 统一抽象(OpenAI 兼容)
     memory/
@@ -65,7 +65,7 @@ IDLE → FRAME_SENT:发 first_frame(安抚语 + 粗稿 draw)
 FRAME_SENT → ROUND(i):共情 Agent 出"确认情绪 + 第 i 问"
 ROUND(i):
   等 user_input → gate 再查 → 填 formulation → draw 增量
-  充分度 ≥0.4 → ANALYSIS_RUNNING(二期接口位;MVP 不启动,停采后同步分析,research-v1 Q4)
+  充分度 ≥0.4 → ANALYSIS_RUNNING(二期接口位;MVP 不启动——停采后同步分析)
   充分度 ≥0.7 或 i≥上限 → STOP
   降级触发 → DEGRADE
 STOP → FINAL:精稿 draw + 分析总结(text_delta,末尾拼心灵补给站邀请语)+ done
@@ -95,23 +95,24 @@ def sufficiency(f: Formulation) -> float:
 
 ## 5. LangGraph 图定义(骨架)
 
+> 编排定案依据 research-v1 Q2/Q3/Q4;Agent 职责/激活/安全边界单源=spec §4 L5。
+
 ```
-nodes: empath · knowledge · risk · planner(监督职能=确定性条件边,无 LLM 派活,research-v1 Q2)
+nodes: empath · knowledge · risk · planner(派活=确定性条件边,无 LLM 主管)
 gate/classifier 已定 route,条件边分派:
     answer → (需 RAG ?) knowledge → 直答流式
     collect → empath(采集循环,状态=formulation)
             → risk(软预筛→复核,命中升级)
-            → 停采 → analysis(同步:emotion 复核 + 总结 + RAG 引用,research-v1 Q4)
+            → 停采 → analysis(同步:emotion 复核 + 总结 + RAG 引用)
             → empath 总结(末尾拼心灵补给站邀请语)
-            → planner = 心灵补给站方案书(用户点击触发,异步,REST 通道,research-v1 Q3)
-            安全边界:非医疗声明 · 危机绕过 · 方案基于 RAG 知识
+    planner = 心灵补给站方案书(用户点击触发,异步,REST 通道;安全边界见 spec §4 L5)
 ```
 
 ---
 
 ## 6. 危机与审计
 
-- **gate.py**:危机词典 + 严重度打分(硬判,个位数 ms),与 L6 规则引擎**共享单一词典来源**
+- **gate.py**:危机词典 + 严重度打分(硬判,目标 ≤10ms/条),与 L6 规则引擎**共享单一词典来源**
 - 词典/降级阈值 = 配置数据,MVP 最小占位(危机核心词先跑),内容运行时补
 - 每轮输入过 gate;命中 → CRISIS,落**审计日志**(WARN:命中项 + 是否转热线,不含原文)
 - **risk.py**:软信号关键词预筛(低档位)→ 命中才 LLM 复核,控成本

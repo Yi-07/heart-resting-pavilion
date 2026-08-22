@@ -16,6 +16,8 @@
 | 前端方案 | `Architecture/frontend-plan.md` | 前端按此实现 |
 | 后端方案 | `Architecture/backend-plan.md` | 后端按此实现 |
 | 前端 UI/布局参考 | `Architecture/preview/l1-ui-mockup-v7.html` | 默认实现;接口固定、视觉可替换 |
+| 决策历史/二期总表 | `Architecture/ARCHITECTURE_PROGRESS.md` | 会话恢复锚点;"为什么"查此 |
+| 术语表 | `Architecture/CONTEXT.md` | 写新文档/命名/拿不准术语/清扫避用词,以此为准 |
 
 ## 2. 边界表(新代码写哪,旧代码别碰)
 
@@ -29,7 +31,7 @@
 
 ## 3. 核心架构约定
 
-1. **三路路由**:`crisis`(危机闸门,规则硬判,贯穿每轮)→ `answer`(直接答,知识走 RAG)/ `collect`(多轮采集)
+1. **三路路由**:`crisis`(危机闸门,规则硬判,贯穿每条输入)→ `answer`(直接答,知识走 RAG)/ `collect`(多轮采集)
 2. **隔离约束**:`crisis/route` 只走规则,确定性;`emotion_label` 只喂黑板/Live2D,绝不进路由
 3. **模板模型**:一个会话一个模板,粗稿/精稿**同一张图逐步深化**(表层→深层),数据填充;测试模板 3 个(`emotion_wheel`/`beck_formulation`/`stage_map`)
 4. **契约要点**:8 种消息;`first_frame`=回合起点(前端清黑板);`draw` 传**全量 formulation** + `seq`(前端 diff);危机判定**只在后端**
