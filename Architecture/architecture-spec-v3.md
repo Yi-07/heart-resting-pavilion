@@ -17,7 +17,7 @@
 | Q6 | 砍掉症状关联推理，留 `knowledge.query` 接口缝 |
 | Q7 | WebSocket 单连接多消息；实时感交应用层，WebRTC 二期 |
 | Q8 | 记忆四级金字塔 + Key 隔离 + 版本号 + 治理层（用户可查可清）|
-| Q9 | FastAPI + LangGraph(supervisor) + Chroma + SQLite + Redis + Vue3/Vite/TS |
+| Q9 | FastAPI + LangGraph(supervisor) + Chroma + SQLite + Redis + Vue3/Vite/TS。已修订（research-v1 Q2）：无 LLM supervisor，改为确定性条件边编排 |
 | Q10 | MVP 切片 + 二期边界（见 §10）|
 | R1 | L4 去重 →「空窗期策略」：第一帧缓冲 + 黑板渐进绘制 + 语音安抚协同 |
 | R2 | 黑板情感标签驱动多模板：标签聚类→模板（非每标签一模板）|
@@ -277,7 +277,7 @@
 
 | 层 | 选型 |
 |---|---|
-| 后端 | FastAPI + LangGraph(supervisor) + Chroma + SQLite + Redis |
+| 后端 | FastAPI + LangGraph 1.x(确定性 StateGraph) + Chroma + SQLite + Redis |
 | 前端 | Vue3/Vite + TS + SVG 黑板（自研渲染器）+ Live2D |
 | 语音 | CosyVoice 2 + SenseVoice(FunASR)（本地；语音输入=录音→ASR→文字）|
 | 传输 | WebSocket 单连接（8 种消息）|

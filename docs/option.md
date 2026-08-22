@@ -252,7 +252,7 @@ uv pip install --python .venv/Scripts/python.exe -r requirements.txt
 <details>
 <summary>B1 · Python 钉 3.10</summary>
 
-全栈官方要求交汇于 3.10：CosyVoice 官方安装指引 `python=3.10`（仓库 `QwenAudio/CosyVoice`，2026-05-25 最后更新）；langgraph 1.2.11 / fastapi 0.141.1 `requires_python>=3.10`；funasr 1.4.2 宽松但生态实测 3.8–3.10；本机已有 3.10.11。详见 research-v1 §3。
+全栈官方要求交汇于 3.10：CosyVoice 官方安装指引 `python=3.10`（仓库 `QwenAudio/CosyVoice`，2026-05-25 最后更新）；langgraph 1.2.11 / fastapi 0.141.1 `requires_python>=3.10`；funasr 1.4.3 宽松但生态实测 3.8–3.10；本机已有 3.10.11。详见 research-v1 §3。
 </details>
 
 <details>

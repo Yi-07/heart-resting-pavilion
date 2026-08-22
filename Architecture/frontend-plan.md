@@ -12,7 +12,7 @@
 |---|---|
 | 框架 | Vue 3 + Vite + TypeScript |
 | 黑板 | SVG + **自研渲染器**(不引第三方图形库)|
-| Live2D | pixi-live2d-display(Cubism4)|
+| Live2D | pixi-live2d-display 0.4.0(Cubism4;钉 **pixi.js 6.5.10** 配套——stable 0.4.0 peer 仅 pixi ^6,0.5.0-beta 配 pixi 7,均不兼容现行 pixi 8.20.0,2026-08-22 核实)|
 | 传输 | 原生 WebSocket(对接 `ws-contract.md`)|
 | 状态 | Pinia |
 | 日志 | 轻量 console logger(彩色,仿后端 Loguru 风格)|
@@ -40,7 +40,7 @@ src/
   mood/
     selector.ts              # 今日心情选择器(浮出/超时/mood_select 上报)
   l2d/
-    live2d.ts                # pixi-live2d-display 封装 + 表情映射
+    live2d.ts                # pixi-live2d-display 0.4.0 封装(pixi.js 钉 6.5.10)+ 表情映射
   chat/
     ChatPanel.vue            # 气泡 + 流式文本 + 危机横幅
     input.ts                 # 文字/麦克风输入(录音→上传 ASR)

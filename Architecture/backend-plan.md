@@ -38,7 +38,7 @@ backend/
       sufficiency.py       # 充分度打分(权重表)
       degrade.py           # 三降级触发检测
     agents/
-      graph.py             # LangGraph 图定义(supervisor)
+      graph.py             # LangGraph 图定义(确定性条件边,research-v1 Q2)
       empath.py            # 共情:采集话术(确认+下一问)/人话总结
       knowledge.py         # 知识分析师(动态 RAG)
       risk.py              # 风险评估(软预筛 → LLM 复核)
@@ -122,8 +122,8 @@ gate/classifier 已定 route,条件边分派:
 
 ```python
 # llm/provider.py —— OpenAI 兼容统一入口
-# DeepSeek: base_url=https://api.deepseek.com, model=deepseek-chat
-# Ollama:   base_url=http://localhost:11434/v1, model=qwen2.5:7b(示例)
+# DeepSeek: base_url=https://api.deepseek.com, model=deepseek-v4-flash
+# Ollama:   base_url=http://localhost:11434/v1, model=qwen3:8b(示例)
 # 由 config.py 切换;R3 配置 UI 后续接管
 ```
 
