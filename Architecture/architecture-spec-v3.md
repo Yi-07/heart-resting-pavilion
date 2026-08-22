@@ -1,7 +1,6 @@
 # 心理健康助手 · 架构规格 v3（定稿）
 
-> **版本**：v3.2（定稿）· **日期**：2026-08-22 · v3.1 依据 `docs/architecture-research-v1.md`（Q2/Q3/Q4）；v3.2 = B 规范化重构（research-v1 §6：决策表迁出 / 答辩点迁出 / Agent 单源 / 表格一表一义 / 电报体量化）
-> **关系**：融合 v1（`architecture-spec.md`）基础架构 + v2（`architecture-spec-v2.md`）黑板链路重构 + 团队对齐决议。**本文件为权威源，v1/v2 归档于 `Architecture-historys/old/` 不维护。**
+> **关系**：**本文件为权威源**，旧版归档于 `Architecture-historys/old/` 不维护。
 
 ---
 
@@ -84,7 +83,7 @@
 ### L3 · 智能路由决策器
 
 - **职责**：安全前置——危机信号第一时间被确定性规则捕获，一条消息三种命运
-- **关键机制**：危机闸门（规则硬判，目标 ≤10ms/条——纯本地词典+打分，无 LLM/网络调用；作用于每条 user_input）· 规则引擎（危机词典+严重度打分）+ 轻量分类器扩展（零新增组件）· 分类器输出 `{crisis, route, emotion_label, confidence}`
+- **关键机制**：危机闸门（规则硬判，目标 ≤10ms/条——纯本地词典+打分，无 LLM/网络调用；作用于每条 user_input）· 分类器**分层判定**（复用规则引擎，零新增组件）：规则先判明显 case（问候、知识词表命中）→ 模糊才调 LLM 拿 `{route, emotion_label, confidence}`；规则路径 conf 给保守值；LLM conf < 0.6（可调常量 CLASSIFIER_CONF_FLOOR）→ 兜底 collect（collect 比 answer 安全：错了只是多问一句）· RAG 门控复用同一分层判定
 - **隔离约束**：**crisis 与 route 走规则/确定性判定；emotion_label 只喂黑板/Live2D，绝不进路由**
 - **两级标签**：快速研判（粗稿）+ RAG/LLM（精稿）；优先级链：用户选择 > 关键词研判 > 中性兜底
 

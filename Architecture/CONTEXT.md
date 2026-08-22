@@ -7,6 +7,8 @@
 
 **危机闸门**:L3 的规则硬判组件,作用于每条 user_input。
 
+**分层判定**:分类器机制——规则先判明显 case,模糊才调 LLM,低 conf 兜底 collect;RAG 门控复用同一机制。阈值 → spec §4 L3。
+
 **不变量**:全文档通行的铁律——危机判定只在后端 · emotion_label 不进路由 · 黑板=模板+全量 formulation+seq · 信念字段可留白 · 音频转写即弃。
 
 **确定性条件边**:LangGraph 编排方式,纯 Python 条件函数派活,无 LLM 主管。

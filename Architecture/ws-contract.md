@@ -1,6 +1,5 @@
 # WS 前后端契约 · ws-contract
 
-> **版本**:v1.1 · **日期**:2026-08-22(B 规范化:停采后分析时序注 / 超时常量量化)
 > **权威源**:`architecture-spec-v3.md`(本文件为其工程落地补充,不覆盖)
 > **范围**:前后端 WebSocket 单连接的**完整消息契约**。前端内部(模板声明/渲染器)不在此文档。
 
@@ -15,6 +14,7 @@
 | 生命周期 | 单连接承载多回合;断线重连用原 `session_id` 恢复上下文 |
 | 编码 | JSON,UTF-8,文本帧 |
 | 管理通道 | 记忆清除/趋势/模型配置走 HTTP REST(`POST /admin/clear_memory`·`GET /admin/trends`·`POST /admin/config`)，不进 WS；WS 仅对话 8 消息 |
+| 补给站通道 | 心灵补给站方案书走 HTTP REST:`POST /station/report/generate`(点击触发懒生成) · `GET /station/report/latest`(轮询,等待态"正在为你整理…")；不进 WS |
 
 ---
 

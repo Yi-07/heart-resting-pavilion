@@ -1,6 +1,5 @@
 # 后端实施方案 · 技术原型
 
-> **版本**:v1.1 · **日期**:2026-08-22(B 规范化:Agent 名单收敛单源 / 电报体量化)
 > **权威源**:`architecture-spec-v3.md`(架构)· `ws-contract.md`(契约)
 > **目标**:技术原型后端——跑通三路路由全链路(危机闸门 / 分类器 / 多轮采集 / Agent / 记忆 / 语音),日志与审计齐备。
 
@@ -22,16 +21,19 @@
 
 ## 2. 目录结构
 
+> **目录风格**：一个职能一个深模块目录——小接口藏大行为，通过删除测试（删掉该目录，复杂度应消失而非散到调用方）；文件不散放 app 根。
+
 ```
 backend/
   app/
-    main.py                # FastAPI 入口,挂 /ws
+    main.py                # FastAPI 入口:挂 /ws + /station + /admin REST
     ws_gateway.py          # WS 网关:session/seq/消息路由/error 帧
+    admin.py               # 管理通道 REST:/admin/clear_memory · /admin/trends · /admin/config(ws-contract §1)
     config.py              # 模型配置(LLM/ASR/TTS,读环境变量)
     logger.py              # loguru 双输出 + 审计
     router/
       gate.py              # 危机闸门(词典 + 严重度打分)
-      classifier.py        # 轻量分类器(route + emotion_label + conf)
+      classifier.py        # 分层分类器:规则先判→模糊才 LLM;conf<0.6 兜底 collect(spec §4 L3)
     collect/
       state.py             # 采集器状态机
       questions.py         # 预置问题库(按空缺字段组织)
@@ -43,13 +45,21 @@ backend/
       knowledge.py         # 知识分析师
       risk.py              # 风险评估者
       planner.py           # 计划制定者
+    rag/
+      engine.py            # 检索三件套:Chroma+bge-small-zh 向量 · BM25+jieba · bge-reranker 重排(接口:retrieve(query)→refs)
+      ingest.py            # 语料灌库脚本(换 embedding 模型=重跑此脚本,代码不动)
     llm/
       provider.py          # DeepSeek/Ollama 统一抽象(OpenAI 兼容)
     memory/
       hot.py               # Redis:会话上下文
       warm.py              # Redis:会话摘要
       cold.py              # SQLite:profile + 情绪趋势
-    asr.py  tts.py         # SenseVoice / CosyVoice 封装
+    voice/
+      asr.py               # SenseVoice 封装(ffmpeg 转码 webm/opus→wav16k 后进引擎;转写即弃)
+      tts.py               # CosyVoice 2 封装
+    station/
+      routes.py            # 心灵补给站 REST:POST /station/report/generate(点击触发懒生成) · GET /station/report/latest(轮询)
+      report.py            # 方案书存取:SQLite reports 表(MVP 每会话只留最新一份)
     schema/
       formulation.py       # Pydantic:formulation
       ws_messages.py       # 消息模型(对齐 ws-contract)
