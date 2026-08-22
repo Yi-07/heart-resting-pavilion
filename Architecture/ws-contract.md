@@ -140,7 +140,7 @@
 {
   "type": "mood_select",
   "session_id": "sess_abc",
-  "mood": "焦虑",
+  "mood": "低落",
   "ts": 1723456789
 }
 ```
@@ -203,7 +203,7 @@ S→C  draw (seq=1, 粗稿: emotion + 占位)
 S→C  draw (seq=2, +situation+emotion)
      C→S  user_input (第 2 轮回答)
 S→C  draw (seq=3, +thought+behavior)
-     [充分度 ≥0.7 或轮数上限 → 停采集;后台分析已就绪(边采边算)]
+     [充分度 ≥0.7 或轮数上限 → 停采集;MVP=停采后同步分析(边采边算=二期,见下方降级注)]
 S→C  draw (seq=4, 精稿: 完整 formulation)
 S→C  text_delta ×N (人话总结/方案)
 S→C  audio_chunk ×N (可选)

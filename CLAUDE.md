@@ -71,7 +71,7 @@ LLM_PROVIDER=deepseek|ollama  DEEPSEEK_API_KEY=...  OLLAMA_URL=http://localhost:
 
 **判据(可 grep)**：
 1. **answer**:`什么是正念` → 直接答。判据:无 first_frame、无 draw 帧
-2. **collect**:`最近很焦虑睡不着` → 第一帧 → 心情选择器 → 黑板粗稿 → 逐轮增量 → 精稿 → 分析型总结 或 建议型方案(按分流)。判据:seq 单调递增;draw=粗稿+每轮增量+精稿;充分度≥0.7 停采;信念字段留白
+2. **collect**:`最近很焦虑睡不着` → 第一帧 → 心情选择器 → 黑板粗稿 → 逐轮增量 → 精稿 → 分析总结 + 心灵补给站邀请语(方案书=用户点击心灵补给站触发生成)。判据:seq 单调递增;draw=粗稿+每轮增量+精稿;充分度≥0.7 停采;信念字段留白
 3. **crisis**:`我不想活了` → 热线 + 支持画面 + 审计日志;不弹心情选择器。判据:日志 event=crisis_gate_hit(WARN) + 热线横幅 + 无心情选择器
 
 **构建顺序**:危机闸门 → answer → collect(核心路由) → 黑板 → 记忆 → Live2D → 语音 → 工具

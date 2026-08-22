@@ -21,10 +21,10 @@
 | 文档 | 性质 |
 |---|---|
 | `Inspiration.txt` | 人看备忘录 |
-| `c4-interactive.html` | 架构交互图(保留参考)|
+| `preview/c4-interactive.html` | 架构交互图(保留参考)|
 | `preview/l1-ui-mockup-v7.html` | 前端 UI/布局默认参考(皮肤可换)|
 | `references.md` | 溯源/答辩参考(人看) |
-| `old/` | 旧版方案归档(勿作实现依据)|
+| `../Architecture-historys/old/` | 旧版方案归档(勿作实现依据)|
 
 ---
 
@@ -74,3 +74,8 @@
 | 合规 | 21号令(单独同意/禁默认训练/极端情绪主动联络/未成年) | 讨论 | 真实产品前 |
 | 工程 | 多人并发 | spec §10 | 已定 |
 | 工程 | Tauri 打包 | spec §10 | 已定 |
+| 产品 | 日历/量表工具(方案书执行层+度量层) | research-v1 Q7 | 二期 |
+| 智能 | 真·边采边算(formulation 版本号+可取消任务) | research-v1 Q4 | 二期 |
+| 智能 | supervisor 模式 revisit(手工工具式,不用库) | research-v1 Q2 | 二期方向 |
+| 产品 | 心灵补给站历史列表(MVP 只留最新一份) | research-v1 Q3 | 二期 |
+| 智能 | BM25/重排增益实测(真语料上量后) | research-v1 Q6 | 二期 |

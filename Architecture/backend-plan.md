@@ -11,7 +11,7 @@
 | 项 | 选型 |
 |---|---|
 | 框架 | FastAPI + WebSocket |
-| Agent | LangGraph 1.x + langgraph-supervisor |
+| Agent | LangGraph 1.x(确定性 StateGraph,条件边编排,research-v1 Q2) |
 | 环境 | uv(python)|
 | 日志 | loguru(双输出:控制台彩色 + 文件结构化)|
 | 存储 | SQLite(冷层)+ Redis(热/温层)|
@@ -65,10 +65,10 @@ IDLE → FRAME_SENT:发 first_frame(安抚语 + 粗稿 draw)
 FRAME_SENT → ROUND(i):共情 Agent 出"确认情绪 + 第 i 问"
 ROUND(i):
   等 user_input → gate 再查 → 填 formulation → draw 增量
-  充分度 ≥0.4 → ANALYSIS_RUNNING(后台,边采边算)
+  充分度 ≥0.4 → ANALYSIS_RUNNING(二期接口位;MVP 不启动,停采后同步分析,research-v1 Q4)
   充分度 ≥0.7 或 i≥上限 → STOP
   降级触发 → DEGRADE
-STOP → FINAL:精稿 draw + 分流(分析型/建议型)+ text_delta + done
+STOP → FINAL:精稿 draw + 分析总结(text_delta,末尾拼心灵补给站邀请语)+ done
 DEGRADE: ①转共情陪聊 ②已采字段收尾 ③情绪变差→gate(危机转热线)
 任意轮 gate 命中 → CRISIS:热线 + 支持画面 + 审计日志
 ```
@@ -96,15 +96,14 @@ def sufficiency(f: Formulation) -> float:
 ## 5. LangGraph 图定义(骨架)
 
 ```
-nodes: empath · knowledge · risk · planner
-supervisor 每回合:
-  gate/classifier 已定 route:
+nodes: empath · knowledge · risk · planner(监督职能=确定性条件边,无 LLM 派活,research-v1 Q2)
+gate/classifier 已定 route,条件边分派:
     answer → (需 RAG ?) knowledge → 直答流式
     collect → empath(采集循环,状态=formulation)
             → risk(软预筛→复核,命中升级)
-            → 充分度达标 → knowledge(RAG,按需)
-            → empath 总结
-            → planner(建议型分流:基于 formulation 生成方案)
+            → 停采 → analysis(同步:emotion 复核 + 总结 + RAG 引用,research-v1 Q4)
+            → empath 总结(末尾拼心灵补给站邀请语)
+            → planner = 心灵补给站方案书(用户点击触发,异步,REST 通道,research-v1 Q3)
             安全边界:非医疗声明 · 危机绕过 · 方案基于 RAG 知识
 ```
 
@@ -139,7 +138,7 @@ supervisor 每回合:
 
 ## 8. WS 网关
 
-- 每连接:建 session_id;`user_input/mood_select` 入口;`seq` 回合内递增
+- 每连接:建 session_id;`user_input/mood_select` 入口;`seq` 会话内全局递增(不随回合重置,对齐 ws-contract §3.2)
 - 消息路由:按 `type` 分发到对应处理通道
 - 非法消息 → `error(invalid_message)`;超时 → `error(timeout)` + 降级;异常 → `error(server_error)`
 - 新 user_input 抢占旧回合 → 发新 first_frame
@@ -159,5 +158,5 @@ supervisor 每回合:
 用 WS 客户端或脚本各跑一遍,查链路消息顺序 + 日志:
 
 1. **answer**:`user_input("什么是正念")` → text_delta 流式 → done;无 draw
-2. **collect**:`user_input("最近很焦虑睡不着")` → first_frame → 2 轮 draw 增量 → 精稿 → 分析型总结 或 建议型方案(按分流) → done;日志含 `crisis_gate_hit(hit:false)`、`route_decided(collect)`、`sufficiency_scored`
+2. **collect**:`user_input("最近很焦虑睡不着")` → first_frame → 2 轮 draw 增量 → 精稿 → 分析总结+心灵补给站邀请语 → done(方案书由用户点击补给站触发,不在回合内);日志含 `crisis_gate_hit(hit:false)`、`route_decided(collect)`、`sufficiency_scored`
 3. **crisis**:`user_input("我不想活了")` → first_frame(crisis) → 热线内容;日志含 **crisis_gate_hit(hit:true, audit)** 审计
