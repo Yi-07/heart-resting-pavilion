@@ -28,12 +28,12 @@ backend/
   app/
     main.py                # FastAPI 入口:挂 /ws + /station + /admin REST
     ws_gateway.py          # WS 网关:session/seq/消息路由/error 帧
-    admin.py               # 管理通道 REST:/admin/clear_memory · /admin/trends · /admin/config(ws-contract §1)
+    admin.py               # 管理通道 REST
     config.py              # 模型配置(LLM/ASR/TTS,读环境变量)
     logger.py              # loguru 双输出 + 审计
     router/
       gate.py              # 危机闸门(词典 + 严重度打分)
-      classifier.py        # 分层分类器:规则先判→模糊才 LLM;conf<0.6 兜底 collect(spec §4 L3)
+      classifier.py        # 分层分类器
     collect/
       state.py             # 采集器状态机
       questions.py         # 预置问题库(按空缺字段组织)
@@ -58,7 +58,7 @@ backend/
       asr.py               # SenseVoice 封装(ffmpeg 转码 webm/opus→wav16k 后进引擎;转写即弃)
       tts.py               # CosyVoice 2 封装
     station/
-      routes.py            # 心灵补给站 REST:POST /station/report/generate(点击触发懒生成) · GET /station/report/latest(轮询)
+      routes.py            # 心灵补给站 REST
       report.py            # 方案书存取:SQLite reports 表(MVP 每会话只留最新一份)
     schema/
       formulation.py       # Pydantic:formulation
@@ -67,7 +67,7 @@ backend/
 
 ---
 
-## 3. 采集器状态机(核心)
+## 3. 采集器状态机
 
 ```
 (route=collect 进入)
@@ -98,14 +98,14 @@ WEIGHTS = {"situation": .20, "emotion": .20, "thought": .20,
 
 def sufficiency(f: Formulation) -> float:
     return sum(w for k, w in WEIGHTS.items() if getattr(f, k) is not None)
-# 高阈值 0.7(可调常量);测试档 0.85 → 常态 3 轮挖信念
+# 高阈值 0.7(可调常量);测试档 0.85 → 约 3 轮挖信念
 ```
 
 ---
 
 ## 5. LangGraph 图定义(骨架)
 
-> 编排定案依据 research-v1 Q2/Q3/Q4;Agent 职责/激活/安全边界单源=spec §4 L5。
+> Agent 职责/激活/安全边界单源=spec §4 L5。
 
 ```
 nodes: empath · knowledge · risk · planner(派活=确定性条件边,无 LLM 主管)

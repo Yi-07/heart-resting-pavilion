@@ -231,7 +231,7 @@ docker run -d --name mha-redis -p 6379:6379 --restart unless-stopped redis:7-alp
 
 **E6 · CLAUDE.md §8**（Q3 判据同步）：`精稿 → 分析型总结 或 建议型方案(按分流)` → `精稿 → 分析总结 + 心灵补给站邀请语（方案书=用户点击心灵补给站触发）`。其余判据（seq 单调、充分度、信念留白）**逐字不动**。
 
-**E7 · ARCHITECTURE_PROGRESS.md §六**（唯一权威表）追加 5 行：
+**E7 · ARCHITECTURE_PROGRESS.md §五**（唯一权威表）追加 5 行：
 ```
 | 产品 | 日历/量表工具（方案书执行层+度量层） | research-v1 Q7 | 二期 |
 | 智能 | 真·边采边算（formulation 版本号+可取消任务） | research-v1 Q4 | 二期 |

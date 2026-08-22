@@ -1,4 +1,4 @@
-# 术语表(CONTEXT)
+# 术语表
 
 > 只回答一个问题:这个词指什么、该用哪个词。机制与参数见 `architecture-spec-v3.md` 对应节;决策来龙去脉见 `ARCHITECTURE_PROGRESS.md` / `../docs/architecture-research-v1.md`。
 > 维护规则:一词一权威;废词进"避用"列;避用词出现在现行文档(即 grep 清扫)= 违规。
@@ -48,5 +48,5 @@ _避用_: 诊疗方案书 / 诊疗报告(医疗措辞红线)
 
 ## 技术选型
 
-**deepseek-v4-flash**:DeepSeek 现行模型名(2026-08-22 核验)。
+**deepseek-v4-flash**:DeepSeek 现行模型名。
 _避用_: deepseek-chat(已废弃)

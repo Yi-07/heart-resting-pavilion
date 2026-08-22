@@ -16,6 +16,19 @@
 | 管理通道 | 记忆清除/趋势/模型配置走 HTTP REST(`POST /admin/clear_memory`·`GET /admin/trends`·`POST /admin/config`)，不进 WS；WS 仅对话 8 消息 |
 | 补给站通道 | 心灵补给站方案书走 HTTP REST:`POST /station/report/generate`(点击触发懒生成) · `GET /station/report/latest`(轮询,等待态"正在为你整理…")；不进 WS |
 
+**补给站 REST 响应**(HTTP 200,两端点同形):
+
+```json
+{ "status": "ready", "report_md": "# 心理成长方案\n## 睡眠与焦虑的梳理" }
+```
+
+| 字段 | 值 | 说明 |
+|---|---|---|
+| status | `pending` \| `ready` | pending=已受理/生成中 |
+| report_md | string | 仅 ready 返回;md 正文,前端预览/导出 |
+
+- generate 受理即返;latest 轮询——生成中 `pending`,完成 `ready`+`report_md`
+
 ---
 
 ## 2. 消息总览(8)
@@ -232,7 +245,7 @@ S→C  done
 | 回合起点 | 收到 first_frame → 前端清黑板、重置动画基线(seq 会话内全局,不重置) |
 | 旧帧处理 | 收到 `seq <= 已处理` 的 draw 忽略 |
 | 新回合抢占 | 采集/分析未完成时用户发新 user_input → 后端中止当前回合,发新 first_frame(前端自动清黑板)|
-| 超时 | 前端 15s(可调常量)无 S→C 消息 → 显示"还在处理";60s(可调常量)后端 `error(code=timeout)` 兜底 |
+| 超时 | 无 S→C 消息满 15s(可调常量)→ 前端显示"还在处理";满 60s(可调常量)→ 后端 `error(code=timeout)` 兜底 |
 
 ---
 
@@ -245,7 +258,7 @@ S→C  done
 
 ---
 
-## 9. 日志范式(双输出:控制台给人读,文件给机器查)
+## 9. 日志范式(双输出)
 
 ### 9.1 双输出
 

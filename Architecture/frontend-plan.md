@@ -11,7 +11,7 @@
 |---|---|
 | 框架 | Vue 3 + Vite + TypeScript |
 | 黑板 | SVG + **自研渲染器**(不引第三方图形库)|
-| Live2D | pixi-live2d-display 0.4.0(Cubism4;钉 **pixi.js 6.5.10** 配套——stable 0.4.0 peer 仅 pixi ^6,0.5.0-beta 配 pixi 7,均不兼容现行 pixi 8.20.0,2026-08-22 核实)|
+| Live2D | pixi-live2d-display 0.4.0(Cubism4;钉 pixi.js 6.5.10 配套)|
 | 传输 | 原生 WebSocket(对接 `ws-contract.md`)|
 | 状态 | Pinia |
 | 日志 | 轻量 console logger(彩色,仿后端 Loguru 风格)|
@@ -50,7 +50,7 @@ src/
     store.ts                 # Pinia store
 ```
 
-> **工具栏工具范围**：今日心情（=心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点击触发生成 + 等待态"正在为你整理" + md 预览 + 导出 md/pdf，REST 通道，research-v1 Q3）** · 心灵练习 / 留言墙——**前端留入口 UI + TODO 占位**（不实现逻辑，二期）· 设置——模型配置（MVP，R3）+ 隐私 / 记忆治理（MVP，V2.8，**用户删除权 = 2026-07-15 施行《AI 拟人化互动服务管理暂行办法》合规义务，确认保留**）+ 偏好 / 通知（二期 TODO）
+> **工具栏工具范围**：今日心情（=心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点击触发生成 + 等待态"正在为你整理" + md 预览 + 导出 md/pdf，REST 通道见 ws-contract §1）** · 心灵练习 / 留言墙——前端留入口 UI + TODO 占位（二期）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
 
 > **UI 参考**：默认实现 = `preview/l1-ui-mockup-v7.html`。黑板左 64% 横向（细橡木+HUD+呼吸+粉笔手绘）· Live2D 叠右下 · 气泡头部旁；聊天抽屉点气泡展开；心情右上 10s；rail 磁吸右缘。**接口固定，视觉可替换。**
 
@@ -168,7 +168,7 @@ on WS message m:
 
 ---
 
-## 6. WS 消息 → 前端行为(对应表)
+## 6. WS 消息 → 前端行为
 
 | 消息 | 前端行为 |
 |---|---|
