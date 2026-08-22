@@ -275,7 +275,7 @@ spec §0 历史与现状混住（V2.6 双选项并存的根因）；同一事实
 
 本分支新增的环境/依赖同步项：
 1. **Redis 容器**：§2.5 命令 + 启动顺序（Docker 先行）+ `.env` 加 `REDIS_URL`；
-2. **ffmpeg**：Windows 安装步骤（ASR 转码依赖）；
+2. **ffmpeg**：已验证本机已装（`D:\Tools\ffmpeg-8.0-full_build`，v8.0 full，含 libopus，已在 PATH）——手册只需 `ffmpeg -version` 验证步骤，无需安装（ASR 转码依赖）；
 3. **Python 依赖**：`langgraph`（**不含** supervisor）、`redis`、`rank-bm25`、`jieba`、`sentence-transformers`、`chromadb`、`funasr`；
 4. **模型下载**：bge-small-zh-v1.5（~100MB）、bge-reranker-v2-m3（~2GB），HF 镜像备用 `HF_ENDPOINT=https://hf-mirror.com`；
 5. 前端：`@proj-airi/unplugin-live2d-sdk` 包名有效性待验证（主分支遗留项）。
