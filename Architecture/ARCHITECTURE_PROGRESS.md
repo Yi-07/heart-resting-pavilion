@@ -21,7 +21,6 @@
 | 文档 | 性质 |
 |---|---|
 | `Inspiration.txt` | 人看备忘录 |
-| `preview/c4-interactive.html` | 架构交互图(保留参考)|
 | `preview/l1-ui-mockup-v7.html` | 前端 UI/布局默认参考(皮肤可换)|
 | `references.md` | 溯源/答辩参考(人看) |
 | `CONTEXT.md` | 术语表(一词一权威+避用词表) |

@@ -347,10 +347,10 @@ body{
 <!-- 模型配置 -->
 <div class="cfg glass" id="cfgPanel">
   <div class="cf-h">模型配置 · R3</div>
-  <div class="cf-item"><div class="t">LLM<em>DeepSeek</em></div><div class="d">base_url: api.deepseek.com<br>model: deepseek-chat · AES-GCM 加密</div></div>
-  <div class="cf-item"><div class="t">LLM 备源<em>Ollama</em></div><div class="d">base_url: localhost:11434/v1<br>model: qwen2.5:7b</div></div>
-  <div class="cf-item"><div class="t">ASR<em>faster-whisper</em></div><div class="d">转写后即弃 · 不落库</div></div>
-  <div class="cf-item"><div class="t">TTS<em>edge-tts</em></div><div class="d">音频块 base64 下发</div></div>
+  <div class="cf-item"><div class="t">LLM<em>DeepSeek</em></div><div class="d">base_url: api.deepseek.com<br>model: deepseek-v4-flash · AES-GCM 加密</div></div>
+  <div class="cf-item"><div class="t">LLM 备源<em>Ollama</em></div><div class="d">base_url: localhost:11434/v1<br>model: qwen3:8b</div></div>
+  <div class="cf-item"><div class="t">ASR<em>SenseVoice</em></div><div class="d">转写后即弃 · 不落库</div></div>
+  <div class="cf-item"><div class="t">TTS<em>CosyVoice 2</em></div><div class="d">音频块 base64 下发</div></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js"></script>
@@ -641,7 +641,7 @@ const CHAINS={
     {ic:'ear',title:'听懂了你说的',detail:'小栖认真听完了你说的话，没有打断。',meta:'路由判定 · collect'},
     {ic:'heart',title:'感觉到了你的情绪',detail:'从你的话里读到一种累，先接住它。',meta:'情绪研判 · 疲惫'},
     {ic:'layers',title:'一层层问清楚',detail:'按状态机逐轮采集，每轮只问一句。',meta:'采集 ROUND 1→2 · 充分度累计'},
-    {ic:'spark',title:'后台把碎片拼成图',detail:'采到的情境、念头、行为，拼成完整认知图。',meta:'充分度 ≥0.7 · 后台分析'},
+    {ic:'spark',title:'后台把碎片拼成图',detail:'采到的情境、念头、行为，拼成完整认知图。',meta:'充分度 ≥0.7 · 停采后分析'},
     {ic:'msg',title:'组织好想说的话',detail:'把分析结果说成人话，不念术语。',meta:'共情 Agent · 总结'},
     {ic:'vol',title:'准备开口了',detail:'已经准备好，马上就说给你听。',meta:'流式 text_delta'}
   ],
@@ -787,8 +787,8 @@ function runCollect(){
   });
   after(6200,()=>{
     logF('s','sufficiency_scored {0.75 ≥ 0.7 → 停采集}');
-    logF('s','analysis_start {后台分析, 边采边算}');
-    setStatus('充分度 0.75 ≥ 0.7 · 停采集 · 后台分析中…');
+    logF('s','analysis_start {停采后分析}');
+    setStatus('充分度 0.75 ≥ 0.7 · 停采集 · 停采后分析中…');
     setBubble('够了，不用再剥了。让我理一理。');
   });
   after(7400,()=>{
