@@ -21,7 +21,7 @@
 | Q6 | RAG 检索管线 | **三件套直接上**：Chroma+bge-small-zh-v1.5 / BM25+jieba / bge-reranker-v2-m3 |
 | Q7 | L6 计划工具（日历/量表） | **不做**，二期（含"效果闭环"叙事价值，见 2.8） |
 | B8 | ASR 音频链路 | webm/opus → **ffmpeg 转码** → SenseVoice；环境手册补 ffmpeg |
-| — | 数据货币三件套 | 契约消息 / CollectState / Formulation 定义——**待单独讨论**（§4 占位） |
+| C | 数据货币专项 | CollectState（14 字段）+ 事件→帧映射 + 语音念点/等待语音/承接语——**已定案**（§4） |
 
 ---
 
@@ -183,14 +183,81 @@ docker run -d --name mha-redis -p 6379:6379 --restart unless-stopped redis:7-alp
 
 ---
 
-## 4. 待办占位 · 数据货币三件套（用户要求单独讨论）
+## 4. 数据货币专项定案（2026-08-23/24 · grilling 第二轮）
 
-以下三张"货币表"已在 grilling 中确认存在与归属，**详细定义延后专项讨论**：
+> 承接 §0 台账"数据货币三件套"待办。硬约束全程未破：契约 8 消息不变；seq 会话内全局递增；analysis_node 输出分发按 §2.4；类型只定义一份（Pydantic⇔TS 同构，字段名=模板 fields key）。
+> 现行规则已落 ws-contract（W1~W4）/ backend-plan（B1~B5）/ frontend-plan（F1~F2）/ CONTEXT（等待语音、承接安抚语两词）；本节记**为什么**与取舍。
 
-1. **契约货币**：8 种 WS 消息（ws-contract → `schema/ws_messages.py` ⇔ `messages.ts`）——已定义，无需讨论；
-2. **图内货币**：`CollectState`（formulation+轮次+充分度+降级标志+route+emotion_label）——**schema 待定义**；
-3. **领域货币**：`Formulation`（schema/formulation.py，字段名=模板 fields key）——已定义；
-4. **事件→帧映射表**（内部事件触发 first_frame/draw/text_delta/done/audio_chunk 的规则）——**待定义，前后端各想象一次必然出偏差，属高优先级待办**。
+### 4.1 C1 · 状态边界：危机不入图，全图一份状态
+
+- 危机闸门放**网关**：每条 user_input 进图前先过闸门；命中 → 网关直出危机序列 + WARN 审计 + 弃回合状态。理由：①闸门铁律=规则确定性、作用于每条输入——所有 user_input 天然先到网关，图内无需各节点自查；②审计单点落网关；③图内只剩 answer/collect 两条纯业务流，危机路径零 LLM 零图开销。
+- answer/collect **共用同一份 CollectState**（answer 只填 route/turns，采集字段全空），不搞两套类型；formulation 字段引用领域货币（schema/formulation.py，类型单源）。
+
+### 4.2 C2 · 驱动模式：短调用 + 网关持有
+
+- **定案**：每条 user_input = 一次短图调用；网关在两次调用间保管 CollectState（挂 WS 连接对象）。抢占/超时=丢弃状态；仅分析中抢占需 cancel 前台任务。不上 checkpointer。
+- **落选**：整回合一次长调用 + interrupt 挂起——跨调用恢复要 checkpointer，抢占要取消半成品执行流（§2.4 存档的 b 方案难处）。
+- 生命周期 5 销毁点：done / 抢占 / 超时 / 危机命中 / 断线重启。**断线=回合作废不抢救**——重连恢复的是记忆（热层），不是半成品回合；黑板无重同步帧，作废最诚实。
+- 相位不落 state：`where_next(state)` 纯函数从 route/degrade_reason/sufficiency/round_index 算下一步，相位与字段永不打架。
+
+### 4.3 C3 · 字段表：14 格（现行单源=backend-plan §3.2）
+
+- degrade_reason 单字段、布尔派生——不存两个会打架的字段；
+- pending_question 显式存——跨调用记住"上一问问的哪个字段"，回答填格路由靠它；
+- 顶层 emotion_label 只写一次（分层判定）；分析修订只进 formulation.emotion——契约无表情更新帧，回写了也发不出去；
+- escalated（自查补的第 14 格）：risk 复核命中写 True → 调用即止 → 网关发危机序列+同款审计（危机不入图的配套出口）；
+- 「回合由抢占而建」只做网关局部变量（选承接安抚语用完即弃），不进 state——图内无消费者，加进去即污染。
+
+### 4.4 C4 · 回合边界一进一出
+
+- 进：SessionContext 快照两字段（history_summary=温层摘要、mood_recent=冷层心情），entry 抄一次、回合内不刷新、图内只读。
+- 出：心灵补给站懒生成素材 = {formulation, summary} 写 Redis `station:input:{session_id}`（TTL 7 天，覆盖式）；**不含 turns 全文**——对话原文回合结束即蒸发，素材给结构化结论就够。
+- 回合结束三动作：温层写本回合摘要 → 写 station:input → 弃 state。
+
+### 4.5 C5 · 发帧机制：emitter 注入
+
+- **定案**：帧唯一出口=网关发送函数（盖章 seq→发送；单事件循环，发送序=因果序）。图节点经 config 注入 emitter 显式声明 draw/text_chunk；first_frame/危机序列/error/done 由网关直发。emitter 不进 state——state 保持纯数据，无 WS 可单测。
+- **落选 a**（状态 diff 自动推导）：精稿 draw 会被总结流式 text_delta 抢到前面，违反 §2.4 时序。
+- **落选 b**（事件列表进 state）：流式做不到边生成边发，且 state 不再纯数据。
+
+### 4.6 C6 · seq 与抢占
+
+- 发号：pre-increment 首帧=1；仅 draw/text_delta/audio_chunk/done 消耗号；first_frame/error 不带不消耗；text/audio 攒批（~100ms 窗或 ~30 字）每批一号。
+- **计数器位置（会话内自纠）**：初版定 Redis INCR 防断线重连误杀——重读发现 CONTEXT 已定义"会话=单 WS 连接生命周期"，计数器住连接对象即满足"会话内全局递增"；误杀坑由契约 §3.1"first_frame 重置 seq 基线"承重（该行由疑似废话变承重墙，配套 W1 消歧）。Redis 出局：少一个机制、少一个降级分支。
+- 抢占两场景：等待期=弃 state 直接 entry；分析中=cancel + 旧 emitter 标记 dead（**未发帧在发送前蒸发**）→ entry。已发帧靠 TCP 单连接有序必先于新 first_frame 到达，前端重置翻篇；draw 的 seq 忽略=双保险。原则：**能在发送前丢的绝不靠前端丢**。
+- 超时锚点=后端处理单条 user_input 的时长（W4）——用户思考期不计时。
+
+### 4.7 C7 · 语音：念三处 + 等待语音 + 降级
+
+- **范围修正**：初判"TTS 二期占位"误读了构建顺序——文档事实是语音在 MVP（backend-plan 技术栈 / voice 双文件 / 真 provider / B8 链路）。实装并收窄：
+- **念=三处**：开场安抚语 / 总结+邀请语 / 危机话术（平静语气预设，不喂情绪标签）；逐轮问答不念（拖节奏、演示噪音）。TTS 情感参数喂 formulation.emotion.label（=术语"情绪一源三用"）。
+- **等待语音**（用户提议）：空窗期 filler 用 CosyVoice **同音色预生成**为文件（每句几百 KB），分析开始即播、卡死 15s 播第二句；文件切块直发 audio_chunk，零运行时合成；TTS 挂了照样播（演示保险）。逐轮间隙不播。
+- **打断的"高情商"取舍**：采纳=承接安抚语（抢占建回合的话术库变体，搭 first_frame.text 槽位）+ 前端音频 ~100ms 淡出停播；否决=LLM 动态过渡语（预设优先哲学+危机确定性）、字级视听同步（当前拓扑文字先流完语音跟上，无对齐需求）、按响应时间动态路由（原无可路由的等待话术语音；等待语音落地后二期重估）、后端流式无缝拼接（需改契约改架构）。
+- ASR：mode=audio 全程可用，ffmpeg→SenseVoice→文本即弃；**只取转写文本，情感识别结果丢弃**（接入即绕过分层判定，违反隔离不变量）。
+- 降级：TTS 失败/超时 → 跳过 audio_chunk 直接收尾，文字照常。
+
+### 4.8 C8 · 事件→帧映射表（决策版；现行单源=backend-plan §8 + ws-contract §6）
+
+| 阶段 | 触发 | 帧 | seq |
+|---|---|---|---|
+| 进入 | 闸门命中（任意时刻） | first_frame(crisis) → draw(stage_map) → text(热线) → audio(平静预设) → done + WARN 审计 | 后四类各消耗 |
+| 进入 | 分层判定=collect | first_frame(冷启动/承接变体安抚语) → audio(安抚语 TTS) | — / +N |
+| 进入 | mode=audio | 无帧（转写即弃，与文字同流） | — |
+| 采集 | entry 粗稿节点 | draw(粗稿，emotion=快速研判标签) | +1 |
+| 采集 | 共情陪伴者发问 / 陪聊轮 | text_delta(1~2 帧；陪聊轮无 draw) | +1~2 |
+| 采集 | 轮次填格完成 | draw(全量增量) | +1 |
+| 分析 | 开始（网关 timer） | audio_chunk×N（等待语音文件） | +N |
+| 分析 | emotion_review 合入（§2.4①） | draw(精稿) | +1 |
+| 分析 | 总结流式 → 邀请语（§2.4②） | text_delta×N(攒批) → text_delta(固定模板) | +N+1 |
+| 分析 | 总结 TTS | audio_chunk×N | +N |
+| 终结 | 调用终结 + 排空 | done → 网关三动作（4.4） | +1 |
+| 异常 | 非法 / 超时 / 异常 | error(无号)；超时补降级 text_delta + done | — / +2 |
+| 抢占 | 等待期 / 分析中 | 见 4.6；新 first_frame 用承接安抚语 | — |
+| mood | 独立 / 回合内 | 独立=短安抚 text+done；回合内=无帧仅 profile | +2 / — |
+
+### 4.9 文档落点（本次执行清单）
+
+W1~W4=ws-contract（seq 基线消歧 / §6.2 时序补全 / mood 回合内 / 超时锚点）；B1~B5=backend-plan（目录树 / §3 重写 / §5 risk 出口 / §8 发号与帧映射 / §10 语音验收）；F1~F2=frontend-plan（seq 基线对齐 / 淡出+队列）；C1=CONTEXT 新增"等待语音、承接安抚语"；PROGRESS 二期表 +3 行（字级视听同步 / 后端无缝拼接 / SenseVoice 情感输出接入）。CLAUDE.md 未动（3 条主验收判据保持）。
 
 ---
 

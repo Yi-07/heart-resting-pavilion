@@ -68,7 +68,7 @@ src/
 
 ```
 idle ──send user_input──▶ awaiting_first_frame
-awaiting_first_frame ──first_frame──▶ collecting(清黑板/重置 seq/浮心情选择器)
+awaiting_first_frame ──first_frame──▶ collecting(清黑板/重置 seq 基线/浮心情选择器)
 collecting ──draw(增量)──▶ collecting(继续)
 collecting ──充分度达标(后端停采集)──▶ analysis(显示"收尾中")
 analysis ──draw(精稿)+text_delta──▶ final
@@ -172,10 +172,10 @@ on WS message m:
 
 | 消息 | 前端行为 |
 |---|---|
-| first_frame | 回合重置;crisis→热线+stage_map;collect→心情选择器+粗稿 |
+| first_frame | 回合重置;淡出停播当前音频(~100ms);crisis→热线+stage_map;collect→心情选择器+粗稿 |
 | draw | 渲染器增量画(按 seq)|
 | text_delta | 气泡流式追加 |
-| audio_chunk | Live2D 语音播放 |
+| audio_chunk | 入队顺序播放 + Live2D 口型(抢占随 first_frame 淡出) |
 | done | 收尾:收起等待态 |
 | error | 温和兜底,回 idle |
 | user_input(发)| 触发新回合 |

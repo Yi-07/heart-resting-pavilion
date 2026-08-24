@@ -70,7 +70,7 @@
 | mood_select | bool | crisis 恒 false;collect true |
 | text | 安抚语 | 按情绪标签选文案 |
 
-**前端语义**:收到 first_frame = **新回合起点 → 清空黑板、重置 seq、收起心情选择器计时**。
+**前端语义**:收到 first_frame = **新回合起点 → 清空黑板、重置 seq 基线、收起心情选择器计时**(基线=旧帧判定起点;后端计数不重置,见 §3.2)。
 
 ### 3.2 draw
 
@@ -160,6 +160,7 @@
 
 - mood 取值(6 档):`难过 / 低落 / 平静 / 还好 / 开心 / 很好`
 - **独立到达**(无活跃回合):后端仅更新 L7 profile,回 `text_delta`(短安抚) + `done`(**不发 first_frame**,与 §3.1 answer 一致);Live2D 表情由前端 mood_select 本地触发
+- **回合内到达**(§6.2 采集期):仅更新 L7 profile,不回帧,采集照常等待轮次回答
 
 ---
 
@@ -211,20 +212,26 @@ S→C  done
 C→S  user_input
 S→C  first_frame (route=collect, template, 安抚语, mood_select=true)
 S→C  draw (seq=1, 粗稿: emotion + 占位)
+S→C  audio_chunk ×N (安抚语语音,可选)
+S→C  text_delta (确认情绪 + 第 1 问)
      C→S  mood_select (可选,用户点了才发)
      C→S  user_input (第 1 轮回答)
-S→C  draw (seq=2, +situation+emotion)
+S→C  draw (全量,+situation+emotion)
+S→C  text_delta (确认 + 第 2 问)
      C→S  user_input (第 2 轮回答)
-S→C  draw (seq=3, +thought+behavior)
-     [充分度 ≥0.7 或轮数上限 → 停采集 → 停采后同步分析]
-S→C  draw (seq=4, 精稿: 完整 formulation)
-S→C  text_delta ×N (人话总结/方案)
-S→C  audio_chunk ×N (可选)
+S→C  draw (全量,+thought+behavior)
+S→C  text_delta (确认 + 第 3 问)
+     [充分度 ≥0.7 或轮数上限 → 停采 → 停采后同步分析]
+S→C  audio_chunk ×N (等待语音,可选)
+S→C  draw (精稿: 完整 formulation)
+S→C  text_delta ×N (人话总结,末尾拼心灵补给站邀请语)
+S→C  audio_chunk ×N (总结语音,可选)
 S→C  done
 ```
 
 - **降级**(答案过短/话题漂移/负面词):后端跳过剩余轮次,直接发精稿 draw + 转共情陪聊/已采字段收尾;情绪变差命中软预筛 → 改发危机序列(§6.3)
 - **分析等待**:停采后同步分析,精稿 draw 前有分析耗时(前端显示"收尾中");后台并行属二期
+- **seq 示例**:时序图仅粗稿标 seq=1;text/audio 交错消耗号,后续帧不标数值(递增规则见 §3.2)
 
 ### 6.3 crisis(危机)
 
@@ -245,7 +252,7 @@ S→C  done
 | 回合起点 | 收到 first_frame → 前端清黑板、重置动画基线(seq 会话内全局,不重置) |
 | 旧帧处理 | 收到 `seq <= 已处理` 的 draw 忽略 |
 | 新回合抢占 | 采集/分析未完成时用户发新 user_input → 后端中止当前回合,发新 first_frame(前端自动清黑板)|
-| 超时 | 无 S→C 消息满 15s(可调常量)→ 前端显示"还在处理";满 60s(可调常量)→ 后端 `error(code=timeout)` 兜底 |
+| 超时 | 无 S→C 消息满 15s(可调常量)→ 前端显示"还在处理";后端处理任一 user_input 满 60s(可调常量,自该消息到达起算)→ `error(code=timeout)` 兜底 |
 
 ---
 

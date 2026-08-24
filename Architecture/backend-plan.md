@@ -27,19 +27,20 @@
 backend/
   app/
     main.py                # FastAPI 入口:挂 /ws + /station + /admin REST
-    ws_gateway.py          # WS 网关:session/seq/消息路由/error 帧
+    ws_gateway.py          # WS 网关:每条 user_input 先过危机闸门;session/seq 发号/消息路由/抢占/error 帧
     admin.py               # 管理通道 REST
     config.py              # 模型配置(LLM/ASR/TTS,读环境变量)
     logger.py              # loguru 双输出 + 审计
     router/
       gate.py              # 危机闸门(词典 + 严重度打分)
       classifier.py        # 分层分类器
+      phrases.py           # 预设话术库(安抚/承接/邀请/危机;场景×情绪组织,不经 LLM)
     collect/
-      state.py             # 采集器状态机
       questions.py         # 预置问题库(按空缺字段组织)
       sufficiency.py       # 充分度打分(权重表)
       degrade.py           # 三降级触发检测
     agents/
+      state.py             # CollectState:图内共享黑板,answer/collect 共用(字段定义=§3)
       graph.py             # LangGraph 图定义(确定性条件边)
       empath.py            # 共情陪伴者
       knowledge.py         # 知识分析师
@@ -55,11 +56,12 @@ backend/
       warm.py              # Redis:会话摘要
       cold.py              # SQLite:profile + 情绪趋势
     voice/
-      asr.py               # SenseVoice 封装(ffmpeg 转码 webm/opus→wav16k 后进引擎;转写即弃)
-      tts.py               # CosyVoice 2 封装
+      asr.py               # SenseVoice 封装(ffmpeg 转码 webm/opus→wav16k 后进引擎;只取转写文本,情感识别结果丢弃;音频即弃)
+      tts.py               # CosyVoice 2 封装(念=开场安抚/总结+邀请/危机;失败跳过音频,文字照常收尾)
+      fillers/             # 预生成等待语音文件(与 TTS 同音色;文件切块直发 audio_chunk,零运行时合成)
     station/
       routes.py            # 心灵补给站 REST
-      report.py            # 方案书存取:SQLite reports 表(MVP 每会话只留最新一份)
+      report.py            # 方案书存取:SQLite reports 表(每会话只留最新一份);懒生成素材=Redis station:input(TTL 7 天)
     schema/
       formulation.py       # Pydantic:formulation
       ws_messages.py       # 消息模型(对齐 ws-contract)
@@ -67,23 +69,62 @@ backend/
 
 ---
 
-## 3. 采集器状态机
+## 3. 采集驱动与图内黑板(CollectState)
+
+### 3.1 驱动模式
+
+- 每条 user_input = **一次短图调用**:网关先过危机闸门 → 未命中则带着现有 CollectState 调图,跑到「等待下一条输入」或「回合终结」即返回
+- CollectState 挂在 **WS 连接对象**上,图节点只读写、不持有;同一时刻至多一个调用在跑
+- 销毁触发点(任一即弃,不抢救):done 发出 · 新 user_input 抢占 · 超时 · 危机命中 · 断线/进程重启
+- 相位不落 state:下一步动作由条件边纯函数 `where_next(state)` 从 route/degrade_reason/sufficiency/round_index 算出(§5)
+
+### 3.2 CollectState 字段(14)
+
+**A · 身份与路由(网关写入,图内只读)**
+
+| 字段 | 类型 | 初始值 | 写入者 |
+|---|---|---|---|
+| session_id | str | 连接分配 | 网关(entry) |
+| route | `"answer"\|"collect"` | 分层判定 | 网关(entry),图内不可变 |
+| template | TemplateId\|None | collect→`beck_formulation`;answer→None | 网关(entry) |
+| emotion_label | str\|None | 快速研判标签 | 分层判定一次写入,图内不回写 |
+| confidence | float | 分层判定 conf | 分层判定(留档调试) |
+
+**B · 采集进度(图内写入)**
+
+| 字段 | 类型 | 初始值 | 写入者 |
+|---|---|---|---|
+| formulation | Formulation | 全 null | entry 粗稿(填 emotion)→ 轮次填格 → 分析(emotion_review 合入) |
+| round_index | int | 0 | 轮次处理(每条回答 +1) |
+| sufficiency | float | 0.0 | 充分度打分(每次填格后重算,§4) |
+| degrade_reason | DegradeReason\|None | None | 降级检测;None=未降级,布尔派生 |
+| pending_question | PendingQuestion\|None | None | 共情陪伴者发问时写,下条回答消费(回答填哪格由它定) |
+| max_rounds | int | 配置注入(默认 4) | 网关(entry) |
+| escalated | bool | False | risk 复核命中写 True → 调用即止,网关转危机序列+审计 |
+
+**C · 上下文(网关写 entry;图内只读/追加 turns)**
+
+| 字段 | 类型 | 初始值 | 写入者 |
+|---|---|---|---|
+| turns | list[Turn](追加式) | [] | 网关(entry input 为 turns[0])→ 轮次节点(问答追加) |
+| session_context | SessionContext | 记忆层快照 | 网关(entry),回合内不刷新 |
+
+辅助类型:`Turn={role:"user"|"assistant", text:str}` · `DegradeReason="too_short"|"off_topic"|"negative"` · `PendingQuestion={text:str, target_field:FieldKey}` · `SessionContext={history_summary:str|None, mood_recent:list[MoodKey]}`(温层摘要+冷层心情,来源=memory/)
+
+脱敏:state 含用户原文,只活连接内存;日志只记长度/哈希(§9);落盘唯一出口=回合结束 station:input(3.3)
+
+### 3.3 回合生命周期
 
 ```
-(route=collect 进入)
-IDLE → FRAME_SENT:发 first_frame(安抚语 + 粗稿 draw)
-FRAME_SENT → ROUND(i):共情 Agent 出"确认情绪 + 第 i 问"
-ROUND(i):
-  等 user_input → gate 再查 → 填 formulation → draw 增量
-  充分度 ≥0.4 → ANALYSIS_RUNNING(二期接口位;MVP 不启动——停采后同步分析)
-  充分度 ≥0.7 或 i≥上限 → STOP
-  降级触发 → DEGRADE
-STOP → FINAL:精稿 draw + 分析总结(text_delta,末尾拼心灵补给站邀请语)+ done
-DEGRADE: ①转共情陪聊 ②已采字段收尾 ③情绪变差→gate(危机转热线)
-任意轮 gate 命中 → CRISIS:热线 + 支持画面 + 审计日志
+entry 调用:粗稿 draw(emotion=快速研判标签)→ 确认+第 1 问
+轮次调用:填 formulation → draw 增量 → 充分度重算 → where_next
+  → 继续问:确认+第 i 问(陪聊轮不填格、无 draw)
+  → 终结:充分度 ≥0.7 ｜ round_index ≥ max_rounds ｜ 降级收尾
+终结调用:risk 复核(命中→escalated=True 即止)→ emotion_review 合入 → 精稿 draw → 总结+邀请语 → done
+回合结束(网关三动作):温层写本回合摘要 → Redis 写 station:input{formulation,summary}(TTL 7 天)→ 弃 state
 ```
 
-**每轮输出(共情 Agent 结构化)**:
+**每轮输出(共情陪伴者结构化)**:
 ```json
 { "confirm": "被否定不等于你不配。", "next_question": "当时脑子里闪过了什么念头？", "target_field": "thought" }
 ```
@@ -109,10 +150,10 @@ def sufficiency(f: Formulation) -> float:
 
 ```
 nodes: empath · knowledge · risk · planner(派活=确定性条件边,无 LLM 主管)
-gate/classifier 已定 route,条件边分派:
+gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图。条件边分派:
     answer → (需 RAG ?) knowledge → 直答流式
-    collect → empath(采集循环,状态=formulation)
-            → risk(软预筛→复核,命中升级)
+    collect → empath(采集循环,黑板=CollectState §3)
+            → risk(软预筛→LLM 复核;命中→escalated=True,调用即止,网关发危机序列+审计)
             → 停采 → analysis(同步:emotion 复核 + 总结 + RAG 引用)
             → empath 总结(末尾拼心灵补给站邀请语)
     planner = 心灵补给站方案书(用户点击触发,异步,REST 通道)
@@ -149,10 +190,25 @@ gate/classifier 已定 route,条件边分派:
 
 ## 8. WS 网关
 
-- 每连接:建 session_id;`user_input/mood_select` 入口;`seq` 会话内全局递增(不随回合重置)
-- 消息路由:按 `type` 分发到对应处理通道
-- 非法消息 → `error(invalid_message)`;超时 → `error(timeout)` + 降级;异常 → `error(server_error)`
-- 新 user_input 抢占旧回合 → 发新 first_frame
+- 每连接:建 session_id;`user_input/mood_select` 入口;mode=audio → voice/asr 转写(文本即弃)后与文字同流
+- **发号**:所有 S→C 帧经网关发送函数,盖章即发送(seq 预增,首帧=1);仅 draw/text_delta/audio_chunk/done 消耗号,first_frame/error 不带不消耗;计数器=连接对象内存(会话内全局递增,契约 §3.2)
+- **两条来路**:网关直发(first_frame/危机序列/error/done);图内 emitter 注入(config 传递,不进 state)发 draw/text_delta/audio_chunk
+- 抢占:等待期=弃 state 直接 entry(安抚语用承接变体);分析中=cancel 图调用 + 旧 emitter 标记 dead(未发帧蒸发)→ entry;前端淡出停播(frontend-plan §6)
+- 非法消息 → `error(invalid_message)`;超时(锚点=契约 §7)→ `error(timeout)` + 降级话术 + done;异常 → `error(server_error)`
+
+**帧映射(发射侧唯一事实)**
+
+| 帧 | 发送者 | 触发 | data 来源 |
+|---|---|---|---|
+| first_frame | 网关 | 分层判定 collect/crisis 后、进图前 | route/template/emotion_label + phrases.py 安抚语(冷启动/承接变体) |
+| draw | emitter | 节点改 formulation 后显式发;粗稿/逐轮/精稿同一调用,全量 | state.formulation |
+| text_delta | emitter | 共情陪伴者话术(1~2 帧)· 知识直答/分析总结流式(攒批:~100ms 窗或 ~30 字,每批一帧)· 邀请语(话术库模板,总结末尾) | 对应文本流 |
+| audio_chunk | 网关+emitter | 网关:安抚语/危机话术/等待语音(voice/fillers 文件切块直发;分析开始即播,卡死 15s 播第二句);emitter:总结 TTS | CosyVoice 流式 / 预生成 wav(同音色) |
+| done | 网关 | 图调用终结且 emitter 排空 → 随后回合结束三动作(§3.3) | — |
+| error | 网关 | 非法/超时/异常 | code + message(契约 §3.6) |
+
+- 危机序列(网关,闸门任意命中):first_frame(crisis) → draw(stage_map) → text_delta(热线话术) → audio_chunk(平静语气,失败跳过) → done + WARN 审计(§6)
+- mood_select:独立到达=短安抚 text_delta + done;回合内=仅更新 profile 不回帧(契约 §4.2)
 
 ---
 
@@ -164,10 +220,11 @@ gate/classifier 已定 route,条件边分派:
 
 ---
 
-## 10. 验收(后端视角,3 用例)
+## 10. 验收(后端视角,4 用例)
 
 用 WS 客户端或脚本各跑一遍,查链路消息顺序 + 日志:
 
 1. **answer**:`user_input("什么是正念")` → text_delta 流式 → done;无 draw
 2. **collect**:`user_input("最近很焦虑睡不着")` → first_frame → 2 轮 draw 增量 → 精稿 → 分析总结+心灵补给站邀请语 → done(方案书由用户点击补给站触发,不在回合内);日志含 `crisis_gate_hit(hit:false)`、`route_decided(collect)`、`sufficiency_scored`
 3. **crisis**:`user_input("我不想活了")` → first_frame(crisis) → 热线内容;日志含 **crisis_gate_hit(hit:true, audit)** 审计
+4. **voice**:`user_input(mode=audio, webm/opus)` → 转写后与文字同流(链路同用例 2);安抚语与总结各出 audio_chunk ×N;分析中发新 user_input 抢占 → 未发帧蒸发 + 新 first_frame(承接安抚语);日志无音频无原文
