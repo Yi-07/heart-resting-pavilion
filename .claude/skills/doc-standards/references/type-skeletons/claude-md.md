@@ -1,0 +1,11 @@
+# CLAUDE.md 骨架(agent 入口)
+
+> <200 行。三源对照:sandcastle(极简指针+验证命令第一行)· deepseek-harness(每条约定带理由;机械可查进闸门,语义留规则)· Anthropic 官方(排除清单)。与 AGENTS.md 同构(agents.md 官方内容面=overview/build·test 命令/code style/testing/PR 指南),多工具并存时做副本+头部注"真源=CLAUDE.md"。
+
+- **项目一句话+文档指针表**:每份一行(位置/性质),带触发场景
+- **边界表**:新代码写哪/旧代码别碰
+- **核心约定**:机制级铁律,编号,可执行
+- **开发命令**:环境可自查的不写(package.json scripts 等);写查不到的(端口/env/包管理器用法)
+- **验证路由**:改哪类文件→跑什么检查
+- **风格红线**:类型对齐契约/日志脱敏/安全
+- 排除:changelog/历史/逐文件描述/常变信息;IMPORTANT 全文一处

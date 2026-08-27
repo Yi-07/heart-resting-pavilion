@@ -1,6 +1,7 @@
 # Architecture disscussion
 Architecture-historys
 
-.claude
+.claude/*
+!.claude/skills/
 .env
 .playwright-mcp/
