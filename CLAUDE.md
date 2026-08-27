@@ -42,17 +42,27 @@
 
 ## 4. 开发命令
 
+**后端**(在 backend/ 目录下,uv 管依赖):
 ```bash
-# 后端（以下命令在 backend/ 目录下执行）
-uv sync                                    # 装依赖
-uv run uvicorn app.main:app --port 8000    # 启动
-# 前端
-cd frontend && npm install && npm run dev  # 启动
-# 模型配置(环境变量)
-LLM_PROVIDER=deepseek|ollama  DEEPSEEK_API_KEY=...  OLLAMA_URL=http://localhost:11434/v1
+uv sync
+uv run uvicorn app.main:app --port 8000
+uv run ruff check app
+uv run mypy app
+uv run pytest
 ```
 
-**验证路由**:改后端→`uv run ruff check app` · `uv run mypy app` · `uv run pytest`(测试建立前空跑即绿);改前端→`npm run typecheck` · `npm run lint`(前端骨架后生效);改文档→doc-standards 十判据+收尾 grep
+**前端**(在 frontend/ 目录下):
+```bash
+npm install
+npm run dev
+npm run typecheck
+npm run lint
+```
+
+**模型配置**:环境变量,单源=`backend/.env.example`(provider 切换/密钥/Redis)。
+**收录判据**:只收启动/验证入口与带约定语义(何时跑/前置)的命令;业务 script 单源=package.json/pyproject,不复制;新约定命令随引入同 commit 收录。
+
+**改动后验证**:按改动面选跑对应端检查(后端=ruff/mypy/pytest 三件;前端=typecheck/lint;测试建立前空跑即绿,前端骨架后生效);改文档→doc-standards 十判据+收尾 grep。不全套跑,不重复跑已过的检查。
 
 ## 5. 代码风格(可执行规则)
 

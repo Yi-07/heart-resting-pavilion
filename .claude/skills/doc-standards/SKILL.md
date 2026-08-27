@@ -38,7 +38,8 @@ done=缺项清单已呈报并获点头;每份产物过骨架全节;grep 三查�
 | 决策记录(ADR) | 一次决策一篇,向前采用 | 架构级决策发生 | adr.md |
 | 环境/操作手册 | 怎么跑起来/环境变量 | 有人要跑起来 | env-howto.md |
 | 进度/恢复台账 | 会话恢复锚点+增量总表 | agent 跨会话工作 | progress.md |
-| README | 人向枢纽:状态/指路/概览/协作 | 推仓共享 | readme.md |
+| README | 人向门面:简介/预览/指路 | 编码完成后建立 | readme.md |
+| CONTRIBUTING | 贡献者协作规则 | 团队协作规则成型 | contributing.md |
 
 > 项目特有型(研究记录/UI 参考/备忘录/答辩溯源等)随项目文档地图走(PROGRESS §二),不进通用型录。
 > 域外型,触发才建:CONTRIBUTING=README 协作节挤压 · CHANGELOG=对外发版(git tag 即内部替代)· runbook=多环境部署 · tutorial=有外部学习者 · PRD=多干系人需求谈判 · RFC=团队扩大需评审 · SECURITY/LICENSE=开源或公开。

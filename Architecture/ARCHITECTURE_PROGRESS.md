@@ -30,7 +30,8 @@
 | 答辩溯源(`references.md`) | 评审场景 | ✓ |
 | 决策记录(`docs/adr/NNN-标题.md`) | 架构级决策发生 | ✓机制就绪,首篇待首个编码期决策 |
 | 数据契约(`docs/data-contract.md`) | 数据生产者≠消费者 | ⚠ 移交代码会话 |
-| README | 推仓共享 | △ 交付前批 |
+| README | 编码完成后建立,按职能维护 | △ 编码后 |
+| CONTRIBUTING | 团队协作规则成型(README 协作内容拆出) | △ 编码后 |
 | 人看架构文档 | 交付演示 | △ 交付前批 |
 | AGENT.md 副本 | 交付要求含 Agent.md | △ 交付前批 |
 | 研究记录(`docs/` 下 *-research-*.md) | 专题调研发生 | ✓ |
