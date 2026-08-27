@@ -6,7 +6,7 @@
 
 ## 0. 决策记录
 
-现行规则=本文件正文 §1~§11。历史决策台账（Q/R/V2.x）→ `ARCHITECTURE_PROGRESS.md` §六；定案依据与证据 → `docs/architecture-research-v1.md`。
+现行规则=本文件正文 §1~§11。历史决策台账（Q/R/V2.x）→ `ARCHITECTURE_PROGRESS.md` §六；定案依据与证据 → `docs/research/architecture-research-v1.md`。
 
 ---
 
@@ -258,4 +258,4 @@
 
 ## 11. 参考、溯源与答辩叙事
 
-见 `references.md`（统一存放，答辩用）。
+见 `docs/references.md`（统一存放，答辩用）。

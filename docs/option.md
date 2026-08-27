@@ -2,7 +2,7 @@
 
 > **图例**：〔✓〕= 本机已实测确认（工具在 PATH、版本查实、解析通过）；〔□〕= 计划，未实测——**人执行跑通即真**；跑不通 → 按 CLAUDE.md 护栏**停下问人**，不静默改。
 > **分工**：第 0-4 步 = **人做**；第 5-7 步 = **交给 Claude Code**（提示词整块复制即可，人不用读）。
-> **依据**：依赖与资源以 `Architecture/` 开发文档为标杆（frontend-plan / backend-plan / ws-contract / spec）；查证记录与排障见文末附录 B。
+> **依据**：依赖与资源以 `architecture/` 开发文档为标杆（frontend-plan / backend-plan / ws-contract / spec）；查证记录与排障见文末附录 B。
 
 ## 进度总览（跑通一项勾一项）
 
@@ -185,8 +185,8 @@ redis-cli ping 可验）；frontend/ 骨架已建（Vue3+Vite+TS/Pinia/ESLint/Vi
 （bge-small-zh-v1.5 / bge-reranker-v2-m3）。执行以下任务，按顺序：
 
 1. 先读 CLAUDE.md（含护栏：命令失败/依赖装不上/契约冲突/需改架构 → 停下问人，不静默改）、
-   Architecture/ 下 architecture-spec-v3.md、ws-contract.md、frontend-plan.md、backend-plan.md，
-   以及 docs/architecture-research-v1.md 的 §0 决策台账。
+   architecture/ 下 architecture-spec-v3.md、ws-contract.md、frontend-plan.md、backend-plan.md，
+   以及 docs/research/architecture-research-v1.md 的 §0 决策台账。
 
 2. 配验证命令（scripts）：
    - 前端 frontend/package.json：type-check / lint / test 三脚本可用（脚手架已生成，校验即可）

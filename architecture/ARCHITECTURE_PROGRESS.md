@@ -25,20 +25,22 @@
 | 实施方案(LLD,frontend/backend-plan) | 对应端开工 | ✓ |
 | 接口契约(`ws-contract`) | 两端分离协作 | ✓ |
 | 术语表(`CONTEXT.md`) | 命名分歧出现 | ✓ |
-| 环境/操作手册(`option.md`) | 有人要跑起来 | ✓ |
+| 环境/操作手册(`docs/option.md`) | 有人要跑起来 | ✓ |
 | 进度/恢复台账(PROGRESS) | agent 跨会话工作 | ✓ |
-| 答辩溯源(`references.md`) | 评审场景 | ✓ |
+| 答辩溯源(`docs/references.md`) | 评审场景 | ✓ |
 | 决策记录(`docs/adr/NNN-标题.md`) | 架构级决策发生 | ✓机制就绪,首篇待首个编码期决策 |
 | 数据契约(`docs/data-contract.md`) | 数据生产者≠消费者 | ⚠ 移交代码会话 |
 | README | 编码完成后建立,按职能维护 | △ 编码后 |
 | CONTRIBUTING | 团队协作规则成型(README 协作内容拆出) | △ 编码后 |
 | 人看架构文档 | 交付演示 | △ 交付前批 |
 | AGENT.md 副本 | 交付要求含 Agent.md | △ 交付前批 |
-| 研究记录(`docs/` 下 *-research-*.md) | 专题调研发生 | ✓ |
+| 研究记录(`docs/research/` 下 *-research-*.md) | 专题调研发生 | ✓ |
 | UI 参考(`preview/l1-ui-mockup-v7.html`) | 前端 UI 实现 | ✓ |
-| 备忘录(`Inspiration.txt`) | 随手记 | ✓ 人看 |
+| 备忘录(`docs/Inspiration.txt`) | 随手记 | ✓ 人看 |
+| 任务排期(`docs/tasks-arrangement.md`) | 里程碑/阶段排期 | ✓ 人看 |
 
 > 域外型,触发才建:LICENSE/SECURITY=开源或公开产品期 · CHANGELOG=对外发版(git tag 即内部替代)· runbook=多环境部署 · tutorial=产品有外部学习者 · PRD=多干系人需求谈判 · 正式 RFC=团队扩大需评审流程 · CONTRIBUTING=README 协作节挤压。
+> 旧版方案归档=`backup/Architecture-historys.zip`(勿作实现依据)。
 
 ---
 
@@ -54,7 +56,7 @@
 
 ## 四、开源参考与溯源
 
-见 `references.md`(统一存放,答辩用)。
+见 `docs/references.md`(统一存放,答辩用)。
 
 ---
 

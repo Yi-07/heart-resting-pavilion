@@ -5,7 +5,7 @@ description: 交付文档写/改/审用十判据逐处裁定删留——每处�
 
 # 文档规范判据(交付文档写/改/审 + 缺位生成)
 
-> 通用文档理论=mattpocock-skills:writing-for-agents,不在此复制;本 skill 只装本项目实证裁定。判据完整正反例与来历=`docs/doc-standards-research-v1.md`(存档,不再更新);现行操作以本文件十判据表为单源;裁定先例与增补=`references/cases.md`;骨架库=`references/type-skeletons/`;人向文风=`references/human-style.md`。
+> 通用文档理论=mattpocock-skills:writing-for-agents,不在此复制;本 skill 只装本项目实证裁定。判据完整正反例与来历=`docs/research/doc-standards-research-v1.md`(存档,不再更新);现行操作以本文件十判据表为单源;裁定先例与增补=`references/cases.md`;骨架库=`references/type-skeletons/`;人向文风=`references/human-style.md`。
 
 ## 适用分叉
 

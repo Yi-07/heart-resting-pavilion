@@ -11,13 +11,13 @@
 
 | 文档 | 位置 | 性质 |
 |---|---|---|
-| 架构权威源 | `Architecture/architecture-spec-v3.md` | **只读**,改架构先讨论 |
-| 前后端契约 | `Architecture/ws-contract.md` | **只读**,消息格式以此为准 |
-| 前端方案 | `Architecture/frontend-plan.md` | 前端按此实现 |
-| 后端方案 | `Architecture/backend-plan.md` | 后端按此实现 |
-| 前端 UI/布局参考 | `Architecture/preview/l1-ui-mockup-v7.html` | 默认实现;接口固定、视觉可替换 |
-| 决策历史/二期总表 | `Architecture/ARCHITECTURE_PROGRESS.md` | 会话恢复锚点;"为什么"查此 |
-| 术语表 | `Architecture/CONTEXT.md` | 写新文档/命名/拿不准术语/清扫避用词,以此为准 |
+| 架构权威源 | `architecture/architecture-spec-v3.md` | **只读**,改架构先讨论 |
+| 前后端契约 | `architecture/ws-contract.md` | **只读**,消息格式以此为准 |
+| 前端方案 | `architecture/frontend-plan.md` | 前端按此实现 |
+| 后端方案 | `architecture/backend-plan.md` | 后端按此实现 |
+| 前端 UI/布局参考 | `architecture/preview/l1-ui-mockup-v7.html` | 默认实现;接口固定、视觉可替换 |
+| 决策历史/二期总表 | `architecture/ARCHITECTURE_PROGRESS.md` | 会话恢复锚点;"为什么"查此 |
+| 术语表 | `architecture/CONTEXT.md` | 写新文档/命名/拿不准术语/清扫避用词,以此为准 |
 | 决策记录(向前) | `docs/adr/NNN-标题.md` | 架构级决策定案时新建一篇;存量查 PROGRESS §六(只读) |
 
 **冲突解决**:消息/字段矛盾→以 ws-contract 为准;机制/参数矛盾→以 spec 为准;历史与现行并存→以 spec 正文为准。矛盾=文档 bug:属上列三类→改输家文档对齐赢家后继续编码,并报告改动;三类之外/同文自相矛盾/赢家本身存疑→停下问人(护栏)。
@@ -26,7 +26,7 @@
 
 | 路径 | 职责 | 能否改 |
 |---|---|---|
-| `Architecture/` | 架构/契约/方案文档 | **只读**,改架构先讨论 |
+| `architecture/` | 架构/契约/方案文档 | **只读**,改架构先讨论 |
 | `backend/` | 后端(FastAPI+LangGraph) | 新代码落点 |
 | `frontend/` | 前端(Vue3+Vite+TS) | 新代码落点 |
 | `backend/app/schema/` | Pydantic 模型 | 与 ws-contract 对齐,改契约先改 ws-contract |

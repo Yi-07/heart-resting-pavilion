@@ -2,7 +2,7 @@
 
 > **日期**:2026-08-25~26(grilling 会话) · **性质**:决策记录(ADR,日志文档,日期叙事合法)
 > **状态**:**全部定案,待执行**——新窗口直接按 §8 执行顺序动工,无需重议。
-> **上游**:`docs/doc-standards-research-v1.md`(十判据来历)· `.claude/skills/doc-standards/SKILL.md`(现行审查侧)
+> **上游**:`docs/research/doc-standards-research-v1.md`(十判据来历)· `.claude/skills/doc-standards/SKILL.md`(现行审查侧)
 > **本文档角色**:本会话 grilling 的完整产出存档 = skill 重构与项目实践的**唯一执行依据**。
 
 ---
@@ -105,9 +105,9 @@
 | README | 推仓共享 | △ 交付前批(B2) |
 | 人看架构文档 | 交付演示 | △ 交付前批(B5) |
 | AGENT.md 副本 | 交付要求含 Agent.md | △ 交付前批(B8) |
-| 研究记录(`docs/` 下 *-research-*.md) | 专题调研发生 | ✓ |
+| 研究记录(`docs/research/` 下 *-research-*.md) | 专题调研发生 | ✓ |
 | UI 参考(`preview/l1-ui-mockup-v7.html`) | 前端 UI 实现 | ✓ |
-| 备忘录(`Inspiration.txt`) | 随手记 | ✓ 人看 |
+| 备忘录(`docs/Inspiration.txt`) | 随手记 | ✓ 人看 |
 
 **域外脚注触发表**(一行一型,何时才需要):LICENSE/SECURITY=开源或公开产品期 · CHANGELOG=对外发版(git tag 即内部替代)· runbook=多环境部署 · tutorial=产品有外部学习者 · PRD=多干系人需求谈判 · 正式 RFC=团队扩大需评审流程 · CONTRIBUTING=README 协作节挤压。
 

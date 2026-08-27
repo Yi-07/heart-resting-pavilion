@@ -1,6 +1,6 @@
 # 判据案例库(doc-standards)
 
-> 存档起点=`docs/doc-standards-research-v1.md` §3(来历存档,不再更新);新裁定追加在本文件。查先例→本文件;查判据来历与研究过程→研究记录。
+> 存档起点=`docs/research/doc-standards-research-v1.md` §3(来历存档,不再更新);新裁定追加在本文件。查先例→本文件;查判据来历与研究过程→研究记录。
 
 | 用户之问 | 裁定 |
 |---|---|
