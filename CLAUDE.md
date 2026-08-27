@@ -18,6 +18,7 @@
 | 前端 UI/布局参考 | `Architecture/preview/l1-ui-mockup-v7.html` | 默认实现;接口固定、视觉可替换 |
 | 决策历史/二期总表 | `Architecture/ARCHITECTURE_PROGRESS.md` | 会话恢复锚点;"为什么"查此 |
 | 术语表 | `Architecture/CONTEXT.md` | 写新文档/命名/拿不准术语/清扫避用词,以此为准 |
+| 决策记录(向前) | `docs/adr/NNN-标题.md` | 架构级决策定案时新建一篇;存量查 PROGRESS §六(只读) |
 
 **冲突解决**:消息/字段矛盾→以 ws-contract 为准;机制/参数矛盾→以 spec 为准;历史与现行并存→以 spec 正文为准。矛盾=文档 bug:属上列三类→改输家文档对齐赢家后继续编码,并报告改动;三类之外/同文自相矛盾/赢家本身存疑→停下问人(护栏)。
 
@@ -37,6 +38,7 @@
 2. **隔离约束**:`crisis/route` 只走规则,确定性;`emotion_label` 只喂黑板/Live2D,绝不进路由
 3. **模板模型**:一个会话一个模板,粗稿/精稿**同一张图逐步深化**(表层→深层),数据填充;测试模板 3 个(`emotion_wheel`/`beck_formulation`/`stage_map`)
 4. **契约要点**:8 种消息;`first_frame`=回合起点(前端清黑板);`draw` 传**全量 formulation** + `seq`(前端 diff);危机判定**只在后端**
+5. **文档同步**:改公共行为/接口→检查 ws-contract/spec 对应节是否需同步;改工具链/依赖→查 §4 命令块是否失真
 
 ## 4. 开发命令
 
@@ -49,6 +51,8 @@ cd frontend && npm install && npm run dev  # 启动
 # 模型配置(环境变量)
 LLM_PROVIDER=deepseek|ollama  DEEPSEEK_API_KEY=...  OLLAMA_URL=http://localhost:11434/v1
 ```
+
+**验证路由**:改后端→`uv run ruff check app` · `uv run mypy app` · `uv run pytest`(测试建立前空跑即绿);改前端→`npm run typecheck` · `npm run lint`(前端骨架后生效);改文档→doc-standards 十判据+收尾 grep
 
 ## 5. 代码风格(可执行规则)
 

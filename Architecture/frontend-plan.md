@@ -14,41 +14,26 @@
 | Live2D | pixi-live2d-display 0.4.0(Cubism4;钉 pixi.js 6.5.10 配套)|
 | 传输 | 原生 WebSocket(对接 `ws-contract.md`)|
 | 状态 | Pinia |
-| 日志 | 轻量 console logger(彩色,仿后端 Loguru 风格)|
+| 日志 | console logger(彩色,仿后端 Loguru 风格)|
 
 ---
 
-## 2. 目录结构
+## 2. 模块职责表
 
-```
-src/
-  main.ts  App.vue
-  logger.ts                  # console 彩色 logger(INFO/WARN/ERROR)
-  ws/
-    client.ts                # WS 连接 / 重连 / seq 校验 / 消息分发
-    messages.ts              # 8 种消息类型定义(严格对齐 ws-contract)
-  board/
-    renderer.ts              # 通用渲染器:读模板声明 → 增量绘制
-    diff.ts                  # 字段 diff(seq + 新字段 → 动画)
-    chalk.ts                 # 粉笔效果:抖动 / dash-reveal / 光标 / 滤镜
-    templateRegistry.ts      # 模板声明注册表
-    templates/
-      emotion_wheel.ts       # 测试模板 1
-      beck_formulation.ts    # 测试模板 2(默认)
-      stage_map.ts           # 测试模板 3
-  mood/
-    selector.ts              # 今日心情选择器(浮出/超时/mood_select 上报)
-  l2d/
-    live2d.ts                # pixi-live2d-display 0.4.0 封装(pixi.js 钉 6.5.10)+ 表情映射
-  chat/
-    ChatPanel.vue            # 气泡 + 流式文本 + 危机横幅
-    input.ts                 # 文字/麦克风输入(录音→上传 ASR)
-  station/
-    StationPanel.vue         # 心灵补给站:触发生成/等待态/md 预览/导出
-  state/
-    round.ts                 # 回合状态机
-    store.ts                 # Pinia store
-```
+> **文件真源=文件系统**:本表只记职责与接口;文件增删改不回本表,**职责变化才改行**;接口相关事实留表内,纯实现细节由代码落地时入该模块 docstring、同 commit 出表。
+
+| 模块 | 职责与接口 |
+|---|---|
+| ws | 连接/重连/seq 校验/消息分发(connect/on/send);messages=8 种消息类型定义(严格对齐 ws-contract) |
+| board | render(templateId,data,seq) 通用渲染(读模板声明→增量绘制)·diff(seq+新字段→动画)·registry=模板声明注册表(register(decl)/get(templateId);测试模板 3 个,声明类型见 §5.1);粉笔效果(抖动/dash-reveal/光标/滤镜)=实现细节,落地入 docstring |
+| mood | 今日心情选择器(浮出/超时/mood_select 上报) |
+| l2d | pixi-live2d-display 封装+表情映射(版本钉子=§1,不重复) |
+| chat | 气泡+流式文本+危机横幅(ChatPanel);文字/麦克风输入(录音→上传 ASR)(input) |
+| station | 心灵补给站:触发生成/等待态/md 预览/导出 |
+| state | 回合状态机 transition(event)(§3);Pinia store |
+| logger | console 彩色 logger(INFO/WARN/ERROR) |
+
+> [TODO] 表尾占位(接缝未定,代码会话裁完后入表):音频队列所有者(入队顺序播放+淡出+口型)· 当前情绪所有者(一源三用的源头)。
 
 > **工具栏工具范围**：今日心情（=心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点击触发生成 + 等待态"正在为你整理" + md 预览 + 导出 md/pdf，REST 通道）** · 心灵练习 / 留言墙——前端留入口 UI + TODO 占位（二期）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
 

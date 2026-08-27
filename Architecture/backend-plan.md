@@ -19,53 +19,27 @@
 
 ---
 
-## 2. 目录结构
+## 2. 模块职责表
 
-> **目录风格**：一个职能一个深模块目录——小接口藏大行为，通过删除测试（删掉该目录，复杂度应消失而非散到调用方）；文件不散放 app 根。
+> **目录风格**:一个职能一个深模块目录——对外接口小,背后行为多;删除测试:删掉该目录,复杂度应消失而非散到调用方;文件不散放 app 根。
+> **文件真源=文件系统**:本表只记职责与接口;文件增删改不回本表,**职责变化才改行**;接口相关事实留接口列,纯实现细节由代码落地时入该模块 docstring、同 commit 出表。
 
-```
-backend/
-  app/
-    main.py                # FastAPI 入口:挂 /ws + /station + /admin REST
-    ws_gateway.py          # WS 网关:每条 user_input 先过危机闸门;session/seq 发号/消息路由/抢占/error 帧
-    admin.py               # 管理通道 REST
-    config.py              # 模型配置(LLM/ASR/TTS,读环境变量)
-    logger.py              # loguru 双输出 + 审计
-    router/
-      gate.py              # 危机闸门(词典 + 严重度打分)
-      classifier.py        # 分层分类器
-      phrases.py           # 预设话术库(安抚/承接/邀请/危机;场景×情绪组织,不经 LLM)
-    collect/
-      questions.py         # 预置问题库(按空缺字段组织)
-      sufficiency.py       # 充分度打分(权重表)
-      degrade.py           # 三降级触发检测
-    agents/
-      state.py             # CollectState:图内共享黑板,answer/collect 共用(字段定义=§3)
-      graph.py             # LangGraph 图定义(确定性条件边)
-      empath.py            # 共情陪伴者
-      knowledge.py         # 知识分析师
-      risk.py              # 风险评估者
-      planner.py           # 计划制定者
-    rag/
-      engine.py            # 检索三件套:Chroma+bge-small-zh 向量 · BM25+jieba · bge-reranker 重排(接口:retrieve(query)→refs)
-      ingest.py            # 语料灌库脚本(换 embedding 模型=重跑此脚本,代码不动)
-    llm/
-      provider.py          # DeepSeek/Ollama 统一抽象(OpenAI 兼容)
-    memory/
-      hot.py               # Redis:会话上下文
-      warm.py              # Redis:会话摘要
-      cold.py              # SQLite:profile + 情绪趋势
-    voice/
-      asr.py               # SenseVoice 封装(ffmpeg 转码 webm/opus→wav16k 后进引擎;只取转写文本,情感识别结果丢弃;音频即弃)
-      tts.py               # CosyVoice 2 封装(念=开场安抚/总结+邀请/危机;失败跳过音频,文字照常收尾)
-      fillers/             # 预生成等待语音文件(与 TTS 同音色;文件切块直发 audio_chunk,零运行时合成)
-    station/
-      routes.py            # 心灵补给站 REST
-      report.py            # 方案书存取:SQLite reports 表(每会话只留最新一份);懒生成素材=Redis station:input(TTL 7 天)
-    schema/
-      formulation.py       # Pydantic:formulation
-      ws_messages.py       # 消息模型(对齐 ws-contract)
-```
+| 模块 | 职责 | 关键接口 |
+|---|---|---|
+| app/main | 入口装配 | 挂 /ws·/station·/admin |
+| ws_gateway | 连接/发号/抢占/消息分发 | 每条 user_input 先过闸门;S→C 帧统一盖章即发(发号与帧映射=§8);error 帧收口 |
+| admin | 管理通道 REST | — |
+| config | 模型配置 | LLM/ASR/TTS 读环境变量;config 传递 emitter |
+| logger | 日志与审计 | 双输出+危机审计(§9) |
+| router | 闸门+分类+话术 | gate.check(text)→GateResult(词典+严重度打分=实现细节,落地入 docstring) · classifier→{route,label,conf} · phrases=预设话术库(安抚/承接/邀请/危机,场景×情绪组织,不经 LLM);隔离约束=spec §4 L3 |
+| collect | 采集三件 | 预置问题库(按空缺字段组织)/充分度(sufficiency(f)→float,权重表=实现细节落地入 docstring)/三降级检测;管状态不管话术=spec §4 L4 |
+| agents | 图编排+共享黑板 | CollectState 14 字段(§3,answer/collect 共用)·确定性条件边分派;Agent 名单=spec §4 L5 |
+| rag | 检索三件套 | retrieve(query)→refs;Chroma+bge-small-zh·BM25+jieba·bge-reranker;灌库脚本 ingest(换 embedding 模型=重跑脚本,代码不动)——归属待代码会话裁 |
+| llm | LLM 双源 | OpenAI 兼容统一入口(config 切换) |
+| memory | 热/温/冷记忆+治理 | 层介质与 TTL 单源=spec §4 L7(数值不复制) |
+| voice | 语音引擎 | ASR(SenseVoice;ffmpeg 转码 webm/opus→wav16k 后进引擎,只取转写文本(情感识别结果丢弃),音频即弃)·TTS(CosyVoice 2;念=开场安抚/总结+邀请/危机;失败跳过音频,文字照常收尾)·fillers=预生成等待语音文件(与 TTS 同音色;切块直发 audio_chunk,零运行时合成) |
+| station | 补给站 REST+方案书存取 | 端点单源=ws-contract §1;懒生成素材 station:input(§3.3);SQLite reports 表(每会话只留最新一份) |
+| schema | 契约类型单源 | Pydantic 对齐 ws-contract(formulation+ws_messages) |
 
 ---
 

@@ -1,31 +1,44 @@
 # 心理健康助手 · 架构进度记录
 
 > **用途**:会话压缩/恢复时的上下文锚点。恢复时先读本文件 + `architecture-spec-v3.md`。
-> 最新更新:2026-08-24
+> 最新更新:2026-08-27
 
 ---
 
 ## 一、项目定位
 
 面向轻中度情绪困扰人群的情感陪伴 + 心理知识科普工具(明确不提供医疗诊断)。
-- **产品形态**:引导式对话——不是回答机器,而是一场有节奏的梳理
+- **产品形态**:引导式对话,不是回答机器——不等用户一次给完整答案,按节奏分多轮梳理
 - **当前阶段**:**技术原型**(第一版软件粗设计,链路通即可、细节可假)
 - **目标**:中国大学生计算机设计大赛(AI 算法创新 · AI+软件)+ 求职作品集
 
 ---
 
-## 二、文档清单
+## 二、文档地图
 
-> 核心文档(架构/契约/前端/后端方案)以 CLAUDE.md §1 为准;本表只列增量。
+> 触发器制(一行一型:何时才需要这份文档);状态列=文件存在性核验。核心文档的指针与性质以 CLAUDE.md §1 为准,本表管全量与状态。
 
-| 文档 | 性质 |
-|---|---|
-| `Inspiration.txt` | 人看备忘录 |
-| `preview/l1-ui-mockup-v7.html` | 前端 UI/布局默认参考(皮肤可换)|
-| `references.md` | 溯源/答辩参考(人看) |
-| `CONTEXT.md` | 术语表(一词一权威+避用词表) |
-| `../docs/architecture-research-v1.md` | 决策记录 ADR(定案依据,不作实现依据) |
-| `../Architecture-historys/old/` | 旧版方案归档(勿作实现依据)|
+| 文档型 | 触发器 | 状态 |
+|---|---|---|
+| CLAUDE.md | 用 coding agent | ✓ |
+| spec(HLD,`architecture-spec-v3`) | 架构想清楚 | ✓ |
+| 实施方案(LLD,frontend/backend-plan) | 对应端开工 | ✓ |
+| 接口契约(`ws-contract`) | 两端分离协作 | ✓ |
+| 术语表(`CONTEXT.md`) | 命名分歧出现 | ✓ |
+| 环境/操作手册(`option.md`) | 有人要跑起来 | ✓ |
+| 进度/恢复台账(PROGRESS) | agent 跨会话工作 | ✓ |
+| 答辩溯源(`references.md`) | 评审场景 | ✓ |
+| 决策记录(`docs/adr/NNN-标题.md`) | 架构级决策发生 | ✓机制就绪,首篇待首个编码期决策 |
+| 数据契约(`docs/data-contract.md`) | 数据生产者≠消费者 | ⚠ 移交代码会话 |
+| README | 推仓共享 | △ 交付前批 |
+| 人看架构文档 | 交付演示 | △ 交付前批 |
+| AGENT.md 副本 | 交付要求含 Agent.md | △ 交付前批 |
+| 研究记录(`docs/` 下 *-research-*.md) | 专题调研发生 | ✓ |
+| UI 参考(`preview/l1-ui-mockup-v7.html`) | 前端 UI 实现 | ✓ |
+| 备忘录(`Inspiration.txt`) | 随手记 | ✓ 人看 |
+
+> 域外型,触发才建:LICENSE/SECURITY=开源或公开产品期 · CHANGELOG=对外发版(git tag 即内部替代)· runbook=多环境部署 · tutorial=产品有外部学习者 · PRD=多干系人需求谈判 · 正式 RFC=团队扩大需评审流程 · CONTRIBUTING=README 协作节挤压。
+> 旧版方案归档=`Architecture-historys/old/`(勿作实现依据)。
 
 ---
 
