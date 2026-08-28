@@ -70,7 +70,7 @@ uv run python -c "import fastapi, langgraph, chromadb, funasr, redis, sentence_t
 **坏了怎么办**：`uv add` 解析失败/装不上 → 停下问人（onnxruntime 钉版原因见 PROGRESS §六技术核查记录，勿自行摘掉）。
 
 **说明**：
-- LangGraph 编排 = 确定性条件边 StateGraph（定案依据 research-v1 Q2）；
+- LangGraph 编排 = 确定性条件边 StateGraph；
 - `funasr` 会连带装 torch，属正常；
 - 全依赖树已在本机按 cp310 干跑解析通过，明细见 PROGRESS §六技术核查记录；
 - `uv run uvicorn app.main:app` 本步**不跑**——`app/` 要等 Claude 写码后才存在，首次真启动是 Claude 的事。
