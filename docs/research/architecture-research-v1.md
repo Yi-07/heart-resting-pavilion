@@ -271,7 +271,7 @@ W1~W4=ws-contract（seq 基线消歧 / §6.2 时序补全 / mood 回合内 / 超
 
 **E2 · ws-contract.md:143**（A2）：示例 `"mood": "焦虑"` → `"mood": "低落"`（6 档内取值）
 
-**E3 · architecture-spec-v3.md**（Q2/Q3/Q4，升 v3.1 并在头部注明变更来源=本文档）：
+**E3 · architecture-spec.md**（Q2/Q3/Q4，升 v3.1 并在头部注明变更来源=本文档）：
 | 位置 | 改法 |
 |---|---|
 | :156 技术栈 | `LangGraph 1.x · langgraph-supervisor · 按需 handoff` → `LangGraph 1.x · 确定性 StateGraph（条件边编排，无 LLM 派活）` |

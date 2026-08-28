@@ -93,7 +93,7 @@
 | 文档型 | 触发器 | 状态 |
 |---|---|---|
 | CLAUDE.md | 用 coding agent | ✓ |
-| spec(HLD,`architecture-spec-v3`) | 架构想清楚 | ✓ |
+| spec(HLD,`architecture-spec`) | 架构想清楚 | ✓ |
 | 实施方案(LLD,frontend/backend-plan) | 对应端开工 | ✓ |
 | 接口契约(ws-contract) | 两端分离协作 | ✓ |
 | 术语表(CONTEXT.md) | 命名分歧出现 | ✓ |
