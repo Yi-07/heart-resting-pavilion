@@ -1,6 +1,6 @@
 # 后端实施方案 · 技术原型
 
-> **权威源**:`architecture-spec-v3.md`(架构)· `ws-contract.md`(契约)
+> **权威源**:`architecture-spec.md`(架构)· `ws-contract.md`(契约)
 > **目标**:技术原型后端——跑通三路路由全链路(危机闸门 / 分类器 / 多轮采集 / Agent / 记忆 / 语音),日志与审计齐备。
 
 ---
@@ -10,7 +10,7 @@
 | 项 | 选型 |
 |---|---|
 | 框架 | FastAPI + WebSocket |
-| Agent | LangGraph 1.x(确定性 StateGraph,条件边编排,research-v1 Q2) |
+| Agent | LangGraph 1.x(确定性 StateGraph,条件边编排) |
 | 环境 | uv(python)|
 | 日志 | loguru(双输出:控制台彩色 + 文件结构化)|
 | 存储 | SQLite(冷层)+ Redis(热/温层)|

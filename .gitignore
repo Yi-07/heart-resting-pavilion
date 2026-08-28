@@ -3,5 +3,7 @@ backup
 
 .claude/*
 !.claude/skills/
+!.claude/hooks/
+!.claude/settings.json
 .env
 .playwright-mcp/

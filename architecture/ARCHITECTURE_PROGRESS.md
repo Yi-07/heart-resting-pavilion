@@ -1,6 +1,6 @@
-# 心理健康助手 · 架构进度记录
+# 心栖阁 · 架构进度记录
 
-> **用途**:会话压缩/恢复时的上下文锚点。恢复时先读本文件 + `architecture-spec-v3.md`。
+> **用途**:会话压缩/恢复时的上下文锚点。恢复时先读本文件 + `architecture-spec.md`。
 > 最新更新:2026-08-27
 
 ---
@@ -21,7 +21,7 @@
 | 文档型 | 触发器 | 状态 |
 |---|---|---|
 | CLAUDE.md | 用 coding agent | ✓ |
-| spec(HLD,`architecture-spec-v3`) | 架构想清楚 | ✓ |
+| spec(HLD,`architecture-spec`) | 架构想清楚 | ✓ |
 | 实施方案(LLD,frontend/backend-plan) | 对应端开工 | ✓ |
 | 接口契约(`ws-contract`) | 两端分离协作 | ✓ |
 | 术语表(`CONTEXT.md`) | 命名分歧出现 | ✓ |
@@ -54,13 +54,7 @@
 
 ---
 
-## 四、开源参考与溯源
-
-见 `docs/references.md`(统一存放,答辩用)。
-
----
-
-## 五、二期范围总表
+## 四、二期范围总表
 
 > 改二期只改本表,防双维护;spec §10 引用本表。
 
@@ -89,7 +83,7 @@
 
 ---
 
-## 六、历史决策台账
+## 五、历史决策台账
 
 > 只读快照——spec 变更不回写本表;现行规则以 spec 为准。编号(Q/R/V2.x)在旧讨论与 research-v1 中被引用时查本表。
 
@@ -122,10 +116,17 @@
 
 ---
 
-## 七、技术核查记录
+## 六、技术核查记录
 
 > "为什么钉这个版本"类调研细节的存放处;编码文档只留结论,疑惑时查本表。
 
 | 事项 | 结论 | 核查细节 |
 |---|---|---|
 | pixi-live2d-display 版本配套 | 钉 0.4.0 + pixi.js 6.5.10(frontend-plan §1) | stable 0.4.0 peer 仅 pixi ^6;0.5.0-beta 配 pixi 7;均不兼容 pixi 8.20.0(2026-08-22 过时技术事实排查) |
+| Python 钉 3.10 | 3.10.11 | 全栈官方交汇:CosyVoice 要求 python=3.10;langgraph/fastapi ≥3.10;funasr 实测 3.8–3.10 |
+| onnxruntime 钉 <1.24 | 1.23.2=cp310 末版 | 1.24+ 不再发 cp310 wheel 且 requires_python 未同步(解析过、安装炸);chromadb 兼容;全树 cp310 干跑解析通过(chromadb 1.5.9/torch 2.13.0/funasr 1.4.3/langgraph 1.2.11) |
+| DeepSeek 模型名 | v4-flash(对话)/v4-pro(推理) | 官方全域弃 deepseek-chat/reasoner(官方文档 grep 零出现);调用锁 openai==3.3.1;值落 backend/.env.example |
+| Ollama 备选端点 | localhost:11434/v1(官方标 experimental) | api_key="ollama" 必填但被忽略;用前先 pull;支持流式/JSON mode/tools |
+| Node 选 24 LTS | winget OpenJS.NodeJS.LTS | create-vue 引擎要求 ^22.18.0或≥24.12.0,本机 22.15 不满足;v24 Active LTS 维护至 2028-04;flag 拼法对 create-vue --help 逐条核实 |
+| Live2D 采纳与弃用 | pixi-live2d-display 路线(frontend-plan §1 单源) | @proj-airi/unplugin-live2d-sdk 未采纳(npm 存在≠方案采纳);CosyVoice 仓库 FunAudioLLM 已 301 迁至 QwenAudio,clone 用新地址 |
+| gitignore 三层防线 | 根 .gitignore=唯一手工维护点 | frontend 产物由脚手架生成的 frontend/.gitignore 挡;backend/.venv 由 uv 自动挡;嵌套 ignore 不合并不删除;检查点 git status --porcelain 自查=总闸 |

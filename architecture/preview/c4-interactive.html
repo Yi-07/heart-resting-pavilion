@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>心理健康助手 · C4 架构图</title>
+<title>心栖阁 · C4 架构图</title>
 <style>
 :root{
   --bg:#0f1417; --surface:#171e22; --surface2:#1d262b;
@@ -119,7 +119,7 @@ main{position:fixed;top:44px;left:0;right:0;bottom:0;overflow:auto;padding:16px;
 <body>
 
 <nav>
-  <span class="logo">心理健康助手 · <span>C4 架构</span></span>
+  <span class="logo">心栖阁 · <span>C4 架构</span></span>
   <button class="breadcrumb active" id="bc-l1" data-level="l1">系统上下文</button>
   <span class="breadcrumb sep">/</span>
   <button class="breadcrumb" id="bc-l2" data-level="l2" disabled>容器图</button>
@@ -152,7 +152,7 @@ main{position:fixed;top:44px;left:0;right:0;bottom:0;overflow:auto;padding:16px;
 <!-- System -->
 <g class="clickable" id="sysbox">
   <rect x="180" y="268" width="260" height="122" rx="12" fill="rgba(23,30,34,.85)" stroke="#e8b45a" stroke-width="2.6"/>
-  <text x="310" y="302" text-anchor="middle" font-size="16" font-weight="700" fill="#e0e8e3" font-family="Noto Serif SC,serif">心理健康助手</text>
+  <text x="310" y="302" text-anchor="middle" font-size="16" font-weight="700" fill="#e0e8e3" font-family="Noto Serif SC,serif">心栖阁</text>
   <text x="310" y="324" text-anchor="middle" font-size="10" fill="var(--dim)">[ Software System ]</text>
   <text x="310" y="344" text-anchor="middle" font-size="10.5" fill="var(--dim)">多Agent协作 · 实时交互 · 情感陪伴</text>
   <text x="310" y="362" text-anchor="middle" font-size="10" fill="var(--dim)">非医疗诊断 · 辅助支持工具</text>
@@ -208,7 +208,7 @@ main{position:fixed;top:44px;left:0;right:0;bottom:0;overflow:auto;padding:16px;
 
 <!-- Boundary -->
 <rect x="30" y="130" width="690" height="600" rx="10" fill="none" stroke="rgba(232,180,90,.18)" stroke-dasharray="8 5"/>
-<text x="375" y="122" text-anchor="middle" font-size="10" fill="var(--amber)" font-family="Source Code Pro,monospace">心理健康助手 · MVP</text>
+<text x="375" y="122" text-anchor="middle" font-size="10" fill="var(--amber)" font-family="Source Code Pro,monospace">心栖阁 · MVP</text>
 
 <!-- ── Main flow containers (compact) ── -->
 <!-- L1 -->
@@ -610,7 +610,7 @@ function renderSpec(){
   const order = ['l1','l2','l3','l4','l5','l6','l7'];
   box.innerHTML = `
     <div class="spec-head">
-      <h1>心理健康助手 · <span>架构规格文档</span></h1>
+      <h1>心栖阁 · <span>架构规格文档</span></h1>
       <span class="m">C4 Container/Component 规格 · Arc42 风格 · 与架构图同源</span>
     </div>` +
   order.map(k => {

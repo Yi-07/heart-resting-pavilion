@@ -1,4 +1,4 @@
-# 心理健康助手 · 项目规则
+# 心栖阁 · 项目规则
 
 > 本文件是 coding agent 的**开工前必读**。改代码前先读它;改架构先讨论,不直接改 spec。
 > **护栏**:命令失败 / 依赖装不上 / 实现与契约冲突 / 需改架构 → **停下问人**,不静默换依赖或改架构。
@@ -11,14 +11,14 @@
 
 | 文档 | 位置 | 性质 |
 |---|---|---|
-| 架构权威源 | `architecture/architecture-spec-v3.md` | **只读**,改架构先讨论 |
+| 架构权威源 | `architecture/architecture-spec.md` | **只读**,改架构先讨论 |
 | 前后端契约 | `architecture/ws-contract.md` | **只读**,消息格式以此为准 |
 | 前端方案 | `architecture/frontend-plan.md` | 前端按此实现 |
 | 后端方案 | `architecture/backend-plan.md` | 后端按此实现 |
 | 前端 UI/布局参考 | `architecture/preview/l1-ui-mockup-v7.html` | 默认实现;接口固定、视觉可替换 |
 | 决策历史/二期总表 | `architecture/ARCHITECTURE_PROGRESS.md` | 会话恢复锚点;"为什么"查此 |
 | 术语表 | `architecture/CONTEXT.md` | 写新文档/命名/拿不准术语/清扫避用词,以此为准 |
-| 决策记录(向前) | `docs/adr/NNN-标题.md` | 架构级决策定案时新建一篇;存量查 PROGRESS §六(只读) |
+| 决策记录(向前) | `docs/adr/NNN-标题.md` | 架构级决策定案时新建一篇;存量查 PROGRESS §五(只读) |
 
 **冲突解决**:消息/字段矛盾→以 ws-contract 为准;机制/参数矛盾→以 spec 为准;历史与现行并存→以 spec 正文为准。矛盾=文档 bug:属上列三类→改输家文档对齐赢家后继续编码,并报告改动;三类之外/同文自相矛盾/赢家本身存疑→停下问人(护栏)。
 
@@ -92,7 +92,7 @@ npm run lint
 2. **collect**:`最近很焦虑睡不着` → 第一帧 → 心情选择器 → 黑板粗稿 → 逐轮增量 → 精稿 → 分析总结 + 心灵补给站邀请语(方案书=用户点击心灵补给站触发生成)。判据:seq 单调递增;draw=粗稿+每轮增量+精稿;充分度≥0.7 停采;信念字段留白
 3. **crisis**:`我不想活了` → 热线 + 支持画面 + 审计日志;不弹心情选择器。判据:日志 event=crisis_gate_hit(WARN) + 热线横幅 + 无心情选择器
 
-**构建顺序**:危机闸门 → answer → collect(核心路由) → 黑板 → 记忆 → Live2D → 语音 → 工具
+**构建顺序**(每步=前后端联动切片,前端骨架=环境步 3 前提):契约类型(schema+messages.ts)→ WS 网关最小版+危机闸门 → answer(占位 refs 先跑通,不等全量灌库)→ collect(逻辑层先验)→ 黑板(补视觉判据)→ 记忆(Redis 前置)→ Live2D → 语音 → 工具(station 懒生成·admin)
 
 ## 9. 工具与 Skill 提示
 

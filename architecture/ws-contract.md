@@ -1,6 +1,6 @@
 # WS 前后端契约 · ws-contract
 
-> **权威源**:`architecture-spec-v3.md`(本文件为其工程落地补充,不覆盖)
+> **权威源**:`architecture-spec.md`(本文件为其工程落地补充,不覆盖)
 > **范围**:前后端 WebSocket 单连接的**完整消息契约**。前端内部(模板声明/渲染器)不在此文档。
 
 ---
@@ -280,7 +280,7 @@ S→C  done
 |---|---|
 | ts | ISO 8601(含时区)|
 | level | DEBUG / INFO / WARN / ERROR / FATAL |
-| service | `mental-health-backend` / `mental-health-frontend` |
+| service | `hrp-backend` / `hrp-frontend` |
 | session_id | 会话关联键 |
 | trace_id | 回合自增 ID(会话内从 0 递增)|
 | event | 事件名(§9.3)|

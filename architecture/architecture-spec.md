@@ -1,4 +1,4 @@
-# 心理健康助手 · 架构规格 v3
+# 心栖阁 · 架构规格
 
 > **关系**：**本文件为权威源**。
 
@@ -6,7 +6,7 @@
 
 ## 0. 决策记录
 
-现行规则=本文件正文 §1~§11。历史决策台账（Q/R/V2.x）→ `ARCHITECTURE_PROGRESS.md` §六；定案依据与证据 → `docs/research/architecture-research-v1.md`。
+现行规则=本文件正文 §1~§10。历史决策台账（Q/R/V2.x）→ `ARCHITECTURE_PROGRESS.md` §五。
 
 ---
 
@@ -253,9 +253,3 @@
 **MVP**：三路路由（answer/collect/crisis）· 危机闸门贯穿 + 热线 · 快速研判（分类器标签扩展）· 多轮采集 + formulation · mood_select · 停采后分析（同步；后台并行=二期）· 黑板模板声明渲染器 + 粗稿/精稿 · 心灵补给站（方案书懒生成 + md 预览/导出）· 语音链路（打字/语音双输入）· 记忆最小闭环 + 治理层 · 模型配置 UI · Live2D（情绪一源三用）。
 
 **二期**：多模态节奏协同（黑板/语音/Live2D 编排）· WebRTC 打断式语音 · 知识图谱（knowledge.query 接口缝）· 语义级记忆检索 · 黑板模板库定制扩充 · ASR 强化 · 多人并发 · Tauri 打包。（完整二期见 `ARCHITECTURE_PROGRESS.md`「二期范围总表」）
-
----
-
-## 11. 参考、溯源与答辩叙事
-
-见 `docs/references.md`（统一存放，答辩用）。

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>心栖 · 桌面客户端预览</title>
+<title>心栖阁 · 桌面客户端预览</title>
 <style>
 :root{
   --desk:#1A1D21; --ink:#3E3A35; --muted:#6E675E; --line:#EDE6DB;
@@ -135,13 +135,13 @@ body{
 </head>
 <body>
 <!-- 桌面背景文字 -->
-<div style="position:fixed;top:14px;left:18px;color:#6B7470;font-size:11px;font-family:ui-monospace,monospace;z-index:5;">心栖 · 桌面客户端（Tauri 预览）<br>窗口 · 首启 · 托盘 · 通知</div>
+<div style="position:fixed;top:14px;left:18px;color:#6B7470;font-size:11px;font-family:ui-monospace,monospace;z-index:5;">心栖阁 · 桌面客户端（Tauri 预览）<br>窗口 · 首启 · 托盘 · 通知</div>
 
 <!-- ══ 应用窗口 ══ -->
 <div class="window">
   <!-- 标题栏 -->
   <div class="titlebar">
-    <div class="t-logo"><div class="mark"></div>心栖</div>
+    <div class="t-logo"><div class="mark"></div>心栖阁</div>
     <div class="t-title">心理健康陪伴 · 本地运行</div>
     <div class="sp"></div>
     <div class="t-btn">─</div>
@@ -152,11 +152,11 @@ body{
   <!-- 首启欢迎页 -->
   <div class="onboard" id="onboard">
     <div class="ob-logo">栖</div>
-    <h1>欢迎来到心栖</h1>
+    <h1>欢迎来到心栖阁</h1>
     <div class="ob-sub">一个会记住你、陪你说话的本地陪伴者。数据留在你的电脑上，不经过任何服务器。</div>
     <div class="ob-disclaimer">
       <b>使用前请了解：</b><br>
-      · 心栖是情感陪伴与心理科普工具，<b>不提供医疗诊断</b>，不能替代专业咨询<br>
+      · 心栖阁是情感陪伴与心理科普工具，<b>不提供医疗诊断</b>，不能替代专业咨询<br>
       · 你的对话记录存储在本地，不上传云端<br>
       · 出现危机情绪时，请拨打<b>全国心理援助热线 12356</b>
     </div>
@@ -169,7 +169,7 @@ body{
   <!-- 主界面 -->
   <div class="main" id="main">
     <div class="m-toolbar glass">
-      <div class="logo"><div class="mark"></div>心栖</div>
+      <div class="logo"><div class="mark"></div>心栖阁</div>
       <div class="tb">今日心情</div>
       <div class="tb">心灵练习</div>
       <div class="tb">留言墙</div>
@@ -206,17 +206,17 @@ body{
 
 <!-- ══ 托盘菜单 ══ -->
 <div class="tray-menu" id="trayMenu">
-  <div class="tm-item"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>打开心栖</div>
+  <div class="tm-item"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>打开心栖阁</div>
   <div class="tm-item"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>最近对话</div>
   <div class="tm-item"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>查看留言</div>
   <div class="tm-sep"></div>
-  <div class="tm-item quit"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>退出心栖</div>
+  <div class="tm-item quit"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>退出心栖阁</div>
 </div>
 
 <!-- ══ 桌面任务栏 ══ -->
 <div class="taskbar">
   <div class="app-btn" id="dockApp"><div class="mark"></div></div>
-  <div style="font-size:10px;color:#7B8580;margin-left:6px;">心栖</div>
+  <div style="font-size:10px;color:#7B8580;margin-left:6px;">心栖阁</div>
   <div class="tray">
     <div class="tic" id="trayIcon" title="托盘">💚</div>
     <div class="tic" title="WiFi">▤</div>

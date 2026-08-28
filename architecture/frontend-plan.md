@@ -1,6 +1,6 @@
 # 前端实施方案 · 技术原型
 
-> **权威源**:`architecture-spec-v3.md`(架构)· `ws-contract.md`(契约)
+> **权威源**:`architecture-spec.md`(架构)· `ws-contract.md`(契约)
 > **目标**:技术原型前端——跑通三路路由的可视化(黑板深化 / 心情选择器 / Live2D / 聊天 / 语音)。
 
 ---
