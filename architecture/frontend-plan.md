@@ -24,16 +24,15 @@
 
 | 模块 | 职责与接口 |
 |---|---|
-| ws | 连接/重连/seq 校验/消息分发(connect/on/send);messages=8 种消息类型定义(严格对齐 ws-contract) |
+| ws | 连接/重连/seq 校验/消息分发(connect/on/send);messages=8 种消息类型定义(严格对齐 ws-contract);契约对齐测试抽 ws-contract §5.1 字段名与本地类型比对(§8) |
 | board | render(templateId,data,seq) 通用渲染(读模板声明→增量绘制)·diff(seq+新字段→动画)·registry=模板声明注册表(register(decl)/get(templateId);测试模板 3 个,声明类型见 §5.1);粉笔效果(抖动/dash-reveal/光标/滤镜)=实现细节,落地入 docstring |
 | mood | 今日心情选择器(浮出/超时/mood_select 上报) |
 | l2d | pixi-live2d-display 封装+表情映射(版本钉子=§1,不重复) |
+| audio | 音频队列与播放:enqueue(chunk) 入队顺序播放 · stopAndFade() 淡出当前声并清队(first_frame 抢占时调,时长见 §6)· onPlayback(cb) 广播播放状态;l2d 订阅播放事件驱动口型,播放不依赖立绘加载 |
 | chat | 气泡+流式文本+危机横幅(ChatPanel);文字/麦克风输入(录音→上传 ASR)(input) |
 | station | 心灵补给站:触发生成/等待态/md 预览/导出 |
-| state | 回合状态机 transition(event)(§3);Pinia store |
+| state | 回合状态机 transition(event)(§3)·持当前情绪 emotionLabel:写者按 first_frame.emotion_label → mood_select 本地写 → 精稿 draw.data.emotion.label 次序覆盖,本回合内用户手点不被精稿回退,first_frame 重置;Pinia store |
 | logger | console 彩色 logger(INFO/WARN/ERROR) |
-
-> [TODO] 表尾占位(接缝未定,代码会话裁完后入表):音频队列所有者(入队顺序播放+淡出+口型)· 当前情绪所有者(一源三用的源头)。
 
 > **工具栏工具范围**：今日心情（=心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点击触发生成 + 等待态"正在为你整理" + md 预览 + 导出 md/pdf，REST 通道）** · 心灵练习 / 留言墙——前端留入口 UI + TODO 占位（二期）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
 
@@ -45,7 +44,7 @@
 > - rail：磁吸右缘可拖 · 点击开时间线
 > - 黑板：zoom 按钮全屏查看 · 粉笔逐帧绘制 + 光标跟随
 
-> **插件化（二期）**：接口+注册表+配置拼装。`Live2DProvider{load,setExpression,speak,hit}` · `BoardTheme` · `ToolPlugin{id,title,icon,panel}` · registry 通用化。MVP 用默认实现。
+> **插件化（二期）**：接口+注册表+配置拼装。`Live2DProvider{load,setExpression,setSpeaking,hit}` · `BoardTheme` · `ToolPlugin{id,title,icon,panel}` · registry 通用化。MVP 用默认实现。
 
 ---
 
@@ -72,31 +71,42 @@ final ──done──▶ idle
 
 ```ts
 // ws/client.ts
-connect(): Promise<void>
-on(type: WSMsgType, handler: (msg: WSMsg) => void): void
-send(msg: CSMsg): void          // user_input / mood_select
+connect(): Promise<void>                 // 拒绝时抛 WSError;断线重连内部处理,带原 session_id
+on(type: WSMsgType, handler: (msg: WSMsg) => void): () => void
+                                         // 返回退订函数,组件卸载时摘钩子
+send(msg: CSMsg): void                   // user_input / mood_select;未连接时抛错,UI 以等待态禁用输入保证不触
+// seq 校验单点在此:丢弃 seq≤已处理 的旧帧,下游收到即新帧
 
 // board/renderer.ts
-render(templateId: string, data: Formulation, seq: number): void
-  // 读声明 → diff 新字段 → 动画补画;旧字段保留
+render(templateId: string, data: TemplateData): void
+// TemplateData = Formulation | EmotionWheelData | StageMapData(契约 §5.1 三型)
+// 未知 templateId:记 WARN 跳过本帧,黑板不崩
 
 // board/diff.ts
-diff(prev: Formulation, next: Formulation): FieldKey[]
-  // 返回新增/变化的字段(值变化也算)
+diff(prev: TemplateData, next: TemplateData): string[]
+// 按声明字段比对新旧,返回新增/变化的字段(值变化也算);纯函数
 
 // board/templateRegistry.ts
-register(decl: TemplateDecl): void
-get(templateId: string): TemplateDecl
+register(decl: TemplateDecl): void       // 重复 id 直接 throw(开发期错误)
+get(templateId: string): TemplateDecl    // 未注册 throw,由 render 捕获
+
+// audio/queue.ts
+enqueue(chunk: AudioChunk): void         // 入队顺序播放,格式随 chunk.format
+stopAndFade(): void                      // 抢占淡出,时长见 §6
+onPlayback(cb: (active: boolean) => void): void   // l2d 订阅驱动口型
 
 // mood/selector.ts
-show(): void   hide(): void   onSelect(mood: MoodKey): void  // → send mood_select
+show(): void   hide(): void
+onSelect(mood: MoodKey): void            // send mood_select,并写 state.emotionLabel
 
 // l2d/live2d.ts
-setExpression(emotionLabel: string): void   // 情绪标签 → 表情参数
-speak(text: string): void                    // 可选:TTS 播放
+setExpression(emotionLabel: string): void   // watch state.emotionLabel 驱动;未知标签落到中性兜底表情
+setSpeaking(active: boolean): void          // 由 audio 播放事件驱动口型;模型未加载时 no-op 记 WARN
 
 // state/round.ts
 transition(event: RSEvent): void
+// RSEvent = { kind: "user_sent" } | { kind: "frame", msg: S2CMsg }
+// 非法迁移(如 idle 收 draw):忽略并记 DEBUG 日志,不崩
 ```
 
 ---
@@ -109,7 +119,7 @@ transition(event: RSEvent): void
 type Widget = "text" | "highlight" | "rough_ellipse+text" | "rough_box+text" | "wheel_mini";
 
 interface FieldDecl {
-  key: FormulationKey;         // situation/emotion/thought/behavior/intermediate_belief/core_belief
+  key: string;                 // 数据字段名,须与该模板 TemplateData 字段一致(beck=Formulation 六键)
   anchor: string;              // "asset#root" | 无素材时的相对坐标 "zone:top"
   widget: Widget;
   emptyIfNull?: boolean;       // 数据为 null 时不画该格
@@ -125,15 +135,14 @@ interface TemplateDecl {
 ### 5.2 渲染器 diff 伪码
 
 ```
-function render(templateId, data, seq):
+function render(templateId, data):         # 新鲜度由 ws 层保证(§4),收到即新帧
   decl = registry.get(templateId)
-  if seq > lastSeq:                        # 新帧
-    changed = diff(lastData, data)         # 新填/变化的字段
-    for key in changed:
-      if data[key] == null: continue       # 留白格不画
-      widget = decl.field(key).widget
-      draw(widget, data[key])              # 动画补画 + chalk 光标跟随
-    lastSeq = seq; lastData = data
+  changed = diff(lastData, data)           # 新填/变化的字段
+  for key in changed:
+    if data[key] == null: continue         # 留白格不画
+    widget = decl.field(key).widget
+    draw(widget, data[key])                # 动画补画 + chalk 光标跟随
+  lastData = data
 ```
 
 ### 5.3 回合状态机伪码
@@ -141,12 +150,12 @@ function render(templateId, data, seq):
 ```
 on WS message m:
   switch m.type:
-    first_frame: round.reset(); round.enter("collecting")
-                 if m.route == "crisis": showHotline(); board.render("stage_map")
+    first_frame: audio.stopAndFade(); round.reset(); round.enter("collecting")
+                 if m.route == "crisis": showHotline()   # stage_map 由后续 draw 帧渲染
                  else: mood.show(); board.render(m.template, 粗稿数据)
-    draw:        board.render(m.template, m.data, m.seq)
+    draw:        board.render(m.template, m.data)
     text_delta:  chat.append(m.text); if m.final: chat.finalize()
-    audio_chunk: l2d.speak(m.data)
+    audio_chunk: audio.enqueue(m)
     done:        round.enter("idle"); mood.hide()
     error:       round.enter("idle"); chat.append(温和兜底话术)
 ```
@@ -160,7 +169,7 @@ on WS message m:
 | first_frame | 回合重置;淡出停播当前音频(~100ms);crisis→热线+stage_map;collect→心情选择器+粗稿 |
 | draw | 渲染器增量画(按 seq)|
 | text_delta | 气泡流式追加 |
-| audio_chunk | 入队顺序播放 + Live2D 口型(抢占随 first_frame 淡出) |
+| audio_chunk | 入队顺序播放;口型由播放事件驱动(抢占随 first_frame 淡出) |
 | done | 收尾:收起等待态 |
 | error | 温和兜底,回 idle |
 | user_input(发)| 触发新回合 |
@@ -173,3 +182,11 @@ on WS message m:
 1. **answer**:输入"什么是正念" → 无黑板,气泡流式文本,结束
 2. **collect**:输入"最近很焦虑睡不着" → 第一帧 → 心情选择器(10s 超时回退)→ 黑板粗稿 → 逐轮增量 → 精稿补全 → 分析总结+心灵补给站邀请语(方案书=点击补给站触发生成)
 3. **crisis**:输入"我不想活了" → 热线横幅 + stage_map,不弹心情选择器
+
+---
+
+## 8. 测试
+
+- **框架与布局**:vitest(脚手架自带);测试与模块同目录放 `__tests__/`,一接缝一文件
+- **接缝钉测试**(只钉接缝,不测内部):diff 新增/变化/置 null · render 未知模板跳帧不崩 · transition 状态机全迁移+非法迁移忽略 · audio 队列顺序与抢占淡出 · 契约对齐测试抽 ws-contract §5.1 字段名与 messages.ts 比对,防两端漂移
+- **分步冒烟**:构建顺序每步完成即跑对应用例(用例定义单源=CLAUDE.md §8,前端判据见 §7),不全套重跑
