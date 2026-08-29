@@ -200,13 +200,9 @@ uv pip install --python .venv/Scripts/python.exe -r requirements.txt
 ### 会话一 · 接缝定义(先开;定案落 plans/schema 后才算完)
 
 ```
-你在心栖阁仓库工作,处理接缝定义专题。读 docs/research/architecture-research-v1.md §7(代码库会话议程 7 项),
-逐项定案:后端接缝类型(RAG refs 形状/gate.check→GateResult/LLM provider 抽象/采集事件联合)·
-前端 plan §4 签名逐个核对(小而完整+错误模式)·两缺口归属裁断(音频队列/当前情绪所有者,裁完
-frontend-plan §2 表尾 [TODO] 转正)·ingest 归属+docs/data-contract.md 转写(样本回验须在队友全量
-灌库之前)·类型单源对齐机制·测试策略(接缝钉测试:gate/sufficiency/retrieve/render/diff;分步冒烟:
-每步构建完成跑 CLAUDE.md §8 对应用例)。
-产出=定案回写两 plan 对应节与 schema(plans 保持零不确定性);全程存疑停下问人。
+你在心栖阁仓库工作,处理接缝定义专题:读 docs/research/seam-research-v1.md(7 项议程+深模块心智模型),
+按其逐项定案;产出=定案回写两 plan 对应节(保持零不确定性,不写代码,范围照该文档声明);
+样本回验须在队友全量灌库之前;全程存疑停下问人。
 ```
 
 ### 会话二 · 编码开发(接缝定案后开)
