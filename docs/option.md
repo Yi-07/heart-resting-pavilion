@@ -194,11 +194,13 @@ git add -A && git commit -m "chore: 环境就绪(骨架+依赖+Redis+RAG模型)"
 git clone https://github.com/QwenAudio/CosyVoice.git models/voices/CosyVoice
 cd models/voices/CosyVoice
 uv venv --python 3.10
-uv pip install --python .venv/Scripts/python.exe --index-strategy unsafe-best-match -r requirements.txt
+"setuptools<81" | Out-File -Encoding ascii build-constraints.txt
+uv pip install --python .venv/Scripts/python.exe --index-strategy unsafe-best-match --build-constraints build-constraints.txt -r requirements.txt
 ```
 
 - **必须独立 venv**：官方 requirements 钉版极狠（`numpy==1.26.4`、`fastapi==0.115.6`、torch cu121 extra-index 等），与应用 venv 混装必炸依赖地狱；
 - `--index-strategy unsafe-best-match` 必带：requirements 挂 PyTorch/微软两个官方 extra-index，微软源里有 onnxruntime 包但缺 requirements 钉的 1.18.0，uv 默认"首个含该包的源定生死"会报 unsatisfiable；此 flag 允许跨源取最优版本（两源均官方，pip 默认行为即如此，不改变任何钉版）；
+- `--build-constraints` 必带：`openai-whisper==20231117` 是源码包，构建时 import `pkg_resources`，而 setuptools≥81 已删该模块，uv 恒在隔离构建环境里装最新 setuptools → 构建必崩（[官方 issue #1938](https://github.com/QwenAudio/CosyVoice/issues/1938) 同错，社区定式=降 setuptools；实测 <81 即够）。此约束只作用于构建期临时环境，不动运行时任何钉版；
 - requirements 含 GPU 向依赖（onnxruntime-gpu 等），Windows CPU 机器装不动 → **停下问人**，不静默换依赖；
 - 模型权重（`CosyVoice2-0.5B`，ModelScope/HF）届时按官方 README 现行命令执行，先核对再跑。
 
