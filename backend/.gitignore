@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# 环境
+.env
+
+# uv
+# (uv.lock 入库;虚拟环境不入)
+.venv/
+
+# 工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 日志(运行时产物)
+logs/

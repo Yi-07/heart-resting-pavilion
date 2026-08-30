@@ -110,7 +110,7 @@
 ### 3.5 done
 
 ```json
-{ "type": "done", "seq": 7 }
+{ "type": "done", "session_id": "sess_abc", "seq": 7 }
 ```
 
 - 前端:收起全部等待态(心情选择器、黑板"收尾中"提示)
