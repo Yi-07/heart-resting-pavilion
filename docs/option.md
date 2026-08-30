@@ -8,11 +8,11 @@
 
 - [x] 0 前置检查
 - [x] 1 后端：骨架 + 依赖 + .env
-- [ ] 2 Redis 容器
-- [ ] 3 前端：Node 升级 + 骨架 + 依赖
-- [ ] 4 预下载 RAG 模型（embedding 已下；重排模型缺）
+- [x] 2 Redis 容器
+- [x] 3 前端：Node 升级 + 骨架 + 依赖
+- [x] 4 预下载 RAG 模型（已迁 D 盘缓存）
 - [ ] 5 语音栈（语音阶段才执行）
-- [ ] 检查点 0：git 提交
+- [x] 检查点 0：git 提交
 
 ---
 
@@ -154,6 +154,18 @@ $env:HF_ENDPOINT="https://hf-mirror.com"; uv run hf download BAAI/bge-reranker-v
 HF_ENDPOINT=https://hf-mirror.com uv run hf download BAAI/bge-reranker-v2-m3
 ```
 
+**模型缓存挪 D 盘**〔✓〕（默认落 `C:\Users\<用户名>\.cache\huggingface\hub`，GB 级权重占 C 盘；改一次永久生效）：
+
+1. 设**系统**环境变量（Win 搜索"编辑系统环境变量"→环境变量→用户变量新建）：`HF_HOME` = `D:\MetaverseStudy\hf_cache`
+2. 迁移已有缓存：把 `C:\Users\<用户名>\.cache\huggingface\` 下的 `hub` 整个文件夹移动到 `D:\MetaverseStudy\hf_cache\`，得到 `D:\MetaverseStudy\hf_cache\hub\models--BAAI--...`（HF 在新路径按 `HF_HOME\hub` 找缓存，已下载内容直接识别，不用重下）
+3. **重开终端**验证（在 `backend/` 下）：
+
+```bash
+uv run python -c "from huggingface_hub import constants; print(constants.HF_HUB_CACHE)"
+```
+
+输出以 `D:\MetaverseStudy\hf_cache` 开头即成。只想临时生效也可在命令前挂变量（PowerShell `$env:HF_HOME="D:\MetaverseStudy\hf_cache"` / Git Bash `HF_HOME=... `），但临时变量只影响当次命令，之后忘设又落回 C 盘——故推荐系统级。
+
 ### 检查点 0
 
 0-4 全部跑通后提交基线。**提交前先自查忽略防线**：
@@ -174,18 +186,19 @@ git add -A && git commit -m "chore: 环境就绪(骨架+依赖+Redis+RAG模型)"
 
 ### 5. 语音栈（语音阶段才执行，人做）
 
-**第一件事**：根 `.gitignore` 追加一行 `model/`（GB 级权重与第三方源码不进 git）。
+**第一件事**：根 `.gitignore` 追加一行 `models/`（GB 级权重与第三方源码不进 git）。
 
 **TTS · CosyVoice 2**〔□〕（官方仓库已从 FunAudioLLM 迁至 `QwenAudio`）：
 
 ```bash
-git clone https://github.com/QwenAudio/CosyVoice.git model/voices/CosyVoice
-cd model/voices/CosyVoice
+git clone https://github.com/QwenAudio/CosyVoice.git models/voices/CosyVoice
+cd models/voices/CosyVoice
 uv venv --python 3.10
-uv pip install --python .venv/Scripts/python.exe -r requirements.txt
+uv pip install --python .venv/Scripts/python.exe --index-strategy unsafe-best-match -r requirements.txt
 ```
 
 - **必须独立 venv**：官方 requirements 钉版极狠（`numpy==1.26.4`、`fastapi==0.115.6`、torch cu121 extra-index 等），与应用 venv 混装必炸依赖地狱；
+- `--index-strategy unsafe-best-match` 必带：requirements 挂 PyTorch/微软两个官方 extra-index，微软源里有 onnxruntime 包但缺 requirements 钉的 1.18.0，uv 默认"首个含该包的源定生死"会报 unsatisfiable；此 flag 允许跨源取最优版本（两源均官方，pip 默认行为即如此，不改变任何钉版）；
 - requirements 含 GPU 向依赖（onnxruntime-gpu 等），Windows CPU 机器装不动 → **停下问人**，不静默换依赖；
 - 模型权重（`CosyVoice2-0.5B`，ModelScope/HF）届时按官方 README 现行命令执行，先核对再跑。
 

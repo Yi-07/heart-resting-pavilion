@@ -7,3 +7,5 @@ backup
 !.claude/settings.json
 .env
 .playwright-mcp/
+
+models/

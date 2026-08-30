@@ -1,16 +1,16 @@
 [project]
-name = "hrp-backend"
+name = "backend"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "chromadb>=1.5.9",
     "fastapi>=0.141.1",
-    "funasr>=1.4.3",
+    "funasr>=1.4.8",
     "jieba>=0.42.1",
     "langgraph>=1.2.11",
     "loguru>=0.7.3",
     "onnxruntime<1.24",
-    "openai>=3.3.1",
+    "openai>=3.6.0",
     "python-dotenv>=1.2.3",
     "rank-bm25>=0.2.2",
     "redis>=8.1.0",
@@ -22,5 +22,5 @@ dependencies = [
 dev = [
     "mypy>=2.3.1",
     "pytest>=9.1.1",
-    "ruff>=0.16.4",
+    "ruff>=0.16.5",
 ]

@@ -55,14 +55,14 @@ uv run pytest
 ```bash
 npm install
 npm run dev
-npm run typecheck
+npm run type-check
 npm run lint
 ```
 
 **模型配置**:环境变量,单源=`backend/.env.example`(provider 切换/密钥/Redis)。
 **收录判据**:只收启动/验证入口与带约定语义(何时跑/前置)的命令;业务 script 单源=package.json/pyproject,不复制;新约定命令随引入同 commit 收录。
 
-**改动后验证**:按改动面选跑对应端检查(后端=ruff/mypy/pytest 三件;前端=typecheck/lint;测试建立前空跑即绿,前端骨架后生效);改文档→doc-standards 十判据+收尾 grep。不全套跑,不重复跑已过的检查。
+**改动后验证**:按改动面选跑对应端检查(后端=ruff/mypy/pytest 三件;前端=type-check/lint;测试建立前空跑即绿,前端骨架后生效);改文档→doc-standards 十判据+收尾 grep。不全套跑,不重复跑已过的检查。
 
 ## 5. 代码风格(可执行规则)
 
