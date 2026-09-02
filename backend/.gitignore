@@ -14,5 +14,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# RAG 持久化(ingest 重建,不入库)
+.rag_store/
+
 # 日志(运行时产物)
 logs/

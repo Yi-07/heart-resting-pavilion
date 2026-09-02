@@ -5,13 +5,17 @@
 + mood_select=false(不弹心情选择器由前端判,协议层以 first_frame.mood_select 钉)。
 """
 
+import asyncio
 import json
 from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app import config
+from app.llm import LLMError
 from app.logger import capture_events
 from app.main import app
+from app.rag.corpus import Ref
 
 client = TestClient(app)
 
@@ -125,3 +129,95 @@ def test_audio_mode_rejected_until_step8():
         err = _recv(ws)
         assert err["type"] == "error"
         assert err["code"] == "server_error"
+
+
+# ---- answer 直答(契约 §6.1;CLAUDE.md §8 用例 1 判据:无 first_frame、无 draw) ----
+
+
+class _StreamStub:
+    """get_provider 替身:stream 可编程,记录收到的 messages"""
+
+    def __init__(self, chunks: list[str], error: Exception | None = None, delay: float = 0.0):
+        self.chunks = chunks
+        self.error = error
+        self.delay = delay
+        self.messages: list[dict[str, str]] | None = None
+
+    async def stream(self, messages):
+        self.messages = [{"role": m.role, "content": m.content} for m in messages]
+        if self.error is not None:
+            raise self.error
+        for chunk in self.chunks:
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            yield chunk
+
+
+class _RagStub:
+    def __init__(self, refs: list[Any]) -> None:
+        self.refs = refs
+        self.calls: list[tuple[str, int | None]] = []
+
+    def retrieve(self, query: str, k: int | None = None) -> list[Any]:
+        self.calls.append((query, k))
+        return self.refs
+
+
+def test_answer_streams_without_blackboard(monkeypatch):
+    stub = _StreamStub(["A" * 20, "B" * 20, "C" * 5])
+    rag = _RagStub(
+        [Ref(id="mindfulness-01", question="什么是正念?", answer="正念是觉察练习")]
+    )
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    monkeypatch.setattr("app.rag.get_engine", lambda: rag)
+
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "什么是正念")
+        frames = [_recv(ws), _recv(ws), _recv(ws)]
+
+    types = [f["type"] for f in frames]
+    assert types == ["text_delta", "text_delta", "done"]
+    assert not any(t in ("first_frame", "draw") for t in types)  # 判据:无黑板
+    joined = frames[0]["text"] + frames[1]["text"]
+    assert joined == "A" * 20 + "B" * 20 + "C" * 5
+    assert frames[1]["final"] is True
+    assert frames[2]["type"] == "done"
+
+    assert rag.calls == [("什么是正念", 3)]  # RAG 门控开,默认 k=3
+    assert stub.messages is not None
+    system = stub.messages[0]["content"]
+    assert "正念是觉察练习" in system  # RAG 资料进了生成上下文
+
+
+def test_answer_llm_error_falls_back(monkeypatch):
+    stub = _StreamStub([], error=LLMError("上游断流"))
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "什么是正念")
+        text = _recv(ws)
+        assert text["type"] == "text_delta"
+        assert text["final"] is True
+        assert _recv(ws)["type"] == "done"
+
+
+def test_answer_timeout_bails_out(monkeypatch):
+    monkeypatch.setattr(config, "LLM_TIMEOUT_S", 0.1)
+    stub = _StreamStub(["很慢" * 30, "依然很慢"], delay=0.3)
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "什么是正念")
+        err = _recv(ws)
+        assert err == {**err, "type": "error", "code": "timeout"}
+        text = _recv(ws)
+        assert text["type"] == "text_delta"  # 降级话术兜底
+        assert _recv(ws)["type"] == "done"
+
+
+def test_collect_placeholder_route(monkeypatch):
+    # classify 规则判 collect("最近很焦虑睡不着")→ 步骤4 前占位安抚
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "最近很焦虑睡不着")
+        text = _recv(ws)
+        assert text["type"] == "text_delta"
+        assert "搭建" in text["text"]
+        assert _recv(ws)["type"] == "done"

@@ -32,6 +32,10 @@ MOOD_ACK: dict[MoodKey, str] = {
     "很好": "真好呀,把这份好心情多留一会儿。",
 }
 
-# ---- 占位(分层判定 answer/collect 随步骤 3/4 接入,届时替换) ----
+# ---- answer 降级(LLM 失败/超时,backend-plan §2 llm 行) ----
 
-PENDING_ROUTE_REPLY = "这条链路还在搭建中,先陪你坐一会儿。你说的我听到了。"
+ANSWER_FALLBACK = "这句话我一时答不上来,但我在。可以换个说法再问我,或者跟我说说你现在的感受。"
+
+# ---- 占位(collect 图随步骤 4 接入,届时替换) ----
+
+PENDING_COLLECT_REPLY = "情绪梳理的采集链路还在搭建中(步骤 4 接入),先陪你坐一会儿。你说的我听到了。"
