@@ -1,25 +1,24 @@
 """WS 网关(backend-plan §8;帧映射=发射侧唯一事实)。
 
 - 连接即建 session_id;user_input / mood_select 入口;JSON 文本帧
-- 每条 user_input 先过危机闸门:命中 → 危机序列(first_frame → draw(stage_map)
-  → text_delta(热线) → done)+ WARN 审计(§9.4,不含原文)
-- 未命中 → 分层判定:answer → RAG(门控)→ LLM 流式直答(攒批 text_delta);
-  collect → 步骤 4 接图,现占位安抚;answer 无 first_frame/draw(契约 §6.1)
+- user_input 处理跑独立任务、不阻塞收包:新 user_input 即抢占——取消当前任务
+  + 旧 emitter 标 dead(未发帧蒸发)→ 新回合 entry(安抚语承接变体)
+- 每条 user_input 先过危机闸门:命中 → 危机序列 + WARN 审计 + 销毁采集态
+- 未命中 → 分层判定(规则速判保 first_frame ≤300ms;模糊按 collect 走,
+  LLM 仅异步精化 emotion_label,不撤回,spec §4 L4):
+  answer → RAG 门控 → LLM 流式直答;collect → first_frame → collect 图
+- collect:AskNext/EmpathChat 后保留状态等下一条;Finish → done + 销毁;
+  Escalate → 危机序列 + 销毁。回合结束三动作的温层/station 落盘随步骤 6/9 接入
 - LLM 失败 → 话术库降级;处理满 LLM_TIMEOUT_S → error(timeout) 兜底
 - 发号:仅 draw/text_delta/audio_chunk/done 盖章(seq 预增,首帧=1);
   first_frame/error 不带不消耗;计数器=连接内存(会话内全局递增)
-- 非法消息 → error(invalid_message),不崩连接
-- mode=audio:语音链路步骤 8 接入,现回 error(server_error)
-- 抢占/Emitter 注入:随 collect 图接入(步骤 4)
-- 重连:消息带原 session_id 时记忆恢复随步骤 6 接入,现仅留档
+- 非法消息 → error(invalid_message),不崩连接;mode=audio 步骤 8 前显式拒绝
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import time
-from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -28,6 +27,8 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app import config
 from app import logger as app_logger
+from app.agents import CollectState, ConnEmitter, Escalate, Finish, Turn, stream_final
+from app.agents.state import CollectEvent
 from app.llm import LLMError, Message, get_provider
 from app.router import classifier, gate, phrases
 from app.router.classifier import Classification
@@ -63,13 +64,16 @@ def _validation_brief(exc: ValidationError) -> str:
 
 
 class Connection:
-    """单连接状态:session_id、seq/trace 计数、S→C 帧统一盖章即发。"""
+    """单连接状态:session_id、seq/trace 计数、当前任务与采集态、盖章发帧。"""
 
     def __init__(self, ws: WebSocket) -> None:
         self.ws = ws
         self.session_id = _session_id()
         self._seq = 0
         self._trace = -1
+        self.current: asyncio.Task[None] | None = None
+        self.current_emitter: ConnEmitter | None = None
+        self.collect_state: CollectState | None = None
 
     # ---- 计数 ----
 
@@ -144,12 +148,14 @@ async def handle_connection(ws: WebSocket) -> None:
     try:
         while True:
             raw = await ws.receive_text()
-            await _dispatch(conn, raw)
+            await _on_message(conn, raw)
     except WebSocketDisconnect:
+        if conn.current is not None and not conn.current.done():
+            conn.current.cancel()
         conn.log("session_close")
 
 
-async def _dispatch(conn: Connection, raw: str) -> None:
+async def _on_message(conn: Connection, raw: str) -> None:
     try:
         msg = _cs_adapter.validate_python(json.loads(raw))
     except json.JSONDecodeError:
@@ -159,13 +165,38 @@ async def _dispatch(conn: Connection, raw: str) -> None:
         await conn.send_error("invalid_message", _validation_brief(exc))
         return
 
-    if isinstance(msg, UserInput):
-        await _on_user_input(conn, msg)
-    elif isinstance(msg, MoodSelect):
+    if isinstance(msg, MoodSelect):
         await _on_mood_select(conn, msg)
+        return
+
+    # user_input:抢占当前处理(分析中 cancel + 弃 state + 旧 emitter 标 dead
+    # → 未发帧蒸发),新任务接管;轮次回答不经过此处销毁(state 仅在处理中被弃)
+    preempted = False
+    if conn.current is not None and not conn.current.done():
+        conn.current.cancel()
+        preempted = True
+    if conn.current_emitter is not None:
+        conn.current_emitter.mark_dead()
+        conn.current_emitter = None
+    if preempted and conn.collect_state is not None:
+        conn.collect_state = None
+    conn.current = asyncio.create_task(_process_user_input(conn, msg, carried=preempted))
+    # 不 await:立刻回收下一条,保持抢占窗口
 
 
-async def _on_user_input(conn: Connection, msg: UserInput) -> None:
+async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
+    trace = conn.next_trace()
+    if conn.collect_state is not None:
+        # 回合内到达:仅更新 profile,不回帧,采集照常(契约 §4.2)
+        conn.log("mood_select_received", trace_id=trace, mood=msg.mood, in_round=True)
+        return
+    conn.log("mood_select_received", trace_id=trace, mood=msg.mood)
+    # TODO(步骤6):record_mood 更新 L7 profile;独立到达当前直接短安抚
+    await conn.send_text(phrases.MOOD_ACK[msg.mood], final=True)
+    await conn.send_done()
+
+
+async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool) -> None:
     trace = conn.next_trace()
     if msg.session_id and msg.session_id != conn.session_id:
         conn.log("reconnect_claim", trace_id=trace, id_len=len(msg.session_id))
@@ -181,7 +212,8 @@ async def _on_user_input(conn: Connection, msg: UserInput) -> None:
         await conn.send_error("server_error", "语音链路未接入(步骤 8)")
         return
 
-    result = gate.check(msg.text or "")
+    text = msg.text or ""
+    result = gate.check(text)
     conn.log(
         "crisis_gate_hit",
         level="WARN" if result.hit else "INFO",
@@ -191,26 +223,54 @@ async def _on_user_input(conn: Connection, msg: UserInput) -> None:
         matched=result.matched,
         to_hotline=result.hit,
     )
-
     if result.hit:
+        conn.collect_state = None
         conn.log("route_decided", trace_id=trace, route="crisis")
         await _crisis_sequence(conn)
         return
 
-    cls = await classifier.classify(msg.text or "")
-    conn.log(
-        "route_decided",
-        trace_id=trace,
-        route=cls.route,
-        source=cls.source,
-        confidence=cls.confidence,
-        needs_rag=cls.needs_rag,
-    )
-    if cls.route == "answer":
-        await _answer_sequence(conn, trace, msg.text or "", cls)
-    else:
-        # TODO(步骤4):collect 图(first_frame→粗稿→轮次→精稿);现占位安抚
-        await conn.send_text(phrases.PENDING_COLLECT_REPLY, final=True)
+    try:
+        cls = classifier.classify_rules(text)
+        if cls.route == "answer":
+            if conn.collect_state is not None:
+                # 等待期抢占:输入判 answer → 弃采集态,直接直答(§8 抢占)
+                conn.log("preempted", trace_id=trace, reason="answer_route")
+                conn.collect_state = None
+            conn.log(
+                "route_decided",
+                trace_id=trace,
+                route="answer",
+                source=cls.source,
+                needs_rag=cls.needs_rag,
+            )
+            await asyncio.wait_for(
+                _answer_sequence(conn, text, cls), timeout=config.LLM_TIMEOUT_S
+            )
+        else:
+            conn.log(
+                "route_decided",
+                trace_id=trace,
+                route="collect",
+                source=cls.source,
+                confidence=cls.confidence,
+                in_round=conn.collect_state is not None,
+            )
+            await asyncio.wait_for(
+                _collect_sequence(conn, trace, text, cls, carried=carried),
+                timeout=config.LLM_TIMEOUT_S,
+            )
+    except asyncio.TimeoutError:
+        conn.collect_state = None
+        conn.log("degraded", level="WARN", trace_id=trace, reason="timeout")
+        await conn.send_error("timeout", "这次回应太慢了,先给你一句兜底")
+        await conn.send_text(phrases.ANSWER_FALLBACK, final=True)
+        await conn.send_done()
+    except Exception as exc:  # noqa: BLE001 — 网关收口:任何异常 error 帧 + 不崩连接
+        conn.collect_state = None
+        conn.log(
+            "error", level="ERROR", trace_id=trace, code="server_error", detail=str(exc)[:160]
+        )
+        await conn.send_error("server_error", "我这边卡了一下,先陪你坐一会儿")
         await conn.send_done()
 
 
@@ -223,30 +283,62 @@ async def _crisis_sequence(conn: Connection) -> None:
     await conn.send_done()
 
 
+# ---- collect(每条 user_input=一次短图调用,backend-plan §3) ----
+
+
+async def _collect_sequence(
+    conn: Connection, trace: int, text: str, cls: Classification, *, carried: bool
+) -> None:
+    state = conn.collect_state
+    if state is None:
+        # entry:first_frame(≤300ms 语义,规则速判)+ 建态;承接变体=抢占后重开
+        state = CollectState(
+            session_id=conn.session_id,
+            route="collect",
+            template="beck_formulation",
+            emotion_label=cls.emotion_label,
+            confidence=cls.confidence,
+            max_rounds=config.COLLECT_MAX_ROUNDS,
+        )
+        conn.collect_state = state
+        await conn.send_first_frame(
+            route="collect",
+            template="beck_formulation",
+            emotion_label=cls.emotion_label,
+            mood_select=True,
+            text=phrases.collect_soothe(cls.emotion_label, carried=carried),
+        )
+        conn.log("collection_start", trace_id=trace, carried=carried)
+    # 轮次回答:同回合继续,无 first_frame(契约 §6.2)
+    state.turns.append(Turn(role="user", text=text))
+
+    emitter = ConnEmitter(conn, "beck_formulation")
+    conn.current_emitter = emitter
+    try:
+        from app.agents import run_collect  # 懒加载:LangGraph 只进 collect 路径
+
+        event = await run_collect(state, emitter)
+    finally:
+        if conn.current_emitter is emitter:
+            conn.current_emitter = None
+    await _settle_collect_event(conn, trace, event)
+
+
+async def _settle_collect_event(
+    conn: Connection, trace: int, event: CollectEvent
+) -> None:
+    if isinstance(event, Finish):
+        # 回合结束三动作:温层摘要+station:input 随步骤 6/9 接入;销毁状态
+        conn.collect_state = None
+        await conn.send_done()
+    elif isinstance(event, Escalate):
+        conn.collect_state = None
+        conn.log("route_decided", trace_id=trace, route="crisis", via="escalate")
+        await _crisis_sequence(conn)
+    # AskNext / EmpathChat:保留状态等待下一条输入(帧已由图内 emitter 发出)
+
+
 # ---- answer 直答(契约 §6.1:user_input → text_delta ×N → done,无黑板) ----
-
-_BATCH_CHARS = 30
-_BATCH_WINDOW_S = 0.1
-
-
-async def _batched_chunks(
-    chunks: AsyncIterator[str],
-    *,
-    min_chars: int = _BATCH_CHARS,
-    window_s: float = _BATCH_WINDOW_S,
-) -> AsyncIterator[str]:
-    """攒批(backend-plan §8):≥30 字或距上次 ≥100ms 出一批。"""
-    buf = ""
-    last_flush = time.monotonic()
-    async for chunk in chunks:
-        buf += chunk
-        now = time.monotonic()
-        if len(buf) >= min_chars or (buf and now - last_flush >= window_s):
-            yield buf
-            buf = ""
-            last_flush = now
-    if buf:
-        yield buf
 
 
 def _answer_messages(query: str, refs: list[Ref]) -> list[Message]:
@@ -264,49 +356,32 @@ def _answer_messages(query: str, refs: list[Ref]) -> list[Message]:
     return [Message("system", system), Message("user", query)]
 
 
-async def _answer_sequence(
-    conn: Connection, trace: int, text: str, cls: Classification
-) -> None:
+async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> None:
     refs: list[Ref] = []
     if cls.needs_rag:
         try:
             from app.rag import get_engine  # 懒加载:chroma/模型首次 answer 才进内存
 
             refs = get_engine().retrieve(text, k=config.RAG_TOP_K)
-            conn.log("rag_retrieved", trace_id=trace, refs=[r.id for r in refs])
+            conn.log("rag_retrieved", refs=[r.id for r in refs])
         except Exception as exc:  # noqa: BLE001 — RAG 任意失败都降级直答,不杀回合
             conn.log("degraded", level="WARN", reason="rag_failed", detail=str(exc)[:120])
             refs = []
 
-    async def stream_out() -> None:
-        pending: str | None = None
-        async for batch in _batched_chunks(get_provider().stream(_answer_messages(text, refs))):
-            if pending is not None:
-                await conn.send_text(pending)
-            pending = batch
-        if pending is not None:
-            await conn.send_text(pending, final=True)
-        else:  # 空流 → 降级话术,不让回合无输出收场
-            conn.log("degraded", level="WARN", reason="empty_stream")
-            await conn.send_text(phrases.ANSWER_FALLBACK, final=True)
-
+    emitter = ConnEmitter(conn, "beck_formulation")  # answer 不画黑板,draw 不触达
+    conn.current_emitter = emitter
     try:
-        await asyncio.wait_for(stream_out(), timeout=config.LLM_TIMEOUT_S)
-    except asyncio.TimeoutError:
-        conn.log("degraded", level="WARN", reason="timeout")
-        await conn.send_error("timeout", "这次回应太慢了,先给你一句兜底")
-        await conn.send_text(phrases.ANSWER_FALLBACK, final=True)
-    except LLMError as exc:
-        conn.log("degraded", level="WARN", reason="llm_error", detail=str(exc)[:120])
-        await conn.send_text(phrases.ANSWER_FALLBACK, final=True)
-    await conn.send_done()
-
-
-async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
-    trace = conn.next_trace()
-    conn.log("mood_select_received", trace_id=trace, mood=msg.mood)
-    # TODO(步骤6):record_mood 更新 L7 profile;独立到达当前直接短安抚
-    await conn.send_text(phrases.MOOD_ACK[msg.mood], final=True)
+        sent = False
+        try:
+            sent = await stream_final(emitter, get_provider().stream(_answer_messages(text, refs)))
+        except LLMError as exc:
+            conn.log("degraded", level="WARN", reason="llm_error", detail=str(exc)[:120])
+        if not sent:
+            conn.log("degraded", level="WARN", reason="empty_stream")
+            await emitter.text(phrases.ANSWER_FALLBACK, final=True)
+    finally:
+        if conn.current_emitter is emitter:
+            conn.current_emitter = None
     await conn.send_done()
 
 

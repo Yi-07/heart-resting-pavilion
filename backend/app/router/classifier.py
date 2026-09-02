@@ -78,12 +78,9 @@ _CLASSIFY_SYSTEM = (
 )
 
 
-async def classify(
-    text: str,
-    provider: OpenAICompatProvider | None = None,
-    timeout_s: float | None = None,
-) -> Classification:
-    """分层判定主入口;任何失败都落到 collect(安全侧),不向上抛。"""
+def classify_rules(text: str) -> Classification:
+    """规则速判(零 LLM,保 first_frame ≤300ms);模糊输入按 collect+中性兜底
+    (spec §4 L4:LLM 未返不等待)。LLM 精化 emotion_label 异步做,不撤回已发帧。"""
     knowledge = _hit(KNOWLEDGE_PATTERNS, text)
     if knowledge:
         return Classification("answer", quick_label(text), config.CLASSIFIER_RULE_CONF, True, "rule")
@@ -91,6 +88,18 @@ async def classify(
         return Classification("collect", quick_label(text) or "低落", config.CLASSIFIER_RULE_CONF, False, "rule")
     if _hit(GREETINGS, text):
         return Classification("answer", None, config.CLASSIFIER_RULE_CONF, False, "rule")
+    return Classification("collect", None, 0.0, False, "fallback")
+
+
+async def classify(
+    text: str,
+    provider: OpenAICompatProvider | None = None,
+    timeout_s: float | None = None,
+) -> Classification:
+    """分层判定全路径(规则→LLM);任何失败都落到 collect(安全侧),不向上抛。"""
+    fast = classify_rules(text)
+    if fast.source == "rule":
+        return fast
 
     # 模糊 → LLM;不等待(超时/失败即 collect 兜底,spec §4 L4)
     prov = provider or get_provider()
@@ -106,4 +115,5 @@ async def classify(
         return Classification("collect", None, 0.0, False, "fallback")
     if result.confidence < config.CLASSIFIER_LLM_MIN_CONF:
         return Classification("collect", result.emotion_label, result.confidence, False, "fallback")
+    knowledge = _hit(KNOWLEDGE_PATTERNS, text)
     return Classification(result.route, result.emotion_label, result.confidence, knowledge, "llm")

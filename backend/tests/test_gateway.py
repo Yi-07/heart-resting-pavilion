@@ -108,16 +108,20 @@ def test_mood_select_independent_no_first_frame():
         assert _recv(ws)["type"] == "done"
 
 
-def test_pending_route_placeholder_and_seq_global():
+def test_answer_seq_global_across_rounds(monkeypatch):
+    """seq 会话内全局递增,不随回合重置(契约 §3.2)。"""
+    stub = _StreamStub(["A" * 20, "B" * 5])
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub([]))
     with client.websocket_connect("/ws") as ws:
-        _send_input(ws, "最近很焦虑睡不着")  # 未命中 → 占位回复(步骤3/4 前)
+        _send_input(ws, "什么是正念")  # answer 路(RAG 关,无种子库则降级直答)
         text1 = _recv(ws)
         assert text1["type"] == "text_delta"
         assert _recv(ws)["type"] == "done"
 
-        _send_input(ws, "今天天气怎么样")
+        _send_input(ws, "如何缓解焦虑")
         text2 = _recv(ws)
-        assert text2["seq"] > text1["seq"]  # seq 会话内全局递增,不随回合重置
+        assert text2["seq"] > text1["seq"]
         _recv(ws)
 
 
@@ -214,10 +218,11 @@ def test_answer_timeout_bails_out(monkeypatch):
 
 
 def test_collect_placeholder_route(monkeypatch):
-    # classify 规则判 collect("最近很焦虑睡不着")→ 步骤4 前占位安抚
+    """collect 全链路 E2E 见 tests/test_collect_flow.py;此处钉网关侧帧序基线。"""
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "最近很焦虑睡不着")
-        text = _recv(ws)
-        assert text["type"] == "text_delta"
-        assert "搭建" in text["text"]
-        assert _recv(ws)["type"] == "done"
+        first = _recv(ws)
+        assert first["type"] == "first_frame"
+        assert first["route"] == "collect"
+        assert first["mood_select"] is True
+        assert first["template"] == "beck_formulation"

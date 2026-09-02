@@ -36,6 +36,39 @@ MOOD_ACK: dict[MoodKey, str] = {
 
 ANSWER_FALLBACK = "这句话我一时答不上来,但我在。可以换个说法再问我,或者跟我说说你现在的感受。"
 
-# ---- 占位(collect 图随步骤 4 接入,届时替换) ----
+# ---- collect 采集话术(spec §4 L4:第一帧按情绪标签选;LLM 只润色,MVP 用库) ----
 
-PENDING_COLLECT_REPLY = "情绪梳理的采集链路还在搭建中(步骤 4 接入),先陪你坐一会儿。你说的我听到了。"
+SOOTHE_BY_LABEL: dict[str, str] = {
+    "焦虑": "先别急,慢慢说。焦虑缠着人的时候,能开口讲出来已经不容易。",
+    "低落": "嗯,我在听。低落不需要马上被解释,先让它被看见。",
+    "疲惫": "辛苦了。撑了这么久,这里可以先放一放。",
+}
+SOOTHE_DEFAULT = "嗯,我在听。你说,我陪着你。"
+SOOTHE_CARRY = "好,我们重新开始梳理这一件——你慢慢说,我在。"
+
+
+def collect_soothe(label: str | None, *, carried: bool) -> str:
+    """冷启动按标签选;抢占/重启用承接变体。"""
+    if carried:
+        return SOOTHE_CARRY
+    return SOOTHE_BY_LABEL.get(label or "", SOOTHE_DEFAULT)
+
+
+CONFIRM_BY_FIELD: dict[str, str] = {
+    "situation": "嗯,那件事我记下了。",
+    "emotion": "好,我听见这份感受了。",
+    "thought": "谢谢你愿意说出来,这个念头很重要。",
+    "behavior": "嗯,当时的你已经在用自己的方式应对了。",
+    "intermediate_belief": "这个联系我记下来了,很关键。",
+    "core_belief": "你说的这句,我会认真放着。",
+}
+RETRY_ACK = "刚才那句有点短,不怕,再说一次就好——"
+EMPATH_CHAT_REPLY = "嗯,我听着呢。你想到哪说到哪,我们慢慢来。"
+SUMMARY_FALLBACK = (
+    "这次的梳理我先记在这里了。整理的话没组织好,但你说的每一句我都收到了——"
+    "我们下次接着聊。"
+)
+STATION_INVITE = (
+    "我把这次的梳理放进了右侧的「心灵补给站」,里面有一份为你整理的小方案,"
+    "想看的时候随时点开。"
+)

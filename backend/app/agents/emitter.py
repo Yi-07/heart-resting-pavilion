@@ -1,0 +1,92 @@
+"""Emitter 协议(backend-plan §8):图内发帧的唯一通道,config 传递不进 state。
+
+三方法:draw(formulation) · text(s) · audio(chunk);ConnEmitter 包 Connection,
+dead 标记后发帧蒸发(抢占时旧 emitter 标 dead,未发帧丢弃)。
+攒批工具(≥30 字/100ms 窗)单源在此,answer/collect 两路共用。
+"""
+
+from __future__ import annotations
+
+import time
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING, Protocol
+
+from app.schema import Formulation, TemplateId
+
+if TYPE_CHECKING:
+    from app.ws_gateway.gateway import Connection
+
+BATCH_CHARS = 30
+BATCH_WINDOW_S = 0.1
+
+
+class Emitter(Protocol):
+    async def draw(self, formulation: Formulation) -> None: ...
+
+    async def text(self, s: str, *, final: bool = False) -> None: ...
+
+    def audio(self, chunk: bytes) -> None: ...
+
+
+async def batched_chunks(
+    chunks: AsyncIterator[str],
+    *,
+    min_chars: int = BATCH_CHARS,
+    window_s: float = BATCH_WINDOW_S,
+) -> AsyncIterator[str]:
+    """攒批:≥min_chars 字或距上次出批 ≥window_s 秒出一批(尾批收尾)。"""
+    buf = ""
+    last_flush = time.monotonic()
+    async for chunk in chunks:
+        buf += chunk
+        now = time.monotonic()
+        if len(buf) >= min_chars or (buf and now - last_flush >= window_s):
+            yield buf
+            buf = ""
+            last_flush = now
+    if buf:
+        yield buf
+
+
+async def stream_final(emitter: Emitter, chunks: AsyncIterator[str]) -> bool:
+    """流式出帧,hold-one 保证末帧 final=True;返回是否发出过帧(空流由调用方兜底)。"""
+    pending: str | None = None
+    async for batch in batched_chunks(chunks):
+        if pending is not None:
+            await emitter.text(pending)
+        pending = batch
+    if pending is not None:
+        await emitter.text(pending, final=True)
+        return True
+    return False
+
+
+class ConnEmitter:
+    """Connection 适配 + dead 蒸发;log 透传网关标准事件日志。"""
+
+    def __init__(self, conn: Connection, template: TemplateId) -> None:
+        self._conn = conn
+        self._template = template
+        self.dead = False
+
+    def mark_dead(self) -> None:
+        self.dead = True
+
+    def log(self, event: str, level: str = "INFO", **fields: object) -> None:
+        if not self.dead:
+            self._conn.log(event, level=level, **fields)
+
+    async def draw(self, formulation: Formulation) -> None:
+        if self.dead:
+            return
+        await self._conn.send_draw(self._template, formulation)
+
+    async def text(self, s: str, *, final: bool = False) -> None:
+        if self.dead:
+            return
+        await self._conn.send_text(s, final=final)
+
+    def audio(self, chunk: bytes) -> None:
+        """TTS 直发(步骤 8 接入;当前占位丢弃)"""
+        if self.dead or not chunk:
+            return

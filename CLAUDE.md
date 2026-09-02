@@ -49,6 +49,7 @@ uv run uvicorn app.main:app --port 8000
 uv run ruff check app
 uv run mypy app
 uv run pytest
+uv run python -m app.rag.ingest   # 语料 jsonl 变更后重灌 Chroma;--reset 清空重建
 ```
 
 **前端**(在 frontend/ 目录下):

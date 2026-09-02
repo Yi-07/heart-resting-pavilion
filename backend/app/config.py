@@ -47,3 +47,14 @@ RAG_STORE_PATH = os.path.join(".rag_store")
 
 RAG_TOP_K = 3
 """retrieve 默认返回条数(k=None 时用)"""
+
+# ---- 多轮采集(spec §4 L4 可调常量) ----
+
+COLLECT_MAX_ROUNDS = 3
+"""轮数上限(常态 2 轮收尾,上限兜底)"""
+
+COLLECT_STOP_THRESHOLD = 0.7
+"""充分度停采阈值(常规档)"""
+
+COLLECT_TEST_STOP_THRESHOLD = 0.85
+"""测试档停采阈值(约 3 轮挖信念;仅测试用,业务代码不读)"""
