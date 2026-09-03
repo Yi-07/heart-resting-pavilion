@@ -26,7 +26,7 @@
 - done 帧**带** session_id(ws-contract §1 赢家,§3.5 示例已补);user_input/mood_select 的 session_id **可空**。
 - **轮次回答=同回合连续,不发 first_frame**(契约 §6.2);「等待期抢占」落到 answer/危机类输入;**分析中抢占**=cancel 任务+弃 state+emitter dead(未发帧蒸发)→ entry 承接安抚语。
 - 模糊输入 `classify_rules` 规则速判按 collect 兜底(first_frame ≤300ms);LLM 异步精化 emotion_label 未接(spec §4 L4 允许,非必须)。
-- 种子语料 15 条**人审定稿**;全量语料到位走 `docs/data-contract.md` §4 回验替换。
+- 种子语料 15 条**人审定稿**;全量语料=队友 `dataset/`(已到位,未跟踪不入库)——**排后单做**(看板「排后」项),走 `docs/data-contract.md` §4 回验替换。
 - StageMapData 字段 `from_`(Python 关键字),序列化必须 `model_dump_json(by_alias=True)`。
 - **增量 draw 与精稿 draw 前端无法实时区分**(契约无专用信号)→ 已按 frontend-plan §3「纯前端推断」落地:轮次回答提交(collecting/final)→ analysis(显示收尾中)→ draw 到达 → final。emotionLabel 写序落地形态:first_frame → draw(未手点锁时覆盖)→ mood_select(手点锁回合,first_frame 解锁),见 `state/round.ts`。
 
