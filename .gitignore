@@ -9,3 +9,5 @@ backup
 .playwright-mcp/
 
 models/
+# E2E 验证产物(截图,不入库)
+e2e-shots/
