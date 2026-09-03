@@ -21,29 +21,17 @@
 - [x] 步骤2 WS 网关最小版+危机闸门 · `f226fbb`
 - [x] 步骤3 answer(种子语料真检索) · `324bf0a`
 - [x] 步骤4 collect 多轮采集(逻辑层先验) · `07cc917`
-- [ ] 步骤5 黑板(SVG 渲染+视觉判据)← **当前**
-- [ ] 步骤6 记忆(Redis 前置)
+- [x] 步骤5 黑板(SVG 渲染+视觉判据) · `089165e`
+- [ ] 步骤6 记忆(Redis 前置)← **当前**
 - [ ] 步骤7 Live2D
 - [ ] 步骤8 语音(ASR+TTS)
 - [ ] 步骤9 工具(station 懒生成·admin)
 
 ## 2. 当前步骤展开(完成后清空细节,§1 勾选即档)
 
-### 步骤5 黑板 · 范围与分派
+### 步骤6 记忆(Redis 前置)· 范围与分派
 
-范围:board 模块(render/diff/registry/粉笔效果)· 模板声明 3 个 · state/round 状态机 · mood 选择器 · chat 面板+危机横幅 · audio 队列骨架 · App.vue 按 v7 舞台布局重组。接口签名单源 = frontend-plan §4/§5;视觉基准 = `architecture/preview/l1-ui-mockup-v7.html`(已蒸馏进 handoff §4,勿整读源文件)。
-
-- [ ] `board/diff.ts` —— 纯函数:新增/变化/置 null 三态(测试接缝)
-- [ ] `board/templateRegistry.ts` —— register/get;重复 id throw,未注册由 render 捕获
-- [ ] `board/renderer.ts` —— render(未知模板记 WARN 跳帧不崩)+ 粉笔手绘(线中点抖动/椭圆半径噪声/dash-reveal/粉笔光标;feDisplacementMap 只套图形不套文字)
-- [ ] 模板声明 3 个:beck_formulation 六字段 / emotion_wheel / stage_map(锚点与坐标参照 handoff §4 蒸馏)
-- [ ] `state/round.ts` —— transition+RSEvent;非法迁移忽略记 DEBUG;持 emotionLabel(写序:first_frame → mood 本地 → 精稿,回合内手点不被精稿回退)
-- [ ] `mood/selector.ts` —— 右上浮出/10s 超时回工具栏 pill/上报 mood_select
-- [ ] chat —— 气泡+流式文本+危机横幅;点气泡展开抽屉,✕ 收起
-- [ ] `audio/queue.ts` —— enqueue 顺序播/stopAndFade 淡出/onPlayback 广播(真音频帧步骤 8 到)
-- [ ] App.vue 重组 v7 布局 —— 黑板左 64%+四角 HUD+呼吸光晕+zoom;工具栏/输入条;Live2D 与语音留位
-- [ ] 测试四接缝:diff / render 未知模板 / transition 全迁移 / audio 队列顺序与抢占(frontend-plan §8)
-- [ ] 验收:用例 2 前端判据(心情选择器、黑板粗稿→逐轮增量→精稿可见、总结+邀请语)+ 用例 3(热线横幅+stage_map、无心情选择器)—— 子 agent 驱动真实前后端逐条回报
+开工时依据 backend-plan 记忆节 + spec 热层展开为勾选清单(同步骤5 形态);Redis 前置=先验环境可用性(handoff §2 现场坑)。前端挂钩点:mood pill / mood_select 独立到达 / station 生成语境(gateway.py 已留 TODO 标记)。
 
 ## 3. 接力规程
 
