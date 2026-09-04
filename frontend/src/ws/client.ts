@@ -1,6 +1,6 @@
 // ws/client.ts —— 连接/重连/seq 校验/消息分发(frontend-plan §4)。
 // seq 校验单点在此:丢弃 seq≤已处理 的旧帧,下游收到即新帧;
-// first_frame/error 无 seq 直通。断线重连内部处理,带原 session_id。
+// first_frame/error 无 seq 直通。断线/首连失败都续排退避重连,带原 session_id。
 import { logger } from '../logger'
 import type { CSMsg, WSMsg, WSMsgType } from './messages'
 
@@ -67,8 +67,8 @@ export class WSClient {
         if (!settled) {
           settled = true
           reject(new WSError(`连接失败: ${this.url}`))
-          return
         }
+        // 首连/重连失败同样续排退避——否则一次失败即弃疗,后端恢复也不再重试
         if (!this.manualClose) this.scheduleReconnect()
       }
       socket.onerror = () => {

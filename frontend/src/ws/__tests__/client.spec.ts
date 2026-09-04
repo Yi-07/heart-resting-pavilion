@@ -127,6 +127,19 @@ describe('WSClient', () => {
       expect(sockets.length).toBe(3)
     })
 
+    it('首连/重连失败不弃疗:退避链持续,后端恢复后接回', async () => {
+      const { client, sockets } = makeClient()
+      const pending = client.connect()
+      socketAt(sockets, 0).onclose?.() // 首连失败(从未 onopen)
+      await expect(pending).rejects.toThrow(WSError)
+
+      await vi.advanceTimersByTimeAsync(1000) // 退避 1s → 第二只
+      socketAt(sockets, 1).onclose?.() // 重连又失败(后端未恢复)
+      await vi.advanceTimersByTimeAsync(2000) // 退避 2s → 第三只
+      socketAt(sockets, 2).onopen?.() // 后端恢复
+      expect(client.isConnected).toBe(true)
+    })
+
     it('close() 主动关闭不触发重连', async () => {
       const { client, sockets } = makeClient()
       await open(client, sockets)
