@@ -24,19 +24,21 @@
 - [x] 步骤5 黑板(SVG 渲染+视觉判据) · `089165e`
 - [x] 步骤6 记忆(Redis 前置) · `c82a343`
 - [x] 步骤7 Live2D · `fdeaa46`(附带 `1db9e72` 修 ws 重连链断裂,步骤2 遗留)
-- [ ] 步骤8 语音(ASR+TTS)← **当前**
-- [ ] 步骤9 工具(station 懒生成·admin)
+- [x] 步骤8 语音(ASR+TTS) · `e1251d6`
+- [ ] 步骤9 工具(station 懒生成·admin)← **当前**
 - [ ] 排后·全量语料接入(队友 `dataset/` 已到位不入库;步骤9 后单做,走 `docs/data-contract.md` §4 回验替换 15 条种子——本项为看板级排程追加,非 CLAUDE.md §8 构建顺序成员)
 
 ## 2. 当前步骤展开(完成后清空细节,§1 勾选即档)
 
-### 步骤8 语音(ASR+TTS)· 范围与分派
+### 步骤9 工具(station 懒生成·admin)· 范围与分派
 
-范围:`voice/` 后端三件(transcribe 转写·tts_stream 合成·fillers 预生成等待音,backend-plan §2 voice 行)+ 网关 audio 链路接入(mode=audio 转写同流;安抚/总结/危机 TTS→audio_chunk×N;失败跳过音频文字照常)+ 前端 mic 录音与真播放/口型。**环境前置未探明**(SenseVoice/CosyVoice 2 模型获取与 GPU/ffmpeg 可用性),涉大模型下载需人裁定后展开。
+范围:`station/` 补给站 REST+方案书存取(端点单源=ws-contract §1,开工先读)· `admin/` 管理通道 REST · SQLite reports 表(每会话只留最新一份)· 前端心灵补给站入口(邀请语点击触发生成)· L7 治理查看/一键清除挂 admin。素材已备:回合末 `station:input{formulation,summary}` Redis 写入+`memory.load_station_input` 读口。
 
-- [ ] 环境探明+人裁定:ffmpeg 可用性·SenseVoice/CosyVoice 2 模型来源(HF/ModelScope,体量 GB 级)·GPU 显存·备选(云端 API/减配)
-- [ ] 依裁定展开:voice 模块三件 + 网关接入 + 前端 mic/AudioQueue 真播放/口型
-- [ ] 验收:backend-plan §10 用例4(audio 模式转写同流;安抚+总结各出 audio_chunk×N;分析中抢占蒸发;日志无音频无原文)
+- [ ] 读 ws-contract §1 定端点形状;backend-plan §2 station/admin 行展开勾选
+- [ ] `station/` —— 方案书生成(planner,backend-plan §5)+ reports 表存取(每会话最新胜)
+- [ ] `admin/` —— 管理通道(语料/审计/治理查看+一键清除,spec L7)
+- [ ] 前端 —— 工具栏心灵补给站入口+方案书展示(邀请语已有)
+- [ ] 验收:用例2 完整链(点击补给站→方案书生成可见);admin 冒烟
 
 ## 3. 接力规程
 
