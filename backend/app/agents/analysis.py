@@ -50,19 +50,24 @@ async def review_emotion(cs: CollectState) -> Emotion:
 
 
 def summary_messages(cs: CollectState, refs: list[Ref]) -> list[Message]:
-    """总结 prompt:人话总结 formulation + RAG 引用建议(资料没有的不编造)。"""
+    """总结 prompt:人话总结 formulation + RAG 引用建议(资料没有的不编造);
+    带热层历史摘要时先交代上回语境(跨回合连续性,唯一 prompt 侧消费点)。"""
     context = ""
     if refs:
         context = (
             "\n\n可参考的心理科普资料(自然融入,不列条目,资料没有的不编造):\n"
             + "\n\n".join(f"【{r.question}】\n{r.answer}" for r in refs)
         )
+    history = ""
+    if cs.session_context.history_summary:
+        clipped = cs.session_context.history_summary[:200]
+        history = f"\n\n用户这轮之前还有一次梳理,摘要是:{clipped}"
     system = (
         "你是心栖阁的共情陪伴者。基于认知概念化表格,用人话帮用户回看这次梳理:"
         "先温柔地照见情境与情绪,再点出想法-行为之间的联系,最后给 1~2 条贴合的"
         f"小建议(建议式非命令式,不做医疗诊断)。温暖口语,250 字内,不用列表。{context}"
     )
-    user = cs.formulation.model_dump_json(by_alias=True)
+    user = cs.formulation.model_dump_json(by_alias=True) + history
     return [Message("system", system), Message("user", user)]
 
 

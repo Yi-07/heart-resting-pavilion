@@ -58,3 +58,20 @@ COLLECT_STOP_THRESHOLD = 0.7
 
 COLLECT_TEST_STOP_THRESHOLD = 0.85
 """测试档停采阈值(约 3 轮挖信念;仅测试用,业务代码不读)"""
+
+# ---- 记忆(层介质与生命周期单源=spec §4 L7,数值不复制到其他文档) ----
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+"""热/温层 Redis(契约 §8.4 重连恢复;单源=backend/.env.example)"""
+
+MEMORY_HOT_TTL_S = 30 * 60
+"""热层 TTL:当前会话上下文(spec §4 L7)"""
+
+MEMORY_WARM_TTL_S = 7 * 24 * 3600
+"""温层 TTL:会话摘要 + station:input(spec §4 L7)"""
+
+MEMORY_DB_PATH = os.path.join("data", "profile.db")
+"""冷层 SQLite(长期画像+情绪趋势,无 TTL;运行时产物不入 git)"""
+
+MOOD_RECENT_CAP = 5
+"""热层 mood_recent 滚动上限(喂 snapshot/Live2D 语境)"""

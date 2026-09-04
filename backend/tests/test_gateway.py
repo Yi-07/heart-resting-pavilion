@@ -226,3 +226,61 @@ def test_collect_placeholder_route(monkeypatch):
         assert first["route"] == "collect"
         assert first["mood_select"] is True
         assert first["template"] == "beck_formulation"
+
+
+# ---- 记忆接线(步骤6;memory 真链路见 tests/test_memory.py) ----
+
+
+def test_mood_select_recorded_to_cold_layer(fake_memory):
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(json.dumps({"type": "mood_select", "mood": "低落", "ts": 4}))
+        assert _recv(ws)["type"] == "text_delta"
+        assert _recv(ws)["type"] == "done"
+    calls = [c for c in fake_memory.calls if c[0] == "record_mood"]
+    assert len(calls) == 1
+    assert calls[0][1]["mood_label"] == "低落"
+    assert calls[0][1]["source"] == "mood_select"
+
+
+def test_finish_archives_round_three_actions(monkeypatch, fake_memory):
+    """回合三动作:温层摘要+station:input(研判 mood 需 emotion 已填,此处空态不记)。"""
+    from app.agents.state import Finish
+
+    async def _stub_run(cs, emitter):
+        return Finish(cause="sufficient", summary="测试总结文本")
+
+    monkeypatch.setattr("app.agents.run_collect", _stub_run)
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "最近很焦虑睡不着")
+        assert _recv(ws)["type"] == "first_frame"
+        assert _recv(ws)["type"] == "done"
+    names = [c[0] for c in fake_memory.calls]
+    assert "save_round_summary" in names
+    assert "save_station_input" in names
+    saved = {c[0]: c[1] for c in fake_memory.calls if c[0] in ("save_round_summary", "save_station_input")}
+    assert saved["save_round_summary"]["summary"] == "测试总结文本"
+    assert saved["save_station_input"]["summary"] == "测试总结文本"
+    assert "situation" in saved["save_station_input"]["formulation_json"]
+
+
+def test_reconnect_adopts_session_id(monkeypatch):
+    """契约 §8.4:带原 session_id 的 user_input → 后端认领(done 帧带回原 id)。"""
+    stub = _StreamStub(["好" * 20])
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub([]))
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(
+            json.dumps(
+                {
+                    "type": "user_input",
+                    "session_id": "sess_previous_round",
+                    "mode": "text",
+                    "text": "什么是正念",
+                    "ts": 6,
+                }
+            )
+        )
+        assert _recv(ws)["type"] == "text_delta"
+        done = _recv(ws)
+        assert done["type"] == "done"
+        assert done["session_id"] == "sess_previous_round"

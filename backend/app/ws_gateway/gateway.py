@@ -7,8 +7,9 @@
 - 未命中 → 分层判定(规则速判保 first_frame ≤300ms;模糊按 collect 走,
   LLM 仅异步精化 emotion_label,不撤回,spec §4 L4):
   answer → RAG 门控 → LLM 流式直答;collect → first_frame → collect 图
-- collect:AskNext/EmpathChat 后保留状态等下一条;Finish → done + 销毁;
-  Escalate → 危机序列 + 销毁。回合结束三动作的温层/station 落盘随步骤 6/9 接入
+- collect:AskNext/EmpathChat 后保留状态等下一条;Finish → 回合三动作
+  (温层摘要+station:input+研判 mood,memory 模块降级不杀回合)+ done + 销毁;
+  Escalate → 危机序列 + 销毁;重连带原 session_id → 认领恢复热层(契约 §8.4)
 - LLM 失败 → 话术库降级;处理满 LLM_TIMEOUT_S → error(timeout) 兜底
 - 发号:仅 draw/text_delta/audio_chunk/done 盖章(seq 预增,首帧=1);
   first_frame/error 不带不消耗;计数器=连接内存(会话内全局递增)
@@ -30,6 +31,7 @@ from app import logger as app_logger
 from app.agents import CollectState, ConnEmitter, Escalate, Finish, Turn, stream_final
 from app.agents.state import CollectEvent
 from app.llm import LLMError, Message, get_provider
+from app.memory import get_memory
 from app.router import classifier, gate, phrases
 from app.router.classifier import Classification
 from app.schema import (
@@ -186,12 +188,15 @@ async def _on_message(conn: Connection, raw: str) -> None:
 
 async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
     trace = conn.next_trace()
+    # 冷层情绪趋势(spec §7:上报→L7;同日同源最新胜)+ 热层 mood_recent
+    await get_memory().record_mood(
+        msg.mood, source="mood_select", session_id=conn.session_id
+    )
     if conn.collect_state is not None:
         # 回合内到达:仅更新 profile,不回帧,采集照常(契约 §4.2)
         conn.log("mood_select_received", trace_id=trace, mood=msg.mood, in_round=True)
         return
     conn.log("mood_select_received", trace_id=trace, mood=msg.mood)
-    # TODO(步骤6):record_mood 更新 L7 profile;独立到达当前直接短安抚
     await conn.send_text(phrases.MOOD_ACK[msg.mood], final=True)
     await conn.send_done()
 
@@ -199,7 +204,10 @@ async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
 async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool) -> None:
     trace = conn.next_trace()
     if msg.session_id and msg.session_id != conn.session_id:
-        conn.log("reconnect_claim", trace_id=trace, id_len=len(msg.session_id))
+        # 重连认领(契约 §8.4):带上原 session_id → 后端采纳并恢复热层上下文
+        # (下一回合 collect entry 经 snapshot 进 state.session_context)
+        conn.session_id = msg.session_id
+        conn.log("reconnect_adopted", trace_id=trace)
     conn.log(
         "user_input_received",
         trace_id=trace,
@@ -291,7 +299,8 @@ async def _collect_sequence(
 ) -> None:
     state = conn.collect_state
     if state is None:
-        # entry:first_frame(≤300ms 语义,规则速判)+ 建态;承接变体=抢占后重开
+        # entry:first_frame(≤300ms 语义,规则速判)+ 建态;承接变体=抢占后重开;
+        # 热层 snapshot 恢复上下文(重连/续话,契约 §8.4;记忆不可用降级空档)
         state = CollectState(
             session_id=conn.session_id,
             route="collect",
@@ -300,6 +309,14 @@ async def _collect_sequence(
             confidence=cls.confidence,
             max_rounds=config.COLLECT_MAX_ROUNDS,
         )
+        state.session_context = await get_memory().snapshot(conn.session_id)
+        if state.session_context.history_summary is not None:
+            conn.log(
+                "memory_restored",
+                trace_id=trace,
+                summary_len=len(state.session_context.history_summary),
+                moods=len(state.session_context.mood_recent),
+            )
         conn.collect_state = state
         await conn.send_first_frame(
             route="collect",
@@ -328,8 +345,31 @@ async def _settle_collect_event(
     conn: Connection, trace: int, event: CollectEvent
 ) -> None:
     if isinstance(event, Finish):
-        # 回合结束三动作:温层摘要+station:input 随步骤 6/9 接入;销毁状态
+        # 回合结束三动作(backend-plan §3.3):温层摘要 → station:input → 弃 state;
+        # 另落研判 mood(复核后标签进冷层情绪趋势)。Escalate 不落(危机不记情绪)
+        state = conn.collect_state
         conn.collect_state = None
+        if state is not None:
+            memory = get_memory()
+            summary = event.summary or ""
+            await memory.save_round_summary(conn.session_id, summary)
+            await memory.save_station_input(
+                conn.session_id, state.formulation.model_dump_json(by_alias=True), summary
+            )
+            label = state.formulation.emotion.label
+            if label:
+                await memory.record_mood(
+                    label,
+                    intensity=state.formulation.emotion.intensity,
+                    source="研判",
+                    session_id=conn.session_id,
+                )
+            conn.log(
+                "round_archived",
+                trace_id=trace,
+                cause=event.cause,
+                summary_len=len(summary),
+            )
         await conn.send_done()
     elif isinstance(event, Escalate):
         conn.collect_state = None

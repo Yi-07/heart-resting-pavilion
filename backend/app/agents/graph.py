@@ -14,6 +14,7 @@ analysis:emotion 复核(两级标签第二级)→ 精稿 draw → RAG 引用 →
 MVP 润色跳过:问话骨架全预置(性能热点 §6:预置优先于 LLM 生成)。
 """
 
+from collections.abc import AsyncIterator
 from typing import Literal, TypedDict, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -234,17 +235,26 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
     except Exception:  # noqa: BLE001 — RAG 失败降级无引用总结
         em.log("degraded", level="WARN", reason="rag_failed")
 
+    # 蒸馏总结文本:随流攒全量,Finish 带给网关落温层(降级用话术兜底文本)
+    summary_parts: list[str] = []
+
+    async def _tapped() -> AsyncIterator[str]:
+        async for chunk in analysis.summary_stream(cs, refs):
+            summary_parts.append(chunk)
+            yield chunk
+
     try:
-        sent = await stream_final(em, analysis.summary_stream(cs, refs))
+        sent = await stream_final(em, _tapped())
     except LLMError:
         em.log("degraded", level="WARN", reason="summary_llm_error")
         sent = False
+    summary = "".join(summary_parts) if sent else phrases.SUMMARY_FALLBACK
     if not sent:
-        await em.text(phrases.SUMMARY_FALLBACK, final=True)
+        await em.text(summary, final=True)
     await em.text(phrases.STATION_INVITE, final=True)
 
-    em.log("analysis_end")
-    return {"event": Finish(cause=_finish_cause(cs))}
+    em.log("analysis_end", summary_len=len(summary))
+    return {"event": Finish(cause=_finish_cause(cs), summary=summary)}
 
 
 async def _escalate_end(state: GraphState, config: RunnableConfig) -> dict:

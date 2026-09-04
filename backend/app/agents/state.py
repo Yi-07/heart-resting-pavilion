@@ -78,6 +78,9 @@ class EmpathChat:
 @dataclass(frozen=True)
 class Finish:
     cause: FinishCause
+    # 本回合总结文本(analysis 产出;网关回合三动作落温层用。None=未经 analysis 的
+    # 兜底终结,网关按空摘要降级)。事件携带而非网关读 state(§3.4 原则延伸)
+    summary: str | None = None
 
 
 @dataclass(frozen=True)
