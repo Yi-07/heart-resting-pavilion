@@ -3,7 +3,7 @@
 //   first_frame:淡出音频+清黑板+开新 bot 消息+心情选择器浮出/收起
 //   draw:黑板增量渲染;text_delta:气泡/抽屉流式;audio_chunk:入队;done/error:收口回 idle
 // 工具栏 route-tabs 为被动指示(路由只在后端判定);Live2D/语音留位(步骤 7/8)。
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { logger } from './logger'
 import { WSClient } from './ws/client'
 import type { S2CMsg } from './ws/messages'
@@ -12,6 +12,7 @@ import { chat } from './chat/messages'
 import { AudioQueue } from './audio/queue'
 import { MoodSelector } from './mood/selector'
 import { avatarSvg, expressionFor } from './l2d/placeholder'
+import { createLive2D, type Live2DController } from './l2d/live2d'
 import BoardCanvas from './board/BoardCanvas.vue'
 import ChatPanel from './chat/ChatPanel.vue'
 import MoodOverlay from './mood/MoodSelector.vue'
@@ -24,11 +25,17 @@ const audio = new AudioQueue()
 const mood = new MoodSelector({ round, send: (m) => client.send(m) })
 
 const boardRef = ref<InstanceType<typeof BoardCanvas> | null>(null)
+const l2dStageEl = ref<HTMLElement | null>(null)
+const l2dCanvasEl = ref<HTMLCanvasElement | null>(null)
+const l2dReady = ref(false)
+let l2d: Live2DController | null = null
 const wsStatus = ref<'connecting' | 'open' | 'closed'>('connecting')
 const draft = ref('')
 const lastTemplate = ref<string | null>(null)
 const protoOpen = ref(false)
 const frames = ref<{ kind: string; brief: string }[]>([])
+
+const avatar = computed(() => avatarSvg(expressionFor(round.emotionLabel)))
 
 const ROUTE_TABS = [
   { id: 'answer', label: 'answer · 直接答' },
@@ -36,7 +43,6 @@ const ROUTE_TABS = [
   { id: 'crisis', label: 'crisis · 危机' },
 ] as const
 
-const avatar = computed(() => avatarSvg(expressionFor(round.emotionLabel)))
 const moodPillText = computed(() => `此刻 · ${round.emotionLabel ?? '平静'}`)
 const boardTitle = computed(() => {
   if (round.crisis || lastTemplate.value === 'stage_map') return '你不需要一个人扛'
@@ -81,6 +87,17 @@ function track<T extends S2CMsg['type']>(
 }
 
 onMounted(() => {
+  // Live2D 真立绘(异步就绪;失败 null 落回 SVG 兜底);表情随情绪、口型随播放态
+  if (l2dStageEl.value !== null && l2dCanvasEl.value !== null) {
+    void createLive2D(l2dStageEl.value, l2dCanvasEl.value).then((ctrl) => {
+      l2d = ctrl
+      if (ctrl !== null) {
+        l2dReady.value = true
+        ctrl.setExpression(expressionFor(round.emotionLabel))
+      }
+    })
+  }
+
   track('first_frame', (m) => {
     audio.stopAndFade()
     round.transition({ kind: 'frame', msg: m })
@@ -123,6 +140,19 @@ onMounted(() => {
       wsStatus.value = 'closed'
       logger.error('app', `连接失败: ${String(err)}`)
     })
+
+  audio.onPlayback((active) => l2d?.setSpeaking(active))
+})
+
+// 表情驱动:emotionLabel 变化 → Live2D 表情(SVG 兜底未就绪时经 computed 重绘)
+watch(
+  () => round.emotionLabel,
+  (label) => l2d?.setExpression(expressionFor(label)),
+)
+
+onUnmounted(() => {
+  l2d?.destroy()
+  l2d = null
 })
 
 function submit(): void {
@@ -173,10 +203,11 @@ function submit(): void {
         :warn="boardWarn"
       />
 
-      <!-- Live2D 立绘留位(步骤 7 接 pixi-live2d-display;先用 SVG 手绘兜底) -->
-      <div class="l2d-stage" data-testid="l2d-stage">
-        <div class="char-svg" v-html="avatar"></div>
-        <div class="l2d-name">小栖 · Live2D(步骤 7)</div>
+      <!-- Live2D 立绘(真模型就绪渐显;未就绪/失败显示 SVG 手绘兜底) -->
+      <div ref="l2dStageEl" class="l2d-stage" data-testid="l2d-stage">
+        <div class="char-svg" :style="{ opacity: l2dReady ? 0 : 1 }" v-html="avatar"></div>
+        <canvas ref="l2dCanvasEl" class="l2d-canvas" :class="{ 'l2d-ready': l2dReady }"></canvas>
+        <div class="l2d-name">小栖</div>
       </div>
 
       <ChatPanel />
@@ -401,6 +432,21 @@ function submit(): void {
 .char-svg :deep(svg) {
   height: 88%;
   filter: drop-shadow(0 10px 16px rgba(62, 58, 53, 0.2));
+}
+.l2d-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.5s;
+  pointer-events: none;
+}
+.l2d-canvas.l2d-ready {
+  opacity: 1;
+  pointer-events: auto;
 }
 .l2d-name {
   position: absolute;
