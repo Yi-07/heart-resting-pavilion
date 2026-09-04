@@ -5,7 +5,7 @@ requires-python = ">=3.10"
 dependencies = [
     "chromadb>=1.5.9",
     "fastapi>=0.141.1",
-    "funasr>=1.4.8",
+    "funasr[knf]>=1.4.8",
     "jieba>=0.42.1",
     "langgraph>=1.2.11",
     "loguru>=0.7.3",
@@ -34,4 +34,7 @@ asyncio_mode = "auto"
 [tool.mypy]
 overrides = [
   { module = ["jieba", "rank_bm25"], ignore_missing_imports = true },
+  # funasr 无 py.typed;torchaudio/cosyvoice 只在 CosyVoice sidecar venv 存在
+  { module = ["funasr", "funasr.*"], ignore_missing_imports = true },
+  { module = ["torchaudio", "torchaudio.*", "cosyvoice.*"], ignore_missing_imports = true },
 ]

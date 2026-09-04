@@ -14,6 +14,7 @@ analysis:emotion 复核(两级标签第二级)→ 精稿 draw → RAG 引用 →
 MVP 润色跳过:问话骨架全预置(性能热点 §6:预置优先于 LLM 生成)。
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Literal, TypedDict, cast
 
@@ -213,6 +214,13 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
     cs = state["cs"]
     em = _emitter(config)
     em.log("analysis_start")
+
+    # 等待语音:停采→精稿之间的分析耗时,直发预生成 filler(契约 §6.2;缺文件跳过)
+    from app.voice import fillers
+
+    wav = await asyncio.to_thread(fillers.pick)
+    if wav is not None:
+        em.audio(wav)
 
     cs.formulation.emotion = await analysis.review_emotion(cs)
     cs.sufficiency = collect.sufficiency(cs.formulation)

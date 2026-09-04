@@ -125,14 +125,65 @@ def test_answer_seq_global_across_rounds(monkeypatch):
         _recv(ws)
 
 
-def test_audio_mode_rejected_until_step8():
+# ---- 语音链路(步骤8;真 ASR/TTS 见 tests/test_voice.py,此处钉网关接线) ----
+
+
+def test_audio_mode_transcribed_same_stream(monkeypatch):
+    """mode=audio:转写文本走同 text 流(用例4 链路判据;音频即弃)。"""
+    monkeypatch.setattr("app.voice.asr.transcribe", lambda audio: "最近很焦虑睡不着")
     with client.websocket_connect("/ws") as ws:
         ws.send_text(
-            json.dumps({"type": "user_input", "mode": "audio", "audio": "aGk=", "ts": 5})
+            json.dumps(
+                {
+                    "type": "user_input",
+                    "mode": "audio",
+                    "text": None,
+                    "audio": "ZmFrZS13ZWJt",  # b"fake-webm"
+                    "ts": 5,
+                }
+            )
         )
-        err = _recv(ws)
-        assert err["type"] == "error"
-        assert err["code"] == "server_error"
+        first = _recv(ws)
+        assert first["type"] == "first_frame"
+        assert first["route"] == "collect"
+        assert first["mood_select"] is True
+
+
+def test_audio_mode_empty_transcript_degrades(monkeypatch):
+    monkeypatch.setattr("app.voice.asr.transcribe", lambda audio: "")
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(
+            json.dumps(
+                {"type": "user_input", "mode": "audio", "text": None, "audio": "eg==", "ts": 6}
+            )
+        )
+        reply = _recv(ws)
+        assert reply["type"] == "text_delta"  # 温和降级,不发 first_frame
+        assert _recv(ws)["type"] == "done"
+
+
+def test_crisis_speaks_hotline(monkeypatch):
+    """危机热线 TTS:text → audio_chunk(wav·final·seq 递增)→ done。"""
+    import base64 as b64mod
+
+    monkeypatch.setattr("app.voice.tts.synthesize", lambda text: b"WAVDATA")
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "我不想活了")
+        assert _recv(ws)["type"] == "first_frame"
+        assert _recv(ws)["type"] == "draw"
+        text = _recv(ws)
+        assert text["type"] == "text_delta"
+
+        audio = _recv(ws)
+        assert audio["type"] == "audio_chunk"
+        assert audio["format"] == "wav"
+        assert audio["final"] is True
+        assert b64mod.b64decode(audio["data"]) == b"WAVDATA"
+        assert audio["seq"] == text["seq"] + 1
+
+        done = _recv(ws)
+        assert done["type"] == "done"
+        assert done["seq"] == audio["seq"] + 1
 
 
 # ---- answer 直答(契约 §6.1;CLAUDE.md §8 用例 1 判据:无 first_frame、无 draw) ----

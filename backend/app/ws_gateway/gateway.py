@@ -13,12 +13,15 @@
 - LLM 失败 → 话术库降级;处理满 LLM_TIMEOUT_S → error(timeout) 兜底
 - 发号:仅 draw/text_delta/audio_chunk/done 盖章(seq 预增,首帧=1);
   first_frame/error 不带不消耗;计数器=连接内存(会话内全局递增)
-- 非法消息 → error(invalid_message),不崩连接;mode=audio 步骤 8 前显式拒绝
+- 非法消息 → error(invalid_message),不崩连接;mode=audio 步骤 8 已接:
+  转写同流(ASR 失败/空文本温和降级);安抚语/总结/危机 TTS 直发 audio_chunk,
+  全部可失败跳过(音频缺席不影响文字链路)
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
@@ -35,6 +38,7 @@ from app.memory import get_memory
 from app.router import classifier, gate, phrases
 from app.router.classifier import Classification
 from app.schema import (
+    AudioChunk,
     CSMsg,
     Done,
     Draw,
@@ -88,6 +92,11 @@ class Connection:
         self._trace += 1
         return self._trace
 
+    @property
+    def current_trace(self) -> int:
+        """当前回合号(异步音频任务防抢占串扰的 epoch 比对用)。"""
+        return self._trace
+
     # ---- 日志(标准字段 bind,业务字段随 event) ----
 
     def log(self, event: str, level: str = "INFO", **fields: Any) -> None:
@@ -138,6 +147,18 @@ class Connection:
     async def send_error(self, code: ErrorCode, message: str) -> None:
         await self._send(ErrorFrame(code=code, message=message))
         self.log("error", level="ERROR", code=code, detail=message)
+
+    async def send_audio(self, wav: bytes) -> None:
+        """TTS 直发:整段 wav 一块(final=True,前端顺序播放);空块调用方负责不传。"""
+        await self._send(
+            AudioChunk(
+                seq=self._next_seq(),
+                format="wav",
+                data=base64.b64encode(wav).decode("ascii"),
+                final=True,
+            )
+        )
+        self.log("audio_sent", bytes_len=len(wav))
 
 
 # ---- 入口 ----
@@ -216,11 +237,32 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
     )
 
     if msg.mode == "audio":
-        # 语音链路步骤 8 接入;当前显式拒绝,避免静默丢字
-        await conn.send_error("server_error", "语音链路未接入(步骤 8)")
-        return
+        # 语音链路:base64 webm/opus → ffmpeg wav16k → SenseVoice 只取文本;
+        # 音频字节即弃不落任何存储(红线 §7),日志只记指纹与长度
+        from app.voice import asr
 
-    text = msg.text or ""
+        try:
+            text = await asyncio.to_thread(asr.transcribe, base64.b64decode(msg.audio or ""))
+        except asr.ASRError as exc:
+            conn.log(
+                "degraded", level="WARN", trace_id=trace, reason="asr_failed", detail=str(exc)[:120]
+            )
+            await conn.send_text("这段语音我没听清,可以再说一遍吗?", final=True)
+            await conn.send_done()
+            return
+        if not text:
+            conn.log("asr_empty", trace_id=trace)
+            await conn.send_text("好像没听到声音,再试一次?", final=True)
+            await conn.send_done()
+            return
+        conn.log(
+            "asr_transcribed",
+            trace_id=trace,
+            length=len(text),
+            fingerprint=app_logger.text_fingerprint(text),
+        )
+    else:
+        text = msg.text or ""
     result = gate.check(text)
     conn.log(
         "crisis_gate_hit",
@@ -282,12 +324,36 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
         await conn.send_done()
 
 
+async def _speak(conn: Connection, text: str) -> None:
+    """TTS 合成直发(audio_chunk);失败 None 跳过——音频缺席不影响文字链路。"""
+    from app.voice import tts
+
+    wav = await asyncio.to_thread(tts.synthesize, text)
+    if wav is not None:
+        await conn.send_audio(wav)
+
+
+async def _speak_if_current(conn: Connection, text: str, trace: int) -> None:
+    """异步安抚语:合成落地时若已抢占(trace 变)或回合已收尾(current 完成)则蒸发。"""
+    from app.voice import tts
+
+    wav = await asyncio.to_thread(tts.synthesize, text)
+    if wav is None:
+        return
+    if conn.current_trace != trace:
+        return
+    if conn.current is None or conn.current.done():
+        return
+    await conn.send_audio(wav)
+
+
 async def _crisis_sequence(conn: Connection) -> None:
     await conn.send_first_frame(
         route="crisis", text=phrases.CRISIS_SOOTHE, mood_select=False
     )
     await conn.send_draw("stage_map", phrases.CRISIS_STAGE)
     await conn.send_text(phrases.CRISIS_HOTLINE, final=True)
+    await _speak(conn, phrases.CRISIS_HOTLINE)
     await conn.send_done()
 
 
@@ -318,13 +384,16 @@ async def _collect_sequence(
                 moods=len(state.session_context.mood_recent),
             )
         conn.collect_state = state
+        soothe = phrases.collect_soothe(cls.emotion_label, carried=carried)
         await conn.send_first_frame(
             route="collect",
             template="beck_formulation",
             emotion_label=cls.emotion_label,
             mood_select=True,
-            text=phrases.collect_soothe(cls.emotion_label, carried=carried),
+            text=soothe,
         )
+        # 安抚语语音异步合成(不阻塞 ≤300ms first_frame);抢占/收尾后蒸发
+        asyncio.create_task(_speak_if_current(conn, soothe, trace))
         conn.log("collection_start", trace_id=trace, carried=carried)
     # 轮次回答:同回合继续,无 first_frame(契约 §6.2)
     state.turns.append(Turn(role="user", text=text))
@@ -370,6 +439,8 @@ async def _settle_collect_event(
                 cause=event.cause,
                 summary_len=len(summary),
             )
+            if summary:
+                await _speak(conn, summary)  # 总结语音(text 收尾后、done 前)
         await conn.send_done()
     elif isinstance(event, Escalate):
         conn.collect_state = None

@@ -2,11 +2,13 @@
 
 三方法:draw(formulation) · text(s) · audio(chunk);ConnEmitter 包 Connection,
 dead 标记后发帧蒸发(抢占时旧 emitter 标 dead,未发帧丢弃)。
+audio 为同步门面(协议如此),内部调度异步发帧,图节点无需 await。
 攒批工具(≥30 字/100ms 窗)单源在此,answer/collect 两路共用。
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Protocol
@@ -87,6 +89,7 @@ class ConnEmitter:
         await self._conn.send_text(s, final=final)
 
     def audio(self, chunk: bytes) -> None:
-        """TTS 直发(步骤 8 接入;当前占位丢弃)"""
+        """TTS 直发(wav 字节):同步门面,内部调度异步发帧;dead 或空块蒸发。"""
         if self.dead or not chunk:
             return
+        asyncio.create_task(self._conn.send_audio(chunk))

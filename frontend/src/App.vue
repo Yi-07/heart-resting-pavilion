@@ -163,6 +163,66 @@ function submit(): void {
   chat.appendUser(text)
   draft.value = ''
 }
+
+// ── 语音输入(步骤8):MediaRecorder webm/opus,单段 ≤15s;base64 上报,转写走后端同流 ──
+
+const recording = ref(false)
+let recorder: MediaRecorder | null = null
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+function toggleMic(): void {
+  if (recording.value) {
+    recorder?.stop()
+    return
+  }
+  void (async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm'
+      const rec = new MediaRecorder(stream, { mimeType: mime })
+      const chunks: Blob[] = []
+      rec.ondataavailable = (e: BlobEvent) => {
+        if (e.data.size > 0) chunks.push(e.data)
+      }
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop())
+        recording.value = false
+        const blob = new Blob(chunks, { type: rec.mimeType })
+        if (blob.size === 0 || wsStatus.value !== 'open') return
+        void blob.arrayBuffer().then((buf) => {
+          client.send({
+            type: 'user_input',
+            mode: 'audio',
+            text: null,
+            audio: arrayBufferToBase64(buf),
+            ts: Math.floor(Date.now() / 1000),
+          })
+          round.transition({ kind: 'user_sent' })
+          chat.appendUser('🎙(语音消息)')
+        })
+      }
+      recorder = rec
+      recording.value = true
+      rec.start()
+      window.setTimeout(() => {
+        if (rec.state === 'recording') rec.stop()
+      }, 15_000) // 契约 §4.1 单段上限
+    } catch (err) {
+      logger.warn('app', `录音不可用: ${String(err)}`)
+    }
+  })()
+}
 </script>
 
 <template>
@@ -218,10 +278,13 @@ function submit(): void {
     <form class="inputbar glass" @submit.prevent="submit">
       <button
         class="mic"
+        :class="{ rec: recording }"
         type="button"
-        disabled
-        title="语音输入(步骤 8)"
-        aria-label="语音输入(未开放)"
+        :disabled="wsStatus !== 'open'"
+        title="按一下开始录音,再点结束(≤15 秒)"
+        aria-label="语音输入"
+        data-testid="mic-btn"
+        @click="toggleMic"
       >
         <svg viewBox="0 0 24 24">
           <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
@@ -494,6 +557,11 @@ function submit(): void {
 .mic:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+.mic.rec {
+  background: var(--accent);
+  color: #fff;
+  animation: pulse 1.2s infinite;
 }
 .mic svg {
   width: 17px;

@@ -75,3 +75,26 @@ MEMORY_DB_PATH = os.path.join("data", "profile.db")
 
 MOOD_RECENT_CAP = 5
 """热层 mood_recent 滚动上限(喂 snapshot/Live2D 语境)"""
+
+# ---- 语音(backend-plan §2 voice 行;ASR=funasr SenseVoice 本地,TTS=CosyVoice sidecar) ----
+
+ASR_MODEL_ID = "iic/SenseVoiceSmall"
+"""SenseVoice 小模型(funasr AutoModel 直载;首次调用懒加载)"""
+
+TTS_SIDECAR_PORT = int(os.getenv("TTS_SIDECAR_PORT", "9880"))
+"""CosyVoice sidecar 端口(127.0.0.1;与 backend venv 隔离的独立进程)"""
+
+TTS_SIDECAR_PYTHON = os.getenv(
+    "TTS_SIDECAR_PYTHON",
+    os.path.join("..", "models", "voices", "CosyVoice", ".venv", "Scripts", "python.exe"),
+)
+"""CosyVoice 仓库自备 venv 的 python(tts_sidecar.py 在该解释器下运行)"""
+
+TTS_SIDECAR_READY_TIMEOUT_S = 120.0
+"""sidecar 首次拉起等待(进程+模型加载,CPU/GPU 冷启可到分钟级)"""
+
+AUDIO_INPUT_MAX_S = 15.0
+"""语音输入单段上限(契约 §4.1;前端录音侧执行)"""
+
+FILLERS_DIR = os.path.join("data", "fillers")
+"""预生成等待语音目录(fillers 脚本产物,运行时直读零合成;gitignored)"""
