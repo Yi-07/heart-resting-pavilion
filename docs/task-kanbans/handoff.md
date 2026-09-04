@@ -17,6 +17,8 @@
 
 - **模型缓存**:`HF_HOME=D:\MetaverseStudy\hf_cache`(bge-small-zh-v1.5 与 bge-reranker-v2-m3 已就位);Chroma 持久化在 `backend/.rag_store/`(已灌 15 条种子语料)。
 - **5173 常驻 vite** 曾与 8000 后端双双被杀过(验证 agent 自行拉起)——**开工先探活**两端,别假设活着;后端不用 --reload。
+- **Redis 6379 本机常驻**(步骤6 起生产用 db0,键 `hrp:v1:*`;测试用 db15 收尾清键)。冷层 SQLite=`backend/data/profile.db`(gitignored)。
+- **WS 测试脚本坑**:`websockets` 库默认 keepalive ping 20s,RAG 冷加载 ~63s 会把客户端断掉——脚本传 `ping_interval=None`;前端浏览器原生 WebSocket 不受影响。
 - **RAG 冷启动实测 ~2min**(远超早估 30s):超 answer 60s 预算触发设计内 timeout 降级话术;模型热后秒级。演示/验收前先打一条知识问题预热(遗留优化见 §6)。
 - **Windows 坑**:仓库文本 CRLF——前端读 `architecture/*.md` 的正则要 `\r?\n` 且跨行匹配加 `s` 标志;git-bash 管道下 Python print 中文 GBK 乱码(仅显示);TestClient 的 WS 测试是同步函数不能 `await`,等后端异步任务用 `time.sleep`;reload 断 WS 时 asyncio ProactorBasePipeTransport ERROR 是 Windows 已知噪音,非业务错。
 - `e2e-shots/`(E2E 截图)已 gitignore,可随手清。
@@ -41,6 +43,7 @@
 - **懒加载分层**:chroma/sentence-transformers/langgraph 全部函数内 import;`app.rag`、`app.agents` 入口模块保持轻 import。
 - mypy:jieba/rank_bm25 无 stub → pyproject overrides;openai TypedDict 联合 `cast(ChatCompletionMessageParam, ...)`。
 - 模块环:`app.collect.questions ↔ app.agents.state` 单向可忍;新增 import 前想清方向。
+- **记忆模块(步骤6)**:单例 `get_memory()`;网关测试 conftest autouse 假记忆(新用例默认不触 Redis);真链路 `tests/test_memory.py` 需 6379 在线。DTZ005 按本地日聚合是裁定(noqa 单点 `_now_local`)。mood_daily 主键=(date, source)。
 
 ### 前端(步骤5 新积)
 
@@ -54,6 +57,8 @@
 ## 5. 前端现状(步骤5 已落地,`089165e`)
 
 模块:`board/`(diff·registry·templates·renderer·BoardCanvas)· `state/round.ts`(Pinia 五态机)· `mood/`(selector+浮层)· `chat/`(messages 单例响应式+ChatPanel 气泡/抽屉)· `audio/queue.ts`(骨架,真音频帧步骤8 接)· `l2d/placeholder.ts`(SVG 立绘兜底+情绪→表情映射,步骤7 换 pixi-live2d-display 0.4.0+pixi.js 6.5.10)。App=v7 舞台布局+WS 帧接线(frontend-plan §5.3);设计变量单源 `main.css` :root(照 mockup v7)。
+
+后端步骤6(`c82a343`):`app/memory/` 三层+网关四接线(详见 commit);`station:input` 已在回合末写入,步骤9 补给站直接 `load_station_input` 消费。
 
 **v7 mockup(`architecture/preview/l1-ui-mockup-v7.html`,963 行,勿整读)仍有用行段**——步骤7/8 接:
 - Live2D 区 L107-114(`.l2d-stage` 叠黑板右下,chat-open 左移避让;`#l2dCanvas` 就绪渐显)+ L402-430 初始化参考(pixi Application+Live2DModel.from+锚点缩放+hit);表情映射 `L2D_EXPR` L387。

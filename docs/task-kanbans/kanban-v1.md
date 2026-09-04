@@ -22,17 +22,22 @@
 - [x] 步骤3 answer(种子语料真检索) · `324bf0a`
 - [x] 步骤4 collect 多轮采集(逻辑层先验) · `07cc917`
 - [x] 步骤5 黑板(SVG 渲染+视觉判据) · `089165e`
-- [ ] 步骤6 记忆(Redis 前置)← **当前**
-- [ ] 步骤7 Live2D
+- [x] 步骤6 记忆(Redis 前置) · `c82a343`
+- [ ] 步骤7 Live2D← **当前**
 - [ ] 步骤8 语音(ASR+TTS)
 - [ ] 步骤9 工具(station 懒生成·admin)
 - [ ] 排后·全量语料接入(队友 `dataset/` 已到位不入库;步骤9 后单做,走 `docs/data-contract.md` §4 回验替换 15 条种子——本项为看板级排程追加,非 CLAUDE.md §8 构建顺序成员)
 
 ## 2. 当前步骤展开(完成后清空细节,§1 勾选即档)
 
-### 步骤6 记忆(Redis 前置)· 范围与分派
+### 步骤7 Live2D · 范围与分派
 
-开工时依据 backend-plan 记忆节 + spec 热层展开为勾选清单(同步骤5 形态);Redis 前置=先验环境可用性(handoff §2 现场坑)。前端挂钩点:mood pill / mood_select 独立到达 / station 生成语境(gateway.py 已留 TODO 标记)。
+范围:`l2d/` 真立绘替换 SVG 兜底(版本钉子=frontend-plan §1:pixi.js 6.5.10+pixi-live2d-display 0.4.0;初始化参考 mockup L402-430,handoff §5 有行段)。口型接口先立(setSpeaking),真音频驱动到步骤8。
+
+- [ ] 依赖钉版安装 + index.html 挂 cubism core script(非阻塞加载)
+- [ ] `l2d/live2d.ts` —— load(模型 CDN,失败 WARN 落 SVG 兜底)/setExpression(watch emotionLabel,未知落中性)/setSpeaking(audio.onPlayback 驱动)/hit 点击动作
+- [ ] App 接线:替换 placeholder 直渲染,chat-open 左移避让沿用;audio.onPlayback → setSpeaking
+- [ ] 验收:用例2 走完立绘在场且表情随情绪变化,CDN 不可达回退 SVG;截图视觉复核(多模态子 agent)
 
 ## 3. 接力规程
 
