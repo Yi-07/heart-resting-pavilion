@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from app.agents.state import SessionContext
+from app.station.reports import StationReports, reset_reports
 
 
 class FakeMemory:
@@ -16,6 +17,8 @@ class FakeMemory:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self._snapshot = SessionContext()
+        self.station_input: dict[str, Any] | None = None  # load_station_input 返回口
+        self.moods: list[dict[str, Any]] = []  # recent_moods 返回口
 
     def set_snapshot(self, ctx: SessionContext) -> None:
         self._snapshot = ctx
@@ -44,6 +47,18 @@ class FakeMemory:
             )
         )
 
+    async def load_station_input(self, session_id: str) -> dict[str, Any] | None:
+        self.calls.append(("load_station_input", {"session_id": session_id}))
+        return self.station_input
+
+    def recent_moods(self, days: int = 7) -> list[dict[str, Any]]:
+        self.calls.append(("recent_moods", {"days": days}))
+        return [dict(m) for m in self.moods]
+
+    async def clear_all(self) -> dict[str, int]:
+        self.calls.append(("clear_all", {}))
+        return {"redis_keys": 2, "mood_rows": 3}
+
     async def record_mood(
         self,
         mood_label: str,
@@ -69,8 +84,20 @@ class FakeMemory:
 def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     mem = FakeMemory()
     monkeypatch.setattr("app.ws_gateway.gateway.get_memory", lambda: mem)
+    monkeypatch.setattr("app.station.routes.get_memory", lambda: mem)
+    monkeypatch.setattr("app.admin.routes.get_memory", lambda: mem)
     # 语音默认静音:TTS 合成返回 None(跳过音频帧)、fillers 取不到——防测试
     # 拉起真 sidecar 或多出 audio_chunk 破坏既有帧序断言;语音用例自行覆盖
     monkeypatch.setattr("app.voice.tts.synthesize", lambda text: None)
     monkeypatch.setattr("app.voice.fillers.pick", lambda: None)
     return mem
+
+
+@pytest.fixture()
+def tmp_reports(tmp_path: pytest.TempPathFactory) -> StationReports:
+    """station/admin 路由测试共用:临时 reports 库替身,收尾还原单例。"""
+
+    store = StationReports(str(tmp_path / "station.db"))
+    reset_reports(store)
+    yield store
+    reset_reports()

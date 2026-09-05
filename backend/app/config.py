@@ -76,6 +76,23 @@ MEMORY_DB_PATH = os.path.join("data", "profile.db")
 MOOD_RECENT_CAP = 5
 """热层 mood_recent 滚动上限(喂 snapshot/Live2D 语境)"""
 
+# ---- 工具(步骤9:station 方案书存取 / admin 模型配置) ----
+
+STATION_DB_PATH = os.path.join("data", "station.db")
+"""方案书 SQLite(每会话最新胜;运行时产物不入 git)"""
+
+ADMIN_CONFIG_DB_PATH = os.path.join("data", "config.db")
+"""模型配置 SQLite(api_key AES-GCM 加密落库;运行时产物不入 git)"""
+
+CONFIG_AES_KEY = os.getenv("HRP_CONFIG_AES_KEY", "")
+"""api_key 字段加密密钥(hex,16/24/32 字节);环境变量注入绝不入库(spec §4 L7)"""
+
+CORS_ALLOW_ORIGINS = [
+    o for o in os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o
+]
+"""浏览器跨源访问 REST(station/admin)的白名单;WS 不受同源策略约束无需此表。
+默认=前端 dev 两址;生产同源部署可收紧为空(ws-contract §1 端点面不变)"""
+
 # ---- 语音(backend-plan §2 voice 行;ASR=funasr SenseVoice 本地,TTS=CosyVoice sidecar) ----
 
 ASR_MODEL_ID = "iic/SenseVoiceSmall"

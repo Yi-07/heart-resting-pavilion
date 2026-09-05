@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "chromadb>=1.5.9",
+    "cryptography>=50.0.0",
     "fastapi>=0.141.1",
     "funasr[knf]>=1.4.8",
     "jieba>=0.42.1",

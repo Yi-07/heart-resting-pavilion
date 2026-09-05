@@ -82,6 +82,20 @@ async def test_station_input_write_and_load(mem: Memory):
     assert 0 < ttl <= 7 * 24 * 3600  # TTL 已设(spec §4 L7 温层 7 天)
 
 
+async def test_clear_all_wipes_redis_and_cold(mem: Memory):
+    sid = "sess_m4"
+    await mem.save_round_summary(sid, "摘要")
+    await mem.save_station_input(sid, "{}", "总结")
+    await mem.record_mood("低落", source="mood_select")
+    cleared = await mem.clear_all()
+    assert cleared["redis_keys"] >= 2  # warm + station(治理不降级,如实计数)
+    assert cleared["mood_rows"] >= 1
+    assert await mem.load_station_input(sid) is None
+    ctx = await mem.snapshot(sid)
+    assert ctx.history_summary is None
+    assert mem.recent_moods() == []
+
+
 async def test_degrade_when_redis_down(tmp_path: pytest.TempPathFactory):
     mem = Memory(url="redis://localhost:9/15", db_path=str(tmp_path / "t.db"))
     # 全部操作不抛;冷层照写(SQLite 本地),热/温降级吞掉

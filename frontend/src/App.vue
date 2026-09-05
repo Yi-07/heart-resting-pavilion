@@ -16,11 +16,14 @@ import { createLive2D, type Live2DController } from './l2d/live2d'
 import BoardCanvas from './board/BoardCanvas.vue'
 import ChatPanel from './chat/ChatPanel.vue'
 import MoodOverlay from './mood/MoodSelector.vue'
+import StationPanel from './station/StationPanel.vue'
+import { bindStation, openStation } from './station/station'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
 
 const round = useRoundStore()
 const client = new WSClient(WS_URL)
+bindStation(() => client) // 补给站 REST 读 session_id(重连不变)
 const audio = new AudioQueue()
 const mood = new MoodSelector({ round, send: (m) => client.send(m) })
 
@@ -244,6 +247,7 @@ function toggleMic(): void {
         </span>
       </div>
       <button class="tb" type="button" @click="mood.show()">今日心情</button>
+      <button class="tb" type="button" data-testid="station-entry" @click="openStation()">心灵补给站</button>
       <button class="tb" type="button" disabled title="二期">心灵练习</button>
       <button class="tb" type="button" disabled title="二期">留言墙</button>
       <button class="tb" type="button" disabled title="模型配置单源=backend/.env.example">设置</button>
@@ -273,6 +277,9 @@ function toggleMic(): void {
       <ChatPanel />
       <MoodOverlay @select="(m) => mood.select(m)" />
     </div>
+
+    <!-- 心灵补给站:方案书懒生成(点击触发)→轮询→md 预览/导出 -->
+    <StationPanel />
 
     <!-- 输入条 -->
     <form class="inputbar glass" @submit.prevent="submit">
@@ -394,6 +401,7 @@ function toggleMic(): void {
   border: 1px solid transparent;
   transition: all 0.22s;
   background: transparent;
+  white-space: nowrap;
 }
 .rt.on {
   color: #fff;
@@ -413,6 +421,7 @@ function toggleMic(): void {
   transition: all 0.22s;
   border: 1px solid transparent;
   background: transparent;
+  white-space: nowrap;
 }
 .tb:hover:not(:disabled) {
   color: var(--ink);

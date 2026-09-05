@@ -2,8 +2,9 @@
 // 聊天面板:常态气泡(头部旁,点开抽屉)+ 抽屉完整记录(✕ 收起)。
 // 流式文本来自 chat 模块;analysis 等待期气泡显示「梳理中」提示(纯前端推断态)。
 import { computed } from 'vue'
-import { chat } from './messages'
+import { chat, splitStationMention } from './messages'
 import { useRoundStore } from '../state/round'
+import { openStation } from '../station/station'
 
 const round = useRoundStore()
 
@@ -42,7 +43,19 @@ function openDrawer(): void {
     <div class="ch-body" data-testid="chat-body">
       <div v-for="m in chat.msgs" :key="m.id" class="msg" :class="m.who">
         <span class="who">{{ m.who === 'u' ? '你' : '小栖' }}</span>
-        <p>{{ m.text }}<span v-if="m.streaming" class="caret">▍</span></p>
+        <p>
+          <template v-for="(seg, i) in splitStationMention(m.text)" :key="i">
+            <span
+              v-if="seg.mention"
+              class="st-link"
+              data-testid="station-mention"
+              title="点开看看为你整理的小方案"
+              @click="openStation()"
+            >{{ seg.text }}</span>
+            <template v-else>{{ seg.text }}</template>
+          </template>
+          <span v-if="m.streaming" class="caret">▍</span>
+        </p>
       </div>
     </div>
   </div>
@@ -218,6 +231,16 @@ function openDrawer(): void {
   letter-spacing: 0.05em;
 }
 .msg p { margin: 0; white-space: pre-wrap; }
+.st-link {
+  color: var(--primary-deep);
+  cursor: pointer;
+  border-bottom: 1px dashed var(--primary-deep);
+  transition: all 0.2s;
+}
+.st-link:hover {
+  color: var(--primary);
+  border-bottom-style: solid;
+}
 .caret {
   animation: pulse 1s infinite;
   color: var(--primary-deep);

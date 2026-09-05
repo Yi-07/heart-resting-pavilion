@@ -47,3 +47,20 @@ export const chat = reactive({
     this.drawerOpen = false
   },
 })
+
+/** 消息文本按「心灵补给站」提法分段(邀请语可点打开补给站;
+ * 纯前端展示增强,不涉契约字段;提法=功能名,比整句匹配稳) */
+export interface TextSegment {
+  text: string
+  mention: boolean
+}
+
+export function splitStationMention(text: string): TextSegment[] {
+  const parts = text.split('心灵补给站')
+  const segments: TextSegment[] = []
+  parts.forEach((p, i) => {
+    if (p !== '') segments.push({ text: p, mention: false })
+    if (i < parts.length - 1) segments.push({ text: '心灵补给站', mention: true })
+  })
+  return segments
+}

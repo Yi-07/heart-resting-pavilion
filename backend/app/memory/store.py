@@ -119,6 +119,22 @@ class Memory:
             for r in rows
         ]
 
+    async def clear_all(self) -> dict[str, int]:
+        """治理一键清除(admin/clear_memory):Redis 全部 hrp:v1 键 + 冷层心情表。
+
+        刻意**不降级**——治理失败必须让用户知道(路由层 503 上报),
+        与其余记忆方法「吞错保回合」的铁律相反,属有意例外。
+        """
+
+        cleared = {"redis_keys": 0, "mood_rows": 0}
+        keys = [key async for key in self._redis.scan_iter(f"{_PREFIX}:*")]
+        if keys:
+            cleared["redis_keys"] = int(await self._redis.delete(*keys))
+        with sqlite3.connect(self._db_path) as conn:
+            cur = conn.execute("DELETE FROM mood_daily")
+            cleared["mood_rows"] = cur.rowcount or 0
+        return cleared
+
     # ---- 热/温层 ----
 
     async def snapshot(self, session_id: str) -> SessionContext:

@@ -35,7 +35,7 @@ export class WSClient {
   private socket: WSLike | null = null
   private handlers = new Map<WSMsgType, Set<(msg: WSMsg) => void>>()
   private lastSeq = 0
-  private sessionId: string | null = null
+  private _sessionId: string | null = null
   private connected = false
   private attempts = 0
   private manualClose = false
@@ -47,6 +47,11 @@ export class WSClient {
 
   get isConnected(): boolean {
     return this.connected
+  }
+
+  /** 当前会话 id(补给站 REST 等模块读;first_frame/done 学到,重连不变) */
+  get sessionId(): string | null {
+    return this._sessionId
   }
 
   connect(): Promise<void> {
@@ -108,8 +113,8 @@ export class WSClient {
   send(msg: CSMsg): void {
     if (!this.connected || !this.socket) throw new WSError('未连接')
     const enriched =
-      this.sessionId !== null && msg.session_id == null
-        ? { ...msg, session_id: this.sessionId }
+      this._sessionId !== null && msg.session_id == null
+        ? { ...msg, session_id: this._sessionId }
         : msg
     this.socket.send(JSON.stringify(enriched))
   }
@@ -134,7 +139,7 @@ export class WSClient {
       this.lastSeq = msg.seq
     }
     if (msg.type === 'first_frame' || msg.type === 'done') {
-      this.sessionId = msg.session_id
+      this._sessionId = msg.session_id
     }
     const set = this.handlers.get(msg.type)
     if (set === undefined) return
