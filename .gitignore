@@ -11,3 +11,7 @@ backup
 models/
 # E2E 验证产物(截图,不入库)
 e2e-shots/
+
+# Live2D 素材(运行时产物;core+模型本体+清单由 npm run l2d:fetch 生成,
+# 素材授权禁止再分发;抓取脚本 scripts/fetch-l2d.mjs 与接线 src/l2d/* 仍入库)
+frontend/public/vendor/

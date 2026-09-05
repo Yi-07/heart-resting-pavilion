@@ -1,6 +1,7 @@
 // Live2D 真立绘(步骤7;版本钉子=frontend-plan §1:pixi.js 6.5.10 +
 // pixi-live2d-display 0.4.0,初始化参照 mockup L402-430)。
-// 任何一步失败(核心脚本/CDN 模型/渲染)→ 返回 null,App 落回 SVG 手绘兜底;
+// 模型地址=候选序列(l2d/models.ts):本地 vendor 优先 → 上游 CDN 回退;
+// 任何一步失败(核心脚本/模型全候选/渲染)→ 返回 null,App 落回 SVG 手绘兜底;
 // pixi 走动态 import 懒加载,不进首屏包。真口型(音频幅值驱动)步骤8 接。
 
 import { logger } from '../logger'
@@ -12,11 +13,7 @@ export interface Live2DController {
   destroy(): void
 }
 
-/** 模型素材(HARU;jsdelivr gh 镜像,与 mockup 同源;不可达即 SVG 兜底) */
-const MODEL_URL =
-  'https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json'
-
-/** 表情→模型表情序号(mockup L2D_EXPR 同表;未知落 0 中性) */
+/** 表情→模型表情序号(mockup L2D_EXPR 同表;未知落 0 中性;非 haru 模型表情数不同,越界自动落 0) */
 const EXPR_INDEX: Record<AvatarExpr, number> = {
   neutral: 0,
   calm: 0,
@@ -25,7 +22,7 @@ const EXPR_INDEX: Record<AvatarExpr, number> = {
   worried: 3,
 }
 
-/** cubism core(index.html defer 挂载)就绪等待;超时按失败回退 */
+/** cubism core(index.html 本地 vendor 挂载,失败回退官方 CDN)就绪等待;超时按失败回退 */
 function waitForCore(timeoutMs = 15000): Promise<boolean> {
   const startedAt = Date.now()
   return new Promise((resolve) => {
@@ -44,13 +41,14 @@ function waitForCore(timeoutMs = 15000): Promise<boolean> {
 export async function createLive2D(
   stage: HTMLElement,
   canvas: HTMLCanvasElement,
+  modelUrls: string[],
 ): Promise<Live2DController | null> {
   try {
-    if (!(await waitForCore())) throw new Error('cubism core 未就绪(脚本未达或被墙)')
+    if (!(await waitForCore())) throw new Error('cubism core 未就绪(本地 vendor 与官方 CDN 均未达)')
     const PIXI = await import('pixi.js')
     window.PIXI = PIXI // pixi-live2d-display 运行时取全局 PIXI
     // 必须走 /cubism4 子路径:主入口是 Cubism2+4 全量构建,模块顶层硬要求
-    // window.Live2D(Cubism 2 runtime),缺即抛——haru 是 model3.json(Cubism 4)
+    // window.Live2D(Cubism 2 runtime),缺即抛——model3.json 均为 Cubism 4
     const { Live2DModel } = await import('pixi-live2d-display/cubism4')
 
     const app = new PIXI.Application({
@@ -60,7 +58,18 @@ export async function createLive2D(
       resizeTo: stage,
       antialias: true,
     })
-    const model = await Live2DModel.from(MODEL_URL)
+    let model: Awaited<ReturnType<typeof Live2DModel.from>> | null = null
+    let lastErr: unknown = null
+    for (const url of modelUrls) {
+      try {
+        model = await Live2DModel.from(url)
+        break
+      } catch (err) {
+        lastErr = err
+        logger.warn('l2d', `模型候选失败 ${url}: ${String(err)}`)
+      }
+    }
+    if (model === null) throw new Error(`模型载入失败(候选 ${modelUrls.length} 个): ${String(lastErr)}`)
     app.stage.addChild(model)
 
     let bw = 600
