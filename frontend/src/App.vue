@@ -13,6 +13,14 @@ import { AudioQueue } from './audio/queue'
 import { MoodSelector } from './mood/selector'
 import { avatarSvg, expressionFor } from './l2d/placeholder'
 import { createLive2D, type Live2DController } from './l2d/live2d'
+import {
+  loadCatalog,
+  loadSelection,
+  modelUrls,
+  nextModel,
+  persistSelection,
+  type ModelEntry,
+} from './l2d/models'
 import BoardCanvas from './board/BoardCanvas.vue'
 import ChatPanel from './chat/ChatPanel.vue'
 import MoodOverlay from './mood/MoodSelector.vue'
@@ -31,7 +39,10 @@ const boardRef = ref<InstanceType<typeof BoardCanvas> | null>(null)
 const l2dStageEl = ref<HTMLElement | null>(null)
 const l2dCanvasEl = ref<HTMLCanvasElement | null>(null)
 const l2dReady = ref(false)
+const l2dModelLabel = ref('')
+const l2dBusy = ref(false)
 let l2d: Live2DController | null = null
+let l2dEntry: ModelEntry | null = null
 const wsStatus = ref<'connecting' | 'open' | 'closed'>('connecting')
 const draft = ref('')
 const lastTemplate = ref<string | null>(null)
@@ -89,17 +100,43 @@ function track<T extends S2CMsg['type']>(
   })
 }
 
+// ── Live2D 载入/切换(目录=本地 vendor,缺文件回退 CDN;切换=轮换+持久化) ──
+
+async function loadL2d(preferId?: string): Promise<void> {
+  if (l2dStageEl.value === null || l2dCanvasEl.value === null) return
+  l2dBusy.value = true
+  try {
+    const list = await loadCatalog()
+    l2dEntry =
+      preferId !== undefined
+        ? (list.find((m) => m.id === preferId) ?? loadSelection(list))
+        : loadSelection(list)
+    persistSelection(l2dEntry.id)
+    l2dModelLabel.value = l2dEntry.label
+    l2d?.destroy()
+    l2d = null
+    l2dReady.value = false
+    const ctrl = await createLive2D(l2dStageEl.value, l2dCanvasEl.value, modelUrls(l2dEntry))
+    l2d = ctrl
+    l2dReady.value = ctrl !== null
+    if (ctrl !== null) ctrl.setExpression(expressionFor(round.emotionLabel))
+  } finally {
+    l2dBusy.value = false
+  }
+}
+
+function switchL2d(): void {
+  const cur = l2dEntry
+  if (l2dBusy.value || cur === null) return
+  void loadCatalog().then((list) => {
+    const nx = nextModel(list, cur.id)
+    void loadL2d(nx.id)
+  })
+}
+
 onMounted(() => {
   // Live2D 真立绘(异步就绪;失败 null 落回 SVG 兜底);表情随情绪、口型随播放态
-  if (l2dStageEl.value !== null && l2dCanvasEl.value !== null) {
-    void createLive2D(l2dStageEl.value, l2dCanvasEl.value).then((ctrl) => {
-      l2d = ctrl
-      if (ctrl !== null) {
-        l2dReady.value = true
-        ctrl.setExpression(expressionFor(round.emotionLabel))
-      }
-    })
-  }
+  void loadL2d()
 
   track('first_frame', (m) => {
     audio.stopAndFade()
@@ -267,11 +304,20 @@ function toggleMic(): void {
         :warn="boardWarn"
       />
 
-      <!-- Live2D 立绘(真模型就绪渐显;未就绪/失败显示 SVG 手绘兜底) -->
+      <!-- Live2D 立绘(真模型就绪渐显;未就绪/失败显示 SVG 手绘兜底;⇄=轮换内置立绘) -->
       <div ref="l2dStageEl" class="l2d-stage" data-testid="l2d-stage">
         <div class="char-svg" :style="{ opacity: l2dReady ? 0 : 1 }" v-html="avatar"></div>
         <canvas ref="l2dCanvasEl" class="l2d-canvas" :class="{ 'l2d-ready': l2dReady }"></canvas>
-        <div class="l2d-name">小栖</div>
+        <div class="l2d-name">
+          小栖
+          <button
+            class="l2d-switch"
+            type="button"
+            :title="`换立绘(当前:${l2dModelLabel || '—'})`"
+            data-testid="l2d-switch"
+            @click="switchL2d"
+          >⇄</button>
+        </div>
       </div>
 
       <ChatPanel />
@@ -533,6 +579,29 @@ function toggleMic(): void {
   backdrop-filter: blur(6px);
   white-space: nowrap;
   z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.l2d-switch {
+  border: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.l2d-switch:hover {
+  background: var(--primary);
+  color: #fff;
+  transform: rotate(90deg);
 }
 
 /* ── 输入条 ── */

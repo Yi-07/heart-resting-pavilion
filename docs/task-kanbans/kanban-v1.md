@@ -25,20 +25,14 @@
 - [x] 步骤6 记忆(Redis 前置) · `c82a343`
 - [x] 步骤7 Live2D · `fdeaa46`(附带 `1db9e72` 修 ws 重连链断裂,步骤2 遗留)
 - [x] 步骤8 语音(ASR+TTS) · `e1251d6`
-- [ ] 步骤9 工具(station 懒生成·admin)← **当前**
-- [ ] 排后·全量语料接入(队友 `dataset/` 已到位不入库;步骤9 后单做,走 `docs/data-contract.md` §4 回验替换 15 条种子——本项为看板级排程追加,非 CLAUDE.md §8 构建顺序成员)
+- [x] 步骤9 工具(station 懒生成·admin) · `0b5435e`
+- [ ] 排后·全量语料接入(队友 `dataset/` 已到位不入库;步骤9 后单做,走 `docs/data-contract.md` §4 回验替换 15 条种子——本项为看板级排程追加,非 CLAUDE.md §8 构建顺序成员)← **当前(无阻断,CORS+L2D 已收尾,随时可开)**
 
-## 2. 当前步骤展开(完成后清空细节,§1 勾选即档)
+## 2. 当前步骤展开
 
-### 步骤9 工具(station 懒生成·admin)· 范围与分派
+### 排后·全量语料接入(seeded 15 条 → 队友 `dataset/`)
 
-范围:`station/` 补给站 REST+方案书存取(端点单源=ws-contract §1,开工先读)· `admin/` 管理通道 REST · SQLite reports 表(每会话只留最新一份)· 前端心灵补给站入口(邀请语点击触发生成)· L7 治理查看/一键清除挂 admin。素材已备:回合末 `station:input{formulation,summary}` Redis 写入+`memory.load_station_input` 读口。
-
-- [ ] 读 ws-contract §1 定端点形状;backend-plan §2 station/admin 行展开勾选
-- [ ] `station/` —— 方案书生成(planner,backend-plan §5)+ reports 表存取(每会话最新胜)
-- [ ] `admin/` —— 管理通道(语料/审计/治理查看+一键清除,spec L7)
-- [ ] 前端 —— 工具栏心灵补给站入口+方案书展示(邀请语已有)
-- [ ] 验收:用例2 完整链(点击补给站→方案书生成可见);admin 冒烟
+先行读 `docs/data-contract.md` §4(格式适配→样本回验→替换种子语料),并按 §0 工作方式核对队友素材是否已就绪(现 `dataset/` 在仓库根,git 未跟踪)。替换驱动=`uv run python -m app.rag.ingest --reset`(重灌 Chroma)。
 
 ## 3. 接力规程
 
