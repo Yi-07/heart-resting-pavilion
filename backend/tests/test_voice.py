@@ -22,7 +22,7 @@ from app.voice.tts import synthesize as _orig_synthesize
 class _FakeSidecar(BaseHTTPRequestHandler):
     wav_payload = b"FAKEWAVBYTES"
 
-    def do_GET(self):  # noqa: N802
+    def do_GET(self):
         body = json.dumps({"ready": True, "error": None}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -30,7 +30,7 @@ class _FakeSidecar(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_POST(self):  # noqa: N802
+    def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         text = json.loads(self.rfile.read(length))["text"]
         payload = self.wav_payload + text.encode()[:4]  # 可辨认回显

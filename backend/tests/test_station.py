@@ -177,7 +177,7 @@ def test_generate_stale_pending_reaccepted(
     reset_config_store(ConfigStore(":memory:"))
     with TestClient(app) as c:
         c.post("/station/report/generate", params={"session_id": "s1"})
-        with sqlite3.connect(tmp_reports._db_path) as conn:  # noqa: SLF001 — 接缝自有库,直改年龄
+        with sqlite3.connect(tmp_reports._db_path) as conn:
             conn.execute(
                 "UPDATE station_reports SET updated_at = '2020-01-01T00:00:00' "
                 "WHERE session_id = 's1'"

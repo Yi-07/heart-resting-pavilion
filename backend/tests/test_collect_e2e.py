@@ -1,7 +1,7 @@
 """collect 网关 E2E(CLAUDE.md §8 用例 2 后端判据):first_frame → 粗稿 draw →
 逐轮增量 draw → 精稿 draw → 分析总结 + 补给站邀请语 → done;seq 单调递增;
 信念字段留白;mood_select 回合内静默;分析中抢占 → 未发帧蒸发 + 承接安抚语。
-LLM 全 stub(provider 按调用方模块打补丁),RAG stub。"""
+LLM 全 stub(provider 按调用方模块替换),RAG stub。"""
 
 import asyncio
 import json

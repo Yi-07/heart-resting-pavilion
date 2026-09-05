@@ -87,7 +87,7 @@ def test_config_save_encrypt_and_apply(
     assert res.json() == {"ok": True, "provider": "deepseek", "model": "m1"}  # 无密钥回显
 
     # 明文绝不落库:原始行里只有密文
-    with sqlite3.connect(cfg_store._db_path) as conn:  # noqa: SLF001 — 接缝自有库
+    with sqlite3.connect(cfg_store._db_path) as conn:
         row = conn.execute(
             "SELECT provider, model, api_key_enc FROM llm_config WHERE id = 1"
         ).fetchone()
