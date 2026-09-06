@@ -1,12 +1,11 @@
 """检索引擎(backend-plan §2 rag 行):Chroma + BM25 + 重排 三件套。
 
 打分与融合 = 实现细节(本 docstring 即文档):
-- 召回:向量(Chroma/bge-small-zh-v1.5,余弦)与 BM25(jieba 分词)各取 4×k,
+- 召回:向量(Chroma/bge-m3,余弦)与 BM25(jieba 分词)各取 4×k,
   RRF(K=60)融合去重
 - 重排:bge-reranker-v2-m3 CrossEncoder 对 (query, question+answer) 打分,
   取 top-k;Ref.score = 重排原始分(仅排序语义,非概率)
-- 查询侧 embedding 拼 bge 查询指令前缀(「为这个句子生成表示以用于检索相关文章:」),
-  文档侧不拼(bge 系约定)
+- 查询侧 embedding 不拼指令前缀(bge-m3 为无前缀训练);文档侧同样不拼
 - 重排器加载失败 → 按 RRF 序直接截断返回(降级路径,记 WARN,不致命)
 - BM25 索引在 ingest 时失效、首次检索从 Chroma 回建
 - 换 embedding 模型 = 重跑 ingest,代码不动(docs/data-contract.md §5)
@@ -26,11 +25,14 @@ from app import config
 from app.rag.corpus import Ref
 
 _COLLECTION = "hrp_kb"
-_QUERY_PREFIX = "为这个句子生成表示以用于检索相关文章:"
+_QUERY_PREFIX = ""  # bge-m3 无检索指令前缀,清空
 _RRF_K = 60
 _RECALL_FACTOR = 4
-_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
-_EMBED_MODEL = "BAAI/bge-small-zh-v1.5"
+_UPSERT_BATCH = 1000  # chroma 单批上限 ~5461(实测),分批写入避免超限
+# 模型本地路径(不走 HF hub,本机下载受限):backend/models/ 下,由脚本/curl 就位
+_MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
+_RERANK_MODEL = str(_MODELS_DIR / "bge-reranker-v2-m3")
+_EMBED_MODEL = str(_MODELS_DIR / "bge-m3")
 
 
 def _rrf_fuse(*ranklists: list[str], k: int) -> dict[str, float]:
@@ -105,15 +107,19 @@ class RagEngine:
             collection = self._ensure_store()
         docs = [f"{r.question}\n{r.answer}" for r in refs]
         embeddings = self._ensure_embedder().encode(docs, normalize_embeddings=True)
-        collection.upsert(
-            ids=[r.id for r in refs],
-            embeddings=np.asarray(embeddings).tolist(),
-            documents=docs,
-            metadatas=[
-                {"question": r.question, "answer": r.answer, "category": r.category or ""}
-                for r in refs
-            ],
-        )
+        # 分批 upsert:chroma 单批上限 ~5461(本环境实测),全量语料会超;分成小块写入
+        batch = _UPSERT_BATCH
+        for start in range(0, len(refs), batch):
+            end = start + batch
+            collection.upsert(
+                ids=[r.id for r in refs[start:end]],
+                embeddings=np.asarray(embeddings[start:end]).tolist(),
+                documents=docs[start:end],
+                metadatas=[
+                    {"question": r.question, "answer": r.answer, "category": r.category or ""}
+                    for r in refs[start:end]
+                ],
+            )
         self._bm25 = None  # 索引失效,下次检索回建
         return collection.count()
 

@@ -39,8 +39,8 @@ CLASSIFIER_LLM_MIN_CONF = 0.6
 
 # ---- RAG ----
 
-RAG_SEEDS_PATH = os.path.join("data", "rag_seeds.jsonl")
-"""种子语料(相对 backend/;定稿见 docs/option.md 编码期人介入环节)"""
+RAG_CORPUS_PATH = os.path.join("data", "rag_corpus.jsonl")
+"""检索语料(相对 backend/;由队友 dataset/all_base.md 经翻译层产出,替代原种子 15 条)"""
 
 RAG_STORE_PATH = os.path.join(".rag_store")
 """Chroma 持久化目录(运行时产物,不入 git)"""

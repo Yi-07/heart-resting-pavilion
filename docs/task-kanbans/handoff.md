@@ -16,8 +16,8 @@
 
 ## 2. 环境现场(命令与判据单源=CLAUDE.md §4/§8,此处只记坑)
 
-- **模型缓存单源=`backend/.env.example` 模型缓存节**(HF_HOME + MODELSCOPE_CACHE,本地 .env 已配):**必须指向 ASCII 盘符路径**——默认 `C:\Users\<中文用户名>\.cache\` 会让 sentencepiece 直接 NOT_FOUND(SenseVoice 实测)。本机:HF_HOME=D:\MetaverseStudy\hf_cache(bge 系列),MODELSCOPE_CACHE=D:\MetaverseStudy\modelscope_cache(SenseVoice ~900MB 已就位);CosyVoice2-0.5B 权重 5.3GB 在 `models/voices/CosyVoice/pretrained_models/`。dotenv 进程级生效且不覆盖已存在的系统变量。
-- **Chroma** 持久化 `backend/.rag_store/`(15 条种子已灌);**RAG 冷启动实测 ~1-2min** 超 answer 60s 预算触发设计内降级——演示/验收前先打一条知识问题预热(遗留 §6)。排后项将替换为队友 `dataset/` 全量。
+- **RAG 模型本地化(排后项,非 HF hub)**:bge-m3 `backend/models/bge-m3/`(2.2G)+ reranker `backend/models/bge-reranker-v2-m3/`(2.1G),**本地 curl 走 hf-mirror 下载**(huggingface_hub 1.29 走 Xet 分片在本机报 `FileMetadataError` 误判,但底层 HTTP 通,`curl -sL` 跟随重定向可下)——`engine.py _EMBED_MODEL/_RERANK_MODEL` 已指向本地绝对路径。**`models/` gitignore,不入库;新克隆需 curl 重建**(下载脚本待补/见 PRD)。HF_HOME=D:\MetaverseStudy\hf_cache 仅用于其他(SenseVoice 等);MODELSCOPE_CACHE=D:\MetaverseStudy\modelscope_cache(SenseVoice ~900MB);CosyVoice2-0.5B 权重 5.3GB 在 `models/voices/CosyVoice/pretrained_models/`。**HF_ENDPOINT 不需设**(模型已本地路径,不触发 hub 下载)。
+- **Chroma** 持久化 `backend/.rag_store/`(**全量语料已灌,hrp_kb count=14944,bge-m3 1024维**);**RAG 冷启动重**(bge-m3 ~2GB 模型,较 bge-small 更慢)超 answer 60s 预算触发设计内降级——演示/验收前先打一条知识问题预热(遗留 §6)。全量语料源=`backend/data/rag_corpus.jsonl`(14944 条),`RAG_CORPUS_PATH` 单源。
 - **服务现场**:5173 vite 常驻;**8000 后端视内存可起**(系统内存不足时会被内存管理机制结束进程,非代码问题——本会话后端曾被结束 2 次,重启即恢复,与 E2E 无关)。起后端=`uv run uvicorn app.main:app --port 8000`(不用 --reload;脚本直连用 `127.0.0.1`,uvicorn 只绑 IPv4)。**TTS sidecar 不常驻**(内存不足时后台进程会被结束)——`app/voice/tts.py` 按需懒拉起,首次 TTS 等模型 ~40s 就绪;优先先把 sidecar 预热到就绪再跑 collect 完整链,可避开「总结 TTS 冷启 vs 60s 回合超时上限」的预算冲突(§6 遗留)。手动起=`models/voices/CosyVoice/.venv/Scripts/python.exe backend/app/voice/tts_sidecar.py`(先清 9880 旧监听:`netstat -ano | grep 9880`+`taskkill //F //PID`)。
 - **WS 测试脚本坑**:`websockets` 库默认 keepalive ping 20s,RAG 冷加载会断——传 `ping_interval=None`;前端浏览器原生 WebSocket 不受影响。
 - **Windows 坑**:仓库文本 CRLF——前端读 `architecture/*.md` 正则要 `\r?\n`+`s` 标志;git-bash 管道下 Python print 中文 GBK 乱码(仅显示,断言在脚本内做);TestClient 的 WS 测试是同步函数不能 `await`;reload 断 WS 时 Proactor ERROR 是已知噪音。
@@ -43,6 +43,8 @@
 - `from __future__ import annotations` 防 TYPE_CHECKING 前向引用炸;LangGraph 节点签名 `(state, config)`,emitter 走 config;图模块级编译一次。
 - pytest-asyncio `asyncio_mode=auto`;loguru 内存 sink record:`extra` 是 dict、`level` 用 `.name`。
 - 懒加载分层:chroma/sentence-transformers/langgraph/语音模型全部函数内 import;mypy overrides:funasr/torchaudio/cosyvoice/jieba/rank_bm25 无 stub 已配。
+- **RAG(排后·bge-m3)**:`engine.py _EMBED_MODEL`=本地 `backend/models/bge-m3/`、`_RERANK_MODEL`=本地 `bge-reranker-v2-m3/`(基于 `__file__` 绝对路径,不依赖 cwd);`_QUERY_PREFIX=""`(**bge-m3 无检索前缀**,删原 bge-small 指令,保留致域偏移);`_UPSERT_BATCH=1000`(chroma 单批上限 ~5461,全量 14944 分批 upsert——**全量/半量接入必然处理**)。换模型 = 维度 512→1024,**必 `ingest --reset`**(旧 bge-small 库维度不匹配)。
+- **RAG 命名**:`config.RAG_CORPUS_PATH`(全量语料 `data/rag_corpus.jsonl`,14944 条);原种子 `rag_seeds.jsonl` → **`rag_retrieve_test_seeds.jsonl`**(git mv,仅测试夹具,`test_retrieve.py` 用;与生产语料分离)。`ingest.py` default 引用 `config.RAG_CORPUS_PATH`。**`test_memory` 是真链路测试,需本机 Redis 6379**(未启时 ConnectionError,非代码问题)。
 - **记忆(步骤6)**:单例 `get_memory()`;conftest autouse 假记忆+静音 TTS/fillers(新用例默认不触 Redis/sidecar,真链路 test_memory 需 6379);test_voice 的真客户端用例要在**模块导入期捕获原函数**再恢复(fixture 里现取会拿到 conftest 桩)。**conftest 已扩** FakeMemory 补 load_station_input/recent_moods/clear_all+monkeypatch station.routes/admin.routes 的 get_memory+tmp_reports 夹具。
 - **语音(步骤8)**:tts 客户端端口/超时调用时读 config(import 期绑定会让 monkeypatch 失效);sidecar 需在导入前覆写 `cosyvoice.utils.file_utils.load_wav`(from-import 绑定,双保险重绑 frontend 模块属性);该 venv 曾被 pip 装 matcha-tts 连锁升级到 torch 2.14——别再往里 pip 装东西,要装先想连锁。
 - **步骤9 模块**:`get_reports()`/`get_config_store()` 单例+`reset_*` 测试口;planner RAG/LLM 懒加载+永不抛(降级模板保 latest 终态 ready);pydantic str-Enum 字段传参**必须用枚举成员**(`StationReportStatus.READY`)而非裸字符串,mypy 不全收窄。cryptography 已显式加依赖。
@@ -61,6 +63,7 @@
 ## 5. 现状
 
 - **步骤1-9 全落**:契约/网关/三路路由/RAG/采集/记忆三层/Live2D/语音/工具(station+admin)。测试后端 110(station 15 含 CORS 预检/防重/陈旧重收/planner 降级+非医疗声明硬保证/admin 12 含明文不落库+AES roundtrip)+前端 63(含 l2d models 单源/回退/轮换)。
+- **排后·全量语料接入 已完成**:翻译层(`dataset/all_base.md`→`data/rag_corpus.jsonl` 14944 条)+bge-m3 换模型+reranker 本地化+分批 upsert;生产 `.rag_store` count=14944。方案=`docs/prds/rag-full-corpus-bge-m3.md`。测试:bge-m3 下 test_retrieve 7/7、半量合并命中率 98.5%、ruff/mypy 全过;test_memory 需 Redis。
 - **步骤9 相关**:
   - 后端 station(planner/reports/routes)+admin(config_store/routes)为深模块;schema/station.py 对齐 ws-contract §1;main 挂路由+CORS+启动 lifespan 读 config。
   - 前端 `src/station/`(station.ts 控制器+REST/markdown.ts 迷你渲染器/StationPanel.vue 面板,操作钮钉面板底)+邀请语「心灵补给站」分段可点(ChatPanel)+工具栏入口;WSClient 增 `sessionId` getter。

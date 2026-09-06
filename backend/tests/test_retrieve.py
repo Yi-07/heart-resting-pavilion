@@ -1,7 +1,7 @@
-"""retrieve 接缝钉测试(backend-plan §11):种子语料命中(id/question 稳定返回)、k 截断。
+"""retrieve 接缝钉测试(backend-plan §11):测试种子语料命中(id/question 稳定返回)、k 截断。
 
-真模型真 Chroma(bge-small-zh + bge-reranker 本地缓存,docs/data-contract.md §4 回验判据 2);
-session 级 fixture 只灌一次库。
+真模型真 Chroma(bge-m3 + bge-reranker-v2-m3 本地 backend/models/,docs/data-contract.md §4 回验判据 2);
+session 级 fixture 只灌一次库。测试用独立种子夹具(rag_retrieve_test_seeds.jsonl),与生产全量语料分离。
 """
 
 from pathlib import Path
@@ -11,7 +11,7 @@ import pytest
 from app.rag.corpus import Ref, load_corpus
 from app.rag.engine import RagEngine
 
-_SEEDS = Path(__file__).resolve().parents[1] / "data" / "rag_seeds.jsonl"
+_SEEDS = Path(__file__).resolve().parents[1] / "data" / "rag_retrieve_test_seeds.jsonl"
 
 
 @pytest.fixture(scope="session")
