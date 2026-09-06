@@ -29,10 +29,8 @@ _QUERY_PREFIX = ""  # bge-m3 无检索指令前缀,清空
 _RRF_K = 60
 _RECALL_FACTOR = 4
 _UPSERT_BATCH = 1000  # chroma 单批上限 ~5461(实测),分批写入避免超限
-# 模型本地路径(不走 HF hub,本机下载受限):backend/models/ 下,由脚本/curl 就位
-_MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
-_RERANK_MODEL = str(_MODELS_DIR / "bge-reranker-v2-m3")
-_EMBED_MODEL = str(_MODELS_DIR / "bge-m3")
+_RERANK_MODEL = config.RAG_RERANK_MODEL
+_EMBED_MODEL = config.RAG_EMBED_MODEL
 
 
 def _rrf_fuse(*ranklists: list[str], k: int) -> dict[str, float]:

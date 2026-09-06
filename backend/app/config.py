@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# backend/ 根目录:一切内置资源/运行时路径的基准(由 __file__ 推导,不依赖进程 cwd)
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # ---- 危机闸门 ----
 
 CRISIS_GATE_THRESHOLD = float(os.getenv("CRISIS_GATE_THRESHOLD", "0.7"))
@@ -39,11 +42,20 @@ CLASSIFIER_LLM_MIN_CONF = 0.6
 
 # ---- RAG ----
 
-RAG_CORPUS_PATH = os.path.join("data", "rag_corpus.jsonl")
-"""检索语料(相对 backend/;由队友 dataset/all_base.md 经翻译层产出,替代原种子 15 条)"""
+RAG_CORPUS_PATH = os.path.join(_BACKEND_DIR, "data", "rag_corpus.jsonl")
+"""检索语料 jsonl"""
 
-RAG_STORE_PATH = os.path.join(".rag_store")
+RAG_STORE_PATH = os.path.join(_BACKEND_DIR, ".rag_store")
 """Chroma 持久化目录(运行时产物,不入 git)"""
+
+RAG_MODELS_DIR = os.path.join(_BACKEND_DIR, "models")
+"""RAG 模型目录(bge-m3 / bge-reranker-v2-m3;gitignore 不入库)"""
+
+RAG_EMBED_MODEL = os.path.join(RAG_MODELS_DIR, "bge-m3")
+"""embedding 模型"""
+
+RAG_RERANK_MODEL = os.path.join(RAG_MODELS_DIR, "bge-reranker-v2-m3")
+"""reranker 重排模型"""
 
 RAG_TOP_K = 3
 """retrieve 默认返回条数(k=None 时用)"""
@@ -70,7 +82,7 @@ MEMORY_HOT_TTL_S = 30 * 60
 MEMORY_WARM_TTL_S = 7 * 24 * 3600
 """温层 TTL:会话摘要 + station:input(spec §4 L7)"""
 
-MEMORY_DB_PATH = os.path.join("data", "profile.db")
+MEMORY_DB_PATH = os.path.join(_BACKEND_DIR, "data", "profile.db")
 """冷层 SQLite(长期画像+情绪趋势,无 TTL;运行时产物不入 git)"""
 
 MOOD_RECENT_CAP = 5
@@ -78,10 +90,10 @@ MOOD_RECENT_CAP = 5
 
 # ---- 工具(步骤9:station 方案书存取 / admin 模型配置) ----
 
-STATION_DB_PATH = os.path.join("data", "station.db")
+STATION_DB_PATH = os.path.join(_BACKEND_DIR, "data", "station.db")
 """方案书 SQLite(每会话最新胜;运行时产物不入 git)"""
 
-ADMIN_CONFIG_DB_PATH = os.path.join("data", "config.db")
+ADMIN_CONFIG_DB_PATH = os.path.join(_BACKEND_DIR, "data", "config.db")
 """模型配置 SQLite(api_key AES-GCM 加密落库;运行时产物不入 git)"""
 
 CONFIG_AES_KEY = os.getenv("HRP_CONFIG_AES_KEY", "")
@@ -103,7 +115,7 @@ TTS_SIDECAR_PORT = int(os.getenv("TTS_SIDECAR_PORT", "9880"))
 
 TTS_SIDECAR_PYTHON = os.getenv(
     "TTS_SIDECAR_PYTHON",
-    os.path.join("..", "models", "voices", "CosyVoice", ".venv", "Scripts", "python.exe"),
+    os.path.join(_BACKEND_DIR, "..", "models", "voices", "CosyVoice", ".venv", "Scripts", "python.exe"),
 )
 """CosyVoice 仓库自备 venv 的 python(tts_sidecar.py 在该解释器下运行)"""
 
@@ -113,5 +125,5 @@ TTS_SIDECAR_READY_TIMEOUT_S = 120.0
 AUDIO_INPUT_MAX_S = 15.0
 """语音输入单段上限(契约 §4.1;前端录音侧执行)"""
 
-FILLERS_DIR = os.path.join("data", "fillers")
-"""预生成等待语音目录(fillers 脚本产物,运行时直读零合成;gitignored)"""
+FILLERS_DIR = os.path.join(_BACKEND_DIR, "data", "fillers")
+"""预生成等待语音目录(运行时直读零合成;gitignored)"""
