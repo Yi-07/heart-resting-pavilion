@@ -34,10 +34,26 @@
 
 **验证**:test_retrieve 7/7、半量(均衡一半 7472 条)检索合并命中率 98.5%、ruff/mypy 全过。`test_memory` 需本机 Redis 6379(环境前提,非代码)。
 
-### 待议(记录于此,不阻塞,后期再定)
+### 第一版生产级制程(主线已完成,以下为到达「第一版软件应用」的分步)
 
-- **answer 链路语义定位**:案例语料(`question=来访者问题 / answer=治疗思路`)与 seed(`question=知识问题 / answer=科普答案`)语义类型不同。受影响=`gateway.py:457`(answer 直答,科普口吻);`analysis.py:58`(collect 总结,case 适配良好);`planner.py:93`(station,case 适配良好)。当前 mock 掉 answer 直答,留后期再议。
-- **RAG 冷启动预热**:bge-m3 冷启动重,over answer 60s 预算(遗留)。
+> MVP 完整词表(单源)=`architecture/architecture-spec.md` §10;此处只列「未完成项 + 可交付性」,不复制词表。二期(spec §10)由用户新开 PRD,不排第一版,本看板不追踪。
+
+#### A. 生产级验收前置(功能可用 + 可复现)
+
+- [ ] 1. **answer 链路语义定位定论**:案例语料(`question=来访者问题 / answer=治疗思路`)与 seed(`question=知识问题 / answer=科普答案`)语义类型不同;受影响模块=`answer` 直答(科普口吻)/`collect` 总结(case 适配)/`station` 方案书(case 适配)。当前 answer 直答已 mock 掉;定论 answer 采用科普还是案例模式后,再开通该链路。
+- [ ] 2. **前端模型配置 UI**:后端 admin/config 已接;前端设置入口(含模型配置)未点亮——MVP 明确项,补后端→前端打通才功能完整。
+- [ ] 3. **模型下载脚本入库**:新克隆需 curl 重建 bge-m3/reranker(`backend/models/` gitignore);下载脚本未入库(见 PRD Further Notes)。
+- [ ] 4. **RAG 启动 warm-up 预热**:bge-m3 冷启动重,超 answer 60s 预算;涉后端启动行为,做前打招呼。
+- [ ] 5. **`npm run l2d:fetch` 命令可见性**:业务 script 单源=package.json 已收录;CLAUDE.md §4 命令块是否补,重审。
+
+#### B. 生产级验收
+
+- [ ] 6. **后端 §8 三用例 E2E 完整验收**:answer/collect/crisis 真链路(含 collect 完整链 + 心灵补给站触发),作生产级最终验收。
+
+#### C. 交付产物(验收通过后)
+
+- [ ] 7. **README / CONTRIBUTING 建立**:PROGRESS 文档地图标「编码后建立」,当前缺——验收通过后补,交付阶段产出。
+- [ ] 8. **人看架构文档 + AGENT.md 副本**:PROGRESS 标「交付前批」,验收通过后、交付前补。
 
 ## 3. 接力规程
 

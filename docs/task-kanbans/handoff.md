@@ -67,14 +67,12 @@
 - **步骤9 相关**:
   - 后端 station(planner/reports/routes)+admin(config_store/routes)为深模块;schema/station.py 对齐 ws-contract §1;main 挂路由+CORS+启动 lifespan 读 config。
   - 前端 `src/station/`(station.ts 控制器+REST/markdown.ts 迷你渲染器/StationPanel.vue 面板,操作钮钉面板底)+邀请语「心灵补给站」分段可点(ChatPanel)+工具栏入口;WSClient 增 `sessionId` getter。
-- **v7 mockup 仍有值行段**:工具面板 tool-panel L57-69/L328(心灵练习/留言墙/补给站——补给站已做,心灵练习/留言墙二期);模型配置 cfg L234-242/L348(步骤9 admin/config 已接,前端设置入口未点亮,二期)。
-- **排后·全量语料**:队友 `dataset/` 在仓库根(git 未跟踪),走 data-contract §4 回验替换 15 条种子。
+- **v7 mockup 仍有值行段**:工具面板 tool-panel L57-69/L328(心灵练习/留言墙/补给站——补给站已做,心灵练习/留言墙二期);模型配置 cfg L234-242/L348(步骤9 admin/config 已接,**前端设置入口未点亮=生产级 MVP 待办**(非二期),见 kanban §2 制程 A)。
+- **排后·全量语料 已完成**:队友 `dataset/`(仓库根,gitignore 不入库)经翻译层→`data/rag_corpus.jsonl` 14944 条,bge-m3 已灌生产 `.rag_store`(count=14944);方案= `docs/prds/rag-full-corpus-bge-m3.md`。
 
-## 6. 遗留小事(不阻塞,按排程)
+## 6. 遗留小事(不阻塞,按排程)→ 已归并看板 kanban §2 制程
 
-- **RAG 冷启动预热**:启动后台 warm-up 一次(涉后端启动行为,做前打招呼);排后接全量语料顺带处理。
-- **总结 TTS vs 60s 回合超时上限的预算冲突**(步骤8 遗留,步骤9 重验再证):sidecar 冷启/DeepSeek 慢流超出回合时长上限,`error(timeout)` 在 `round_archived`(station:input 落库)之后出现,station 链不受影响——建议二期把总结 TTS 移出回合上限、或超时上限不计 TTS 段。演示/验收前先预热 sidecar 规避。
+- **已并 kanban §2 制程 A**:RAG 冷启动预热(A#4,做前打招呼)· 模型下载脚本入库(A#3)· `npm run l2d:fetch` 命令可见性(A#5)· 前端设置入口/模型配置 UI(A#2,生产级 MVP 待办,非二期)。
+- **总结 TTS vs 60s 回合超时上限预算冲突**(步骤8/9 遗留):`error(timeout)` 在 `round_archived`(station:input 落库)之后出现,station 链不受影响——建议二期把总结 TTS 移出回合上限。演示/验收前先预热 sidecar 规避。
 - 口型=播放态点头,音频幅值真口型二期;audio_chunk=整段一帧,流式分块二期。
-- mood pill 已显回合 emotionLabel;持久 profile 视图随 admin(步骤9)已接,前端设置入口(含模型配置 UI)未点亮=二期。
 - Live2D 真口型 model.speak 与 AudioQueue 双通道播放冲突,接前先设计单一播放源。
-- 新增约定命令未入 CLAUDE.md §4(`npm run l2d:fetch`):业务 script 单源=package.json 已收录,CLAUDE.md §4 命令块是否需要补可见性,随排后项重审。
