@@ -26,7 +26,7 @@
 - [x] 步骤7 Live2D · `fdeaa46`(附带 `1db9e72` 修 ws 重连链断裂,步骤2 遗留)
 - [x] 步骤8 语音(ASR+TTS) · `e1251d6`
 - [x] 步骤9 工具(station 懒生成·admin) · `0b5435e`
-- [x] 排后·全量语料接入(队友 `dataset/` 已到位不入库;步骤9 后单做,走 `docs/data-contract.md` §4 回验替换 15 条种子——本项为看板级排程追加,非 CLAUDE.md §8 构建顺序成员)· 译层+bge-m3(见 PRD `docs/prds/rag-full-corpus-bge-m3.md`)
+- [x] 排后·全量语料接入(队友 `dataset/` 已到位不入库;步骤9 后单做,走 `docs/data-contract.md` §4 回验替换 15 条种子——本项为看板级排程追加,非 CLAUDE.md §8 构建顺序成员)· 翻译层+bge-m3(见 PRD `docs/prds/rag-full-corpus-bge-m3.md`)
 
 ## 2. 步骤状态(排后·全量语料接入 已完成)
 
@@ -34,7 +34,7 @@
 
 **验证**:test_retrieve 7/7、半量(均衡一半 7472 条)检索合并命中率 98.5%、ruff/mypy 全过。`test_memory` 需本机 Redis 6379(环境前提,非代码)。
 
-#### 待议(记录于此,不阻塞,后期再定)
+### 待议(记录于此,不阻塞,后期再定)
 
 - **answer 链路语义定位**:案例语料(`question=来访者问题 / answer=治疗思路`)与 seed(`question=知识问题 / answer=科普答案`)语义类型不同。受影响=`gateway.py:457`(answer 直答,科普口吻);`analysis.py:58`(collect 总结,case 适配良好);`planner.py:93`(station,case 适配良好)。当前 mock 掉 answer 直答,留后期再议。
 - **RAG 冷启动预热**:bge-m3 冷启动重,over answer 60s 预算(遗留)。

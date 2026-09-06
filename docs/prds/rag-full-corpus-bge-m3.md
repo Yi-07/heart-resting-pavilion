@@ -33,7 +33,7 @@
 | `answer` | 「治疗思路」 | |
 | `category` | 一级主题头(如 `钦佩_工作`) | 实测 0 缺失 |
 
-- 翻译脚本是**一次性产物**(原在 `.proto_tmp/`),**不入生产代码**;全量 jsonl 已生成到 `backend/data/rag_corpus.jsonl`,id 唯一。
+- 翻译脚本是**一次性产物**(不入生产代码,验证后已删);全量 jsonl 已生成到 `backend/data/rag_corpus.jsonl`,id 唯一。
 - **语义注意**:案例语料(`question=来访者问题/answer=治疗思路`)与种子(`提问=科普问/答案=科普答`)语义类型不同——前者是个案处理记录,后者是知识问答。受影响:`answer` 直答链路(可能从"科普"漂移成"案例建议")——**已 mock 掉 answer 直答(显示"TODO 施工中"),留待后期再议**(见 kanban 待议);collect/station 链路适配良好。
 
 ### bge-m3 换模型(engine.py)
@@ -72,7 +72,7 @@
 
 ## Out of Scope
 
-- `answer` 直答**语义定位**(科普 vs 案例建议)——已 mock 掉,留后期待议(kankan 记录)。
+- `answer` 直答**语义定位**(科普 vs 案例建议)——已 mock 掉,留后期待议(kanban 待议)。
 - 启动 RAG warm-up 预热(bge-m3 冷启动重,answer 60s 预算冲突)——遗留。
 - reranker 进一步调优 / FlagEmbedding 稀疏+ColBERT 混合检索。
 - 前端设置入口(模型配置 UI)点亮。
@@ -80,5 +80,5 @@
 ## Further Notes
 
 - 模型本地化资源(`backend/models/`)已被 `models/` gitignore,不入库;新克隆需经脚本/curl 重新下载 bge-m3+reranker。
-- `dataset/`(队友交付)git 未跟踪、168MB,不入库;`all_base.md` 是翻译层唯一源。
+- `dataset/`(队友交付)168MB,已加入 `.gitignore`,git 不跟踪,不入库;`all_base.md` 是翻译层唯一源。
 - 当前 `.rag_store` 生产库 `count=14944`(bge-m3 1024 维),较原 bge-small 种子库(512 维)为新库。
