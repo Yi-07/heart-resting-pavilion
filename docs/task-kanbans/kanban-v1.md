@@ -40,7 +40,7 @@
 
 #### A. 生产级验收前置(功能可用 + 可复现)
 
-- [ ] 1. **answer 链路语义定位定论**:案例语料(`question=来访者问题 / answer=治疗思路`)与 seed(`question=知识问题 / answer=科普答案`)语义类型不同;受影响模块=`answer` 直答(科普口吻)/`collect` 总结(case 适配)/`station` 方案书(case 适配)。当前 answer 直答已 mock 掉;定论 answer 采用科普还是案例模式后,再开通该链路。
+- [x] 1. **answer 链路语义定位定论→混合知识库分流**:案例语料(case=来访者问题/治疗思路)与 seed(科普=知识问/科普答)语义类型不同。定论=answer 直答查「科普知识库」(当前 15 条种子垫底,内容后续 PRD 扩),collect/station 查「案例库」(14944 条)。engine 拆 `hrp_kb_knowledge`+`hrp_kb_case` 两 Chroma 集合,retrieve/ingest 加 `library` 参数(深模块);answer 链打通。test_gateway 15/15 + test_retrieve 8/8 + ruff/mypy 过;store 两库齐全(14944+15)。
 - [ ] 2. **前端模型配置 UI**:后端 admin/config 已接;前端设置入口(含模型配置)未点亮——MVP 明确项,补后端→前端打通才功能完整。
 - [ ] 3. **模型下载脚本入库**:新克隆需 curl 重建 bge-m3/reranker(`backend/models/` gitignore);下载脚本未入库(见 PRD Further Notes)。
 - [ ] 4. **RAG 启动 warm-up 预热**:bge-m3 冷启动重,超 answer 60s 预算;涉后端启动行为,做前打招呼。

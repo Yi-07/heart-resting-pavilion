@@ -1,13 +1,19 @@
-"""检索引擎(backend-plan §2 rag 行):Chroma + BM25 + 重排 三件套。
+"""检索引擎(backend-plan §2 rag 行):混合知识库,Chroma + BM25 + 重排 三件套。
 
-打分与融合 = 实现细节(本 docstring 即文档):
-- 召回:向量(Chroma/bge-m3,余弦)与 BM25(jieba 分词)各取 4×k,
-  RRF(K=60)融合去重
-- 重排:bge-reranker-v2-m3 CrossEncoder 对 (query, question+answer) 打分,
-  取 top-k;Ref.score = 重排原始分(仅排序语义,非概率)
+深模块:对外接口小(retrieve/ingest + 一个 RagLibrary 库种类),复杂藏在模块内——
+两库、各库召回/融合/重排/分批、Chroma 持久化与 BM25 回建,全由本模块承担,调用方零感知。
+
+库结构(拆两 Chroma 集合,混合知识库):
+- hrp_kb_knowledge 科普知识库:CASE 之外的知识问答(question=知识问,answer=科普答),answer 直答用
+- hrp_kb_case 案例库:CASE 型治疗思路(question=来访者问题,answer=治疗思路),collect/station 用
+
+打分与融合 = 实现细节:
+- 召回:向量(Chroma/bge-m3,余弦)与 BM25(jieba 分词)各取 4×k,RRF(K=60)融合去重
+- 重排:bge-reranker-v2-m3 CrossEncoder 对 (query, question+answer) 打分,取 top-k;
+  Ref.score = 重排原始分(仅排序语义,非概率)
 - 查询侧 embedding 不拼指令前缀(bge-m3 为无前缀训练);文档侧同样不拼
 - 重排器加载失败 → 按 RRF 序直接截断返回(降级路径,记 WARN,不致命)
-- BM25 索引在 ingest 时失效、首次检索从 Chroma 回建
+- BM25 索引按库在 ingest 时失效、首次检索从对应 Chroma 回建
 - 换 embedding 模型 = 重跑 ingest,代码不动(docs/data-contract.md §5)
 懒加载:模型/索引首次使用才进内存(网关启动零成本);Chroma 持久化 .rag_store/。
 """
@@ -17,14 +23,19 @@ from pathlib import Path
 import chromadb
 import jieba
 import numpy as np
+from chromadb.errors import NotFoundError
 from loguru import logger
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder, SentenceTransformer
 
 from app import config
-from app.rag.corpus import Ref
+from app.rag.corpus import RagLibrary, Ref
 
-_COLLECTION = "hrp_kb"
+_COLLECTIONS: dict[RagLibrary, str] = {
+    RagLibrary.KNOWLEDGE: "hrp_kb_knowledge",
+    RagLibrary.CASE: "hrp_kb_case",
+}
+_LEGACY_COLLECTION = "hrp_kb"  # 旧单库名;重置时兜底清理(自单库迁移残留)
 _QUERY_PREFIX = ""  # bge-m3 无检索指令前缀,清空
 _RRF_K = 60
 _RECALL_FACTOR = 4
@@ -43,7 +54,10 @@ def _rrf_fuse(*ranklists: list[str], k: int) -> dict[str, float]:
 
 
 class RagEngine:
-    """单实例持有模型与索引;网关单事件循环串行调用,无需加锁。"""
+    """单实例持有模型与索引;网关单事件循环串行调用,无需加锁。
+
+    library 参数(可选,默认 case)区分混合知识库里查哪一库;两库各自独立 count/BM25。
+    """
 
     def __init__(self, store_path: str | Path | None = None) -> None:
         self._store_path = Path(store_path if store_path is not None else config.RAG_STORE_PATH)
@@ -51,16 +65,16 @@ class RagEngine:
         self._embedder: SentenceTransformer | None = None
         self._reranker: CrossEncoder | None = None
         self._reranker_failed = False
-        self._bm25: BM25Okapi | None = None
-        self._bm25_refs: list[Ref] = []
+        self._bm25: dict[RagLibrary, BM25Okapi] = {}
+        self._bm25_refs: dict[RagLibrary, list[Ref]] = {}
 
     # ---- 懒初始化 ----
 
-    def _ensure_store(self) -> chromadb.Collection:
+    def _ensure_store(self, library: RagLibrary) -> chromadb.Collection:
         if self._client is None:
             self._client = chromadb.PersistentClient(path=str(self._store_path))
         return self._client.get_or_create_collection(
-            name=_COLLECTION, metadata={"hnsw:space": "cosine"}
+            name=_COLLECTIONS[library], metadata={"hnsw:space": "cosine"}
         )
 
     def _ensure_embedder(self) -> SentenceTransformer:
@@ -77,12 +91,12 @@ class RagEngine:
                 logger.warning("reranker 加载失败,检索按 RRF 序降级")
         return self._reranker
 
-    def _ensure_bm25(self) -> BM25Okapi:
-        if self._bm25 is None:
-            collection = self._ensure_store()
+    def _ensure_bm25(self, library: RagLibrary) -> BM25Okapi:
+        if library not in self._bm25:
+            collection = self._ensure_store(library)
             got = collection.get(include=["documents", "metadatas"])
             metas = got["metadatas"] or []
-            self._bm25_refs = [
+            self._bm25_refs[library] = [
                 Ref(
                     id=id_,
                     question=str(meta.get("question", "")),
@@ -91,18 +105,22 @@ class RagEngine:
                 )
                 for id_, meta in zip(got["ids"], metas, strict=True)
             ]
-            tokens = [list(jieba.lcut(f"{r.question} {r.answer}")) for r in self._bm25_refs]
-            self._bm25 = BM25Okapi(tokens if tokens else [["空"]])
-        return self._bm25
+            tokens = [list(jieba.lcut(f"{r.question} {r.answer}")) for r in self._bm25_refs[library]]
+            self._bm25[library] = BM25Okapi(tokens if tokens else [["空"]])
+        return self._bm25[library]
 
     # ---- 写入 ----
 
-    def ingest(self, refs: list[Ref], *, reset: bool = False) -> int:
-        """语料灌库(upsert 按 id 幂等);reset 清空重建。返回入库条数。"""
-        collection = self._ensure_store()
+    def ingest(self, refs: list[Ref], *, library: RagLibrary, reset: bool = False) -> int:
+        """语料按库灌入(upsert 按 id 幂等);reset 清空该库重建。返回该库入库条数。"""
+        collection = self._ensure_store(library)
         if reset and self._client is not None:
-            self._client.delete_collection(_COLLECTION)
-            collection = self._ensure_store()
+            self._client.delete_collection(_COLLECTIONS[library])
+            try:  # 兜底清旧单库名(自单库迁移残留;不存在时 chroma 抛 NotFoundError/ValueError)
+                self._client.delete_collection(_LEGACY_COLLECTION)
+            except (NotFoundError, ValueError):
+                pass
+            collection = self._ensure_store(library)
         docs = [f"{r.question}\n{r.answer}" for r in refs]
         embeddings = self._ensure_embedder().encode(docs, normalize_embeddings=True)
         # 分批 upsert:chroma 单批上限 ~5461(本环境实测),全量语料会超;分成小块写入
@@ -118,19 +136,20 @@ class RagEngine:
                     for r in refs[start:end]
                 ],
             )
-        self._bm25 = None  # 索引失效,下次检索回建
+        self._bm25.pop(library, None)  # 该库索引失效,下次检索回建
         return collection.count()
 
     # ---- 检索 ----
 
-    def retrieve(self, query: str, k: int | None = None) -> list[Ref]:
-        """混合检索 + 重排,返回带分 Ref(k=None → config.RAG_TOP_K)。"""
+    def retrieve(self, query: str, k: int | None = None, *, library: RagLibrary = RagLibrary.CASE) -> list[Ref]:
+        """混合检索 + 重排,返回带分 Ref(k=None → config.RAG_TOP_K);library 指定查哪一库。"""
         top_k = k if k is not None else config.RAG_TOP_K
-        collection = self._ensure_store()
+        collection = self._ensure_store(library)
         if collection.count() == 0:
             return []
-        bm25 = self._ensure_bm25()
-        by_id = {r.id: r for r in self._bm25_refs}
+        bm25 = self._ensure_bm25(library)  # 先建索引(填充 _bm25_refs[library]),再读 refs
+        refs = self._bm25_refs[library]
+        by_id = {r.id: r for r in refs}
 
         recall_n = min(_RECALL_FACTOR * top_k, collection.count())
         vec = self._ensure_embedder().encode(
@@ -142,7 +161,7 @@ class RagEngine:
 
         scores = bm25.get_scores(list(jieba.lcut(query)))
         bm25_ranked = [
-            self._bm25_refs[i].id for i in np.argsort(scores)[::-1][:recall_n] if scores[i] > 0
+            refs[i].id for i in np.argsort(scores)[::-1][:recall_n] if scores[i] > 0
         ]
 
         fused = _rrf_fuse(vec_hits, bm25_ranked, k=_RRF_K)

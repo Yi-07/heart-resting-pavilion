@@ -73,6 +73,7 @@ npm run lint
 3. **函数式优先**:纯函数、不可变数据;复杂操作拆具名辅助函数
 4. **Python**:Pydantic 做数据校验;类型标注齐全
 5. **错误集中处理**:WS 错误统一走 error 帧;日志用统一 logger
+6. **深模块**:新模块按深模块设计(接口小·实现深·复杂藏模块内,详见 backend-plan §2);新增重依赖(如 chroma·sentence-transformers·语音模型)用函数内懒加载,勿在模块顶部 import 拖慢启动
 
 ## 6. 性能热点(针对本项目)
 

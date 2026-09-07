@@ -15,7 +15,7 @@ from app import config
 from app.llm import LLMError
 from app.logger import capture_events
 from app.main import app
-from app.rag.corpus import Ref
+from app.rag.corpus import RagLibrary, Ref
 
 client = TestClient(app)
 
@@ -211,10 +211,12 @@ class _StreamStub:
 class _RagStub:
     def __init__(self, refs: list[Any]) -> None:
         self.refs = refs
-        self.calls: list[tuple[str, int | None]] = []
+        self.calls: list[tuple[str, int | None, RagLibrary | None]] = []
 
-    def retrieve(self, query: str, k: int | None = None) -> list[Any]:
-        self.calls.append((query, k))
+    def retrieve(
+        self, query: str, k: int | None = None, *, library: RagLibrary | None = None
+    ) -> list[Any]:
+        self.calls.append((query, k, library))
         return self.refs
 
 
@@ -238,7 +240,7 @@ def test_answer_streams_without_blackboard(monkeypatch):
     assert frames[1]["final"] is True
     assert frames[2]["type"] == "done"
 
-    assert rag.calls == [("什么是正念", 3)]  # RAG 门控开,默认 k=3
+    assert rag.calls == [("什么是正念", 3, RagLibrary.KNOWLEDGE)]  # answer 查科普库,默认 k=3
     assert stub.messages is not None
     system = stub.messages[0]["content"]
     assert "正念是觉察练习" in system  # RAG 资料进了生成上下文

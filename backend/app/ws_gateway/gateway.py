@@ -472,8 +472,9 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
     if cls.needs_rag:
         try:
             from app.rag import get_engine  # 懒加载:chroma/模型首次 answer 才进内存
+            from app.rag.corpus import RagLibrary  # 轻量枚举,无重依赖
 
-            refs = get_engine().retrieve(text, k=config.RAG_TOP_K)
+            refs = get_engine().retrieve(text, k=config.RAG_TOP_K, library=RagLibrary.KNOWLEDGE)
             conn.log("rag_retrieved", refs=[r.id for r in refs])
         except Exception as exc:  # noqa: BLE001 — RAG 任意失败都降级直答,不杀回合
             conn.log("degraded", level="WARN", reason="rag_failed", detail=str(exc)[:120])

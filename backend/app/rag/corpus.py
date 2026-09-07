@@ -1,9 +1,20 @@
 """语料对象与加载(docs/data-contract.md §2:jsonl → 四字段)。"""
 
 import json
+from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel
+
+
+class RagLibrary(str, Enum):
+    """RAG 两个库(混合知识库):科普知识库(answer 直答用)与案例库(collect/station 用)。
+
+    str 子类以 JSON/序列化友好;传参须用成员(RagLibrary.KNOWLEDGE),禁裸字符串。
+    """
+
+    KNOWLEDGE = "knowledge"
+    CASE = "case"
 
 
 class Ref(BaseModel):
