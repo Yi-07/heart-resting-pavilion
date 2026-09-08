@@ -3,15 +3,25 @@
 // 模型地址=候选序列(l2d/models.ts):本地 vendor 优先 → 上游 CDN 回退;
 // 任何一步失败(核心脚本/模型全候选/渲染)→ 返回 null,App 落回 SVG 手绘兜底;
 // pixi 走动态 import 懒加载,不进首屏包。真口型(音频幅值驱动)步骤8 接。
+//
+// 切换策略:PIXI Application/renderer 模块级单例跨切换复用,destroy 只换模型——
+// renderer.destroy 会使 canvas 的 WebGL context 失效,同 canvas 重建会在 shader
+// 编译处抛 checkMaxIfStatementsInShader(0) 并永久回落 SVG 兜底(实测)。
 
+import type { Application } from 'pixi.js'
 import { logger } from '../logger'
 import type { AvatarExpr } from './placeholder'
 
-export interface Live2DController {
-  setExpression(expr: AvatarExpr): void
-  setSpeaking(active: boolean): void
+/** 当前活着的模型(stage 内唯一子节点)与共享 Application/画布 */
+interface LiveModel {
   destroy(): void
+  expression(index: number): void
+  motion(group: string): Promise<boolean>
 }
+
+let sharedApp: Application | null = null
+let sharedCanvas: HTMLCanvasElement | null = null
+let currentModel: LiveModel | null = null
 
 /** 表情→模型表情序号(mockup L2D_EXPR 同表;未知落 0 中性;非 haru 模型表情数不同,越界自动落 0) */
 const EXPR_INDEX: Record<AvatarExpr, number> = {
@@ -51,13 +61,31 @@ export async function createLive2D(
     // window.Live2D(Cubism 2 runtime),缺即抛——model3.json 均为 Cubism 4
     const { Live2DModel } = await import('pixi-live2d-display/cubism4')
 
-    const app = new PIXI.Application({
-      view: canvas,
-      backgroundAlpha: 0,
-      autoStart: true,
-      resizeTo: stage,
-      antialias: true,
-    })
+    // Application 复用:同一 canvas 只建一次;重复建会拿到已死的 WebGL context
+    if (sharedApp === null || sharedCanvas !== canvas) {
+      currentModel = null
+      if (sharedApp !== null) {
+        try {
+          sharedApp.destroy(false)
+        } catch (err) {
+          logger.warn('l2d', `旧 renderer 释放失败(忽略): ${String(err)}`)
+        }
+      }
+      sharedApp = new PIXI.Application({
+        view: canvas,
+        backgroundAlpha: 0,
+        autoStart: true,
+        resizeTo: stage,
+        antialias: true,
+      })
+      sharedCanvas = canvas
+    } else {
+      // 换模型:清旧模型与舞台(canvas/GL 不动)
+      currentModel?.destroy()
+      currentModel = null
+      sharedApp.stage.removeChildren()
+    }
+
     let model: Awaited<ReturnType<typeof Live2DModel.from>> | null = null
     let lastErr: unknown = null
     for (const url of modelUrls) {
@@ -70,7 +98,8 @@ export async function createLive2D(
       }
     }
     if (model === null) throw new Error(`模型载入失败(候选 ${modelUrls.length} 个): ${String(lastErr)}`)
-    app.stage.addChild(model)
+    sharedApp.stage.addChild(model)
+    currentModel = model
 
     let bw = 600
     let bh = 700
@@ -106,11 +135,35 @@ export async function createLive2D(
         if (active) void model.motion('TapBody').catch(() => {})
       },
       destroy(): void {
-        app.destroy(true)
+        // 模型级清理(canvas/GL 留给下一次切换复用);全量释放走 disposeLive2D
+        currentModel?.destroy()
+        currentModel = null
+        sharedApp?.stage.removeChildren()
       },
     }
   } catch (err) {
     logger.warn('l2d', `Live2D 加载失败,回退 SVG 立绘: ${String(err)}`)
     return null
   }
+}
+
+/** 全量释放(App 卸载时;与 destroy 的「只换模型」语义区分) */
+export function disposeLive2D(): void {
+  currentModel?.destroy()
+  currentModel = null
+  if (sharedApp !== null) {
+    try {
+      sharedApp.destroy(false)
+    } catch (err) {
+      logger.warn('l2d', `renderer 释放失败(忽略): ${String(err)}`)
+    }
+  }
+  sharedApp = null
+  sharedCanvas = null
+}
+
+export interface Live2DController {
+  setExpression(expr: AvatarExpr): void
+  setSpeaking(active: boolean): void
+  destroy(): void
 }

@@ -546,6 +546,7 @@ const confirmEnabled = computed(() => confirmMatches(settings.confirmInput))
 .confirm .ok {
   width: auto;
   margin: 0;
+  padding: 10px 18px;
 }
 @keyframes orbit {
   to {

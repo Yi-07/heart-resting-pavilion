@@ -12,7 +12,7 @@ import { chat } from './chat/messages'
 import { AudioQueue } from './audio/queue'
 import { MoodSelector } from './mood/selector'
 import { avatarSvg, expressionFor } from './l2d/placeholder'
-import { createLive2D, type Live2DController } from './l2d/live2d'
+import { createLive2D, disposeLive2D, type Live2DController } from './l2d/live2d'
 import {
   loadCatalog,
   loadSelection,
@@ -219,7 +219,7 @@ watch(
 )
 
 onUnmounted(() => {
-  l2d?.destroy()
+  disposeLive2D()
   l2d = null
 })
 
