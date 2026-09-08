@@ -56,15 +56,27 @@ const rendered = computed(() =>
   z-index: 54;
   width: min(368px, 92vw);
   max-height: calc(100vh - 170px);
-  border-radius: 18px;
-  padding: 14px 14px 12px;
+  border-radius: 22px;
+  padding: 16px 16px 14px;
   display: flex;
   flex-direction: column;
+  /* 材质对齐 ui-taste 定稿:重玻璃面板(与 SettingsPanel 同构) */
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 30px 80px -36px rgba(62, 58, 53, 0.45);
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
-  transform: translateY(-8px);
-  transition: all 0.3s var(--ease);
+  transform: scale(0.97) translateY(-6px);
+  transform-origin: 85% 0;
+  transition:
+    opacity 0.2s var(--ease),
+    transform 0.2s var(--ease),
+    visibility 0.2s;
 }
 .station.open {
   opacity: 1;
@@ -176,21 +188,34 @@ const rendered = computed(() =>
   flex: none;
 }
 .st-actions button {
+  position: relative;
   border: 0;
   font-size: 11.5px;
-  padding: 7px 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 9px 18px;
   border-radius: 999px;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.7);
+  /* 主钮=tinted 绿玻璃(ui-taste 定稿);次钮=白玻璃 */
+  background: rgba(255, 255, 255, 0.65);
   color: var(--ink);
-  transition: all 0.22s;
-  font-family: var(--sans);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+  transition:
+    transform 0.1s ease-out,
+    background 0.2s;
 }
 .st-actions button:first-child {
-  background: var(--primary);
-  color: #fff;
+  background: linear-gradient(180deg, rgba(163, 177, 138, 0.3), rgba(110, 147, 124, 0.16));
+  color: #3d5a49;
+  box-shadow:
+    inset 0 0 0 1px rgba(163, 177, 138, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 6px 16px -10px rgba(94, 127, 106, 0.5);
 }
 .st-actions button:hover {
   transform: translateY(-1px);
+}
+.st-actions button:active {
+  transform: scale(0.96);
 }
 </style>

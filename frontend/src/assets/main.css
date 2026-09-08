@@ -1,5 +1,10 @@
-/* 心栖阁设计变量(单源=preview/l1-ui-mockup-v7.html :root)+ 全局黑板绘制样式。
-   运行时由 renderer 创建的 SVG 元素吃不到 scoped CSS,粉笔动画类必须放全局。 */
+/* 心栖阁设计变量(单源=preview/l1-ui-mockup-v7.html :root,UI 范式冲突处取 prototypes/ui-taste 定稿)
+   + 全局黑板绘制样式。运行时由 renderer 创建的 SVG 元素吃不到 scoped CSS,粉笔动画类必须放全局。 */
+@property --ang {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
 :root {
   --bg: #faf6ef;
   --ink: #3e3a35;

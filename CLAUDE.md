@@ -15,7 +15,7 @@
 | 前后端契约 | `architecture/ws-contract.md` | **只读**,消息格式以此为准 |
 | 前端方案 | `architecture/frontend-plan.md` | 前端按此实现 |
 | 后端方案 | `architecture/backend-plan.md` | 后端按此实现 |
-| 前端 UI/布局参考 | `architecture/preview/l1-ui-mockup-v7.html` | 默认实现;接口固定、视觉可替换 |
+| 前端 UI/布局参考 | `architecture/preview/l1-ui-mockup-v7.html`(布局)+ `l1-ui-taste.html`(组件范式,冲突停下问人,见 frontend-plan) | 默认实现;接口固定、视觉可替换 |
 | 决策历史/二期总表 | `architecture/ARCHITECTURE_PROGRESS.md` | 会话恢复锚点;"为什么"查此 |
 | 术语表 | `architecture/CONTEXT.md` | 写新文档/命名/拿不准术语/清扫避用词,以此为准 |
 | 决策记录(向前) | `docs/adr/NNN-标题.md` | 架构级决策定案时新建一篇;存量查 PROGRESS §五(只读) |

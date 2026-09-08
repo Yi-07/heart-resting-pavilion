@@ -62,17 +62,16 @@
 
 ## 5. 现状
 
-- **步骤1-9 全落**:契约/网关/三路路由/RAG/采集/记忆三层/Live2D/语音/工具(station+admin)。测试后端 110(station 15 含 CORS 预检/防重/陈旧重收/planner 降级+非医疗声明硬保证/admin 12 含明文不落库+AES roundtrip)+前端 63(含 l2d models 单源/回退/轮换)。
-- **排后·全量语料接入 已完成**:翻译层(`dataset/all_base.md`→`data/rag_corpus.jsonl` 14944 条)+bge-m3 换模型+reranker 本地化+分批 upsert;生产 `.rag_store` count=14944。方案=`docs/prds/rag-full-corpus-bge-m3.md`。测试:bge-m3 下 test_retrieve 7/7、半量合并命中率 98.5%、ruff/mypy 全过;test_memory 需 Redis。
-- **步骤9 相关**:
-  - 后端 station(planner/reports/routes)+admin(config_store/routes)为深模块;schema/station.py 对齐 ws-contract §1;main 挂路由+CORS+启动 lifespan 读 config。
-  - 前端 `src/station/`(station.ts 控制器+REST/markdown.ts 迷你渲染器/StationPanel.vue 面板,操作钮钉面板底)+邀请语「心灵补给站」分段可点(ChatPanel)+工具栏入口;WSClient 增 `sessionId` getter。
-- **v7 mockup 仍有值行段**:工具面板 tool-panel L57-69/L328(心灵练习/留言墙/补给站——补给站已做,心灵练习/留言墙二期);模型配置 cfg L234-242/L348(步骤9 admin/config 已接,**前端设置入口未点亮=生产级 MVP 待办**(非二期),见 kanban §2 制程 A)。
+- **步骤1-9 全落**:契约/网关/三路路由/RAG/采集/记忆三层/Live2D/语音/工具(station+admin)。测试后端 110(station 15 含 CORS 预检/防重/陈旧重收/planner 降级+非医疗声明硬保证/admin 12 含明文不落库+AES roundtrip)+前端 69(含 l2d models 单源/回退/轮换、admin settings 控制器钉测试)。
+- **制程 A#2 已落**:GET /admin/config 读口(契约 §1,api_key 只给布尔绝不回显)+ 前端设置面板(模型配置预填/分段药丸选 provider/保存 + 情绪趋势/一键清除两步确认,确认短语=`清除记忆`);test_admin 9 + E2E 判据全过。
+- **UI 范式定稿并正式化**:组件范式=`architecture/preview/l1-ui-taste.html`(数值单源),已落 `src/`——App 状态 chip(图标+英文+灯点三部分同步切换/crisis 暖色)/heart-handshake 裸 logo/工具按钮 hover 流光/输入条 goo 液芽分体发送钮(聚焦弹出/失焦收回)/SettingsPanel·StationPanel 薄玻璃材质。规格与**冲突裁定护栏(两参考并存未写明取舍→停下问人)**见 frontend-plan「UI 范式」;main.css 新增 `@property --ang`。chip 无 answer 态=answer 无 first_frame 帧,与旧 route-tabs 同局限。
+- **ADR 001 memory-tiering 已接受未落地**:记忆分层(近期原始轮次短 TTL/长期摘要,隐私线精修)设计定案,落地为独立步骤(涟漪=spec §4 L7/§9.4、state.py、memory/store.py、gateway.py 重连重建 turns)。
+- **prototypes/ = 临时区**(README 声明,gitignore 不入库):原型迭代/调研笔记/验证截图,后期统一清理;勿在交付文档加指针。
 - **排后·全量语料 已完成**:队友 `dataset/`(仓库根,gitignore 不入库)经翻译层→`data/rag_corpus.jsonl` 14944 条,bge-m3 已灌生产 `.rag_store`(count=14944);方案= `docs/prds/rag-full-corpus-bge-m3.md`。
 
 ## 6. 遗留小事(不阻塞,按排程)→ 已归并看板 kanban §2 制程
 
-- **已并 kanban §2 制程 A**:RAG 冷启动预热(A#4,做前打招呼)· 模型下载脚本入库(A#3)· `npm run l2d:fetch` 命令可见性(A#5)· 前端设置入口/模型配置 UI(A#2,生产级 MVP 待办,非二期)。
+- **已并 kanban §2 制程 A**:RAG 冷启动预热(A#4,做前打招呼)· 模型下载脚本入库(A#3)· `npm run l2d:fetch` 命令可见性(A#5)· ~~前端设置入口/模型配置 UI(A#2)~~ 已完成(见 §5)。
 - **总结 TTS vs 60s 回合超时上限预算冲突**(步骤8/9 遗留):`error(timeout)` 在 `round_archived`(station:input 落库)之后出现,station 链不受影响——建议二期把总结 TTS 移出回合上限。演示/验收前先预热 sidecar 规避。
 - 口型=播放态点头,音频幅值真口型二期;audio_chunk=整段一帧,流式分块二期。
 - Live2D 真口型 model.speak 与 AudioQueue 双通道播放冲突,接前先设计单一播放源。

@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<!--
+  组件范式定稿(与 l1-ui-mockup-v7.html 并列;冲突裁定见 frontend-plan.md「UI 范式」)。
+  内容:状态 chip(图标+英文链路+灯点)/薄玻璃材质分层/边缘流光/输入条「液芽分体」发送钮/分段药丸/高危确认居中。
+  已正式化进 frontend/src(App.vue / SettingsPanel.vue / StationPanel.vue / main.css);
+  本文件保留为组件级视觉与动效的数值单源(尺寸/时长/goo 参数以本文件为准)。
+  运行:双击打开(需网络载入字体;图标已内联)。?variant=A|B|C 切换布局变体,A=定稿形态。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>心栖阁 · UI 品味原型</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root {
+    --primary: #6e937c;
+    --primary-deep: #5e7f6a;
+    --accent: #d58a63;
+    --ink: #3e3a35;
+    --muted: #8b8f88;
+    --paper: #f2efe6;
+    --serif: 'Noto Serif SC', 'Songti SC', serif;
+    --sans: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --ease: cubic-bezier(.32,.72,.24,1);
+  }
+  @property --ang { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font: 14px/1.6 var(--sans);
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 600px at 20% 0%, #f7f4ea 0%, transparent 60%),
+      radial-gradient(900px 500px at 90% 100%, #e8e4d4 0%, transparent 55%),
+      var(--paper);
+    overflow: hidden;
+  }
+
+  /* ── 布景:工具栏 + 假黑板(让玻璃材质有东西可透) ── */
+  .stage { height: 100%; display: flex; flex-direction: column; padding: 16px; gap: 12px; max-width: 1340px; margin: 0 auto; }
+  .toolbar {
+    display: flex; align-items: center; gap: 10px; padding: 10px 18px; flex: none;
+    border-radius: 999px;
+    background: linear-gradient(160deg, rgba(255,255,255,.66), rgba(255,255,255,.42));
+    backdrop-filter: blur(20px) saturate(170%);
+    box-shadow: 0 12px 36px -18px rgba(47,58,49,.35), inset 0 1px 0 rgba(255,255,255,.75), inset 0 -1px 0 rgba(110,147,124,.1);
+    position: relative; z-index: 60; /* 悬浮 chrome 永远浮于面板层之上(B dock 不遮按钮) */
+  }
+  .logo { font-family: var(--serif); font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 9px; }
+  .logo .mark-ic { width: 17px; height: 17px; color: var(--primary-deep); }
+  .board-wrap { flex: 1; position: relative; min-height: 0; border-radius: 18px;
+    border: 6px solid #8a6d4b; box-shadow: 0 24px 60px -30px rgba(62,58,53,.55);
+    background: linear-gradient(150deg, #3d4a41, #35423a 55%, #2f3b34);
+    overflow: hidden;
+  }
+  .board-wrap::before { content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(500px 300px at 30% 40%, rgba(255,255,255,.06), transparent 70%),
+      radial-gradient(400px 260px at 72% 60%, rgba(163,177,138,.08), transparent 70%);
+  }
+  .chalk { position: absolute; font-family: var(--serif); color: rgba(240,244,238,.85); }
+  .chalk.t { top: 8%; left: 6%; font-size: 22px; letter-spacing: .12em; }
+  .chalk.l1 { top: 26%; left: 6%; font-size: 13px; opacity: .7; }
+  .chalk.l2 { top: 36%; left: 6%; font-size: 13px; opacity: .55; }
+  .chalk.circ { top: 22%; right: 12%; width: 130px; height: 130px; border: 2px solid rgba(224,232,222,.5); border-radius: 50%; transform: rotate(-6deg); }
+  .chalk.circ::after { content: '情绪'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: rgba(240,244,238,.8); }
+
+  /* ── ③ 状态 chip(图标 + 英文链路 + 状态灯;源自 prototype/ui-prototype-settings.html 定稿款) ── */
+  .chip {
+    position: relative;
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 7px 15px; border-radius: 999px; border: 1px solid rgba(255,255,255,.95); cursor: pointer;
+    background: rgba(255,255,255,.6);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+    transition: border-color .2s ease, background .25s cubic-bezier(.22, 1, .36, 1), transform .1s ease-out;
+  }
+  /* 边缘流光:与工具栏按钮同款,hover 才显示(彗星长坡渐隐=border-beam 技法;crisis 转暖) */
+  .chip::before {
+    content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1.2px;
+    background: conic-gradient(from var(--ang), transparent 0deg, transparent 108deg, rgba(163,177,138,.7) 187deg, rgba(255,255,255,.85) 240deg, transparent 342deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+    clip-path: inset(0 round 999px);
+    opacity: 0; transition: opacity .3s; pointer-events: none;
+  }
+  .chip:hover::before { opacity: 1; animation: orbit 1.6s linear infinite; }
+  .chip.crisis::before {
+    background: conic-gradient(from var(--ang), transparent 0deg, transparent 108deg, rgba(224,163,124,.7) 187deg, rgba(255,236,220,.85) 240deg, transparent 342deg);
+  }
+  .chip:active { transform: scale(.96); }
+  .chip:hover { border-color: rgba(110,147,124,.45); }
+  .chip .ci { display: flex; color: var(--primary-deep); transition: opacity .15s ease, transform .15s ease; }
+  .chip .ci svg { width: 15px; height: 15px; }
+  .chip .cl { font-size: 13px; font-weight: 600; letter-spacing: .01em; color: #4c5a50; min-width: 52px; text-align: left; transition: opacity .15s ease, transform .15s ease; }
+  /* 轮转过渡(rareui 手法):出=上移淡出 0.15s,进=下移弹入 0.28s;图标/文字错峰 */
+  .chip .ci.out, .chip .cl.out { opacity: 0; transform: translateY(-7px); }
+  .chip .ci.in, .chip .cl.in { animation: chipin .28s cubic-bezier(.22, 1, .36, 1) both; }
+  @keyframes chipin { from { opacity: 0; transform: translateY(8px); } }
+  .chip .state { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); animation: pulse 1.6s infinite; }
+  .chip.crisis { border-color: rgba(213,138,99,.45); background: linear-gradient(135deg, #f2e0d0, #f7e9db); }
+  .chip.crisis .ci { color: #b0643f; }
+  .chip.crisis .cl { color: #8a4a2c; }
+  .chip.crisis .state { background: var(--accent); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .chip-pop {
+    position: absolute; top: 56px; left: 200px; z-index: 40; width: 240px;
+    padding: 10px; border-radius: 16px;
+    background: linear-gradient(160deg, rgba(255,255,255,.8), rgba(255,255,255,.6));
+    backdrop-filter: blur(22px) saturate(170%);
+    box-shadow: 0 20px 48px -20px rgba(47,58,49,.4), inset 0 1px 0 rgba(255,255,255,.8);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .chip-pop .row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 6px 9px; border-radius: 10px; background: rgba(255,255,255,.55); }
+  .chip-pop .row b { min-width: 52px; color: var(--primary-deep); }
+  .chip-pop .row.dim { opacity: .45; }
+
+  /* ── 工具栏按钮:Liquid Glass + 边缘流光 + pointerdown 即按压 ── */
+  .tbtn {
+    position: relative; display: flex; align-items: center; gap: 6px;
+    padding: 8px 15px; border-radius: 999px; border: 0; cursor: pointer;
+    font: 500 12.5px/1 var(--sans); color: #56645b; letter-spacing: .01em;
+    background: linear-gradient(160deg, rgba(255,255,255,.72), rgba(255,255,255,.4));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.85), inset 0 -1px 0 rgba(110,147,124,.14), 0 2px 8px -4px rgba(47,58,49,.3);
+    transition: transform .1s ease-out, box-shadow .25s;
+  }
+  .tbtn:active { transform: scale(.96); }
+  .tbtn:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 6px 16px -8px rgba(47,58,49,.45); }
+  /* 边缘流光:彗星长坡渐隐(border-beam 技法)+ 浅色 UI 调光,hover 才出现 */
+  .tbtn.glow::before {
+    content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1.2px;
+    background: conic-gradient(from var(--ang), transparent 0deg, transparent 108deg, rgba(163,177,138,.7) 187deg, rgba(255,255,255,.85) 240deg, transparent 342deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+    clip-path: inset(0 round 999px);
+    opacity: 0; transition: opacity .3s; pointer-events: none;
+  }
+  .tbtn.glow:hover::before { opacity: 1; animation: orbit 1.6s linear infinite; }
+  @keyframes orbit { to { --ang: 360deg; } }
+  .tbtn svg, .chip svg { width: 14px; height: 14px; }
+
+  /* ── ① 分段药丸(iOS segmented) ── */
+  .seg { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px;
+    background: rgba(110,147,124,.12); box-shadow: inset 0 1px 3px rgba(47,58,49,.08); }
+  .seg .thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px;
+    background: linear-gradient(160deg, rgba(255,255,255,.95), rgba(255,255,255,.78));
+    box-shadow: 0 2px 8px -2px rgba(47,58,49,.3), inset 0 1px 0 rgba(255,255,255,.9);
+    transition: transform .3s var(--ease); will-change: transform; }
+  .seg.right .thumb { transform: translateX(100%); }
+  .seg button { position: relative; z-index: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 999px;
+    font: 600 12px/1 var(--sans); color: var(--muted); cursor: pointer; letter-spacing: .02em;
+    transition: color .25s; }
+  .seg button.on { color: var(--primary-deep); }
+
+  /* ── 面板通用:Liquid Glass 材质 ── */
+  .panel {
+    position: fixed; z-index: 50; border-radius: 22px; padding: 18px;
+    background: linear-gradient(160deg, rgba(255,255,255,.7), rgba(255,255,255,.46));
+    backdrop-filter: blur(24px) saturate(175%);
+    box-shadow: 0 30px 70px -28px rgba(47,58,49,.5), inset 0 1px 0 rgba(255,255,255,.8), inset 0 -1px 0 rgba(110,147,124,.12);
+    will-change: transform, opacity;
+  }
+  .panel::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(115deg, rgba(255,255,255,.5) 0%, transparent 28%); opacity: .5; }
+  .p-h { display: flex; align-items: center; gap: 8px; font: 700 13.5px/1 var(--serif); letter-spacing: .01em; margin-bottom: 14px; }
+  .p-h .dotmark { width: 7px; height: 7px; border-radius: 50%; background: #a3b18a; box-shadow: 0 0 6px rgba(163,177,138,.7); }
+  .p-x { margin-left: auto; border: 0; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.7);
+    cursor: pointer; color: var(--muted); font-size: 12px; display: flex; align-items: center; justify-content: center;
+    transition: transform .15s ease-out, background .2s; }
+  .p-x:active { transform: scale(.9); }
+  .p-x:hover { background: var(--primary); color: #fff; }
+
+  /* ⑤ 排版:分组 + 呼吸 */
+  .group { padding: 13px 14px; border-radius: 14px; background: rgba(255,255,255,.55);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
+  .group + .group { margin-top: 14px; }
+  .g-t { font: 700 10.5px/1 var(--sans); letter-spacing: .09em; color: var(--primary-deep); text-transform: uppercase; margin-bottom: 11px; }
+  .frow { display: flex; flex-direction: column; gap: 5px; }
+  .frow + .frow { margin-top: 11px; }
+  .frow label { font: 600 11px/1.4 var(--sans); color: #6b7568; letter-spacing: .03em; }
+  .frow input { border: 1px solid rgba(110,147,124,.22); border-radius: 10px; padding: 8px 11px; font: 12.5px var(--sans);
+    color: var(--ink); background: rgba(255,255,255,.85); outline: none; transition: border-color .2s, box-shadow .2s; }
+  .frow input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(110,147,124,.14); }
+  .hint { font: 400 10.5px/1.6 ui-monospace, monospace; color: #79836f; margin-top: 5px; }
+
+  .act { display: flex; gap: 9px; margin-top: 13px; }
+  .btn-main { position: relative; flex: 1; border: 0; padding: 10px 0; border-radius: 999px; cursor: pointer;
+    font: 600 12.5px/1 var(--sans); letter-spacing: .04em; color: #3d5a49;
+    background: linear-gradient(180deg, rgba(163,177,138,.3), rgba(110,147,124,.16));
+    backdrop-filter: blur(10px) saturate(1.4);
+    box-shadow: inset 0 0 0 1px rgba(163,177,138,.55), inset 0 1px 0 rgba(255,255,255,.7), 0 6px 16px -10px rgba(94,127,106,.5);
+    transition: transform .1s ease-out, background .2s; }
+  .btn-main:hover { background: linear-gradient(180deg, rgba(163,177,138,.42), rgba(110,147,124,.26)); }
+  .btn-main:active { transform: scale(.97); filter: brightness(1.05); }
+  .btn-ghost { border: 0; padding: 10px 16px; border-radius: 999px; cursor: pointer; font: 500 12px/1 var(--sans);
+    background: rgba(255,255,255,.65); color: #56645b; box-shadow: inset 0 1px 0 rgba(255,255,255,.8);
+    transition: transform .1s ease-out; }
+  .btn-ghost:active { transform: scale(.96); }
+
+  /* ASR/TTS 只读卡 */
+  .voice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .voice .v { padding: 9px 11px; border-radius: 11px; background: rgba(227,237,226,.55); font-size: 10.5px; color: #6b7568; line-height: 1.55; }
+  .voice .v b { display: block; font-size: 11px; color: var(--primary-deep); margin-bottom: 2px; }
+
+  /* 趋势行 */
+  .trow { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 5px 9px; border-radius: 9px; background: rgba(255,255,255,.6); }
+  .trow + .trow { margin-top: 5px; }
+  .trow .d { color: var(--muted); font: 10px ui-monospace, monospace; }
+  .trow .m { font-weight: 700; color: var(--primary-deep); }
+  .trow .s { margin-left: auto; font-size: 10px; color: var(--muted); }
+
+  /* 危险钮(模块感:暖色实体 + 流光) */
+  .btn-danger { position: relative; width: 100%; border: 0; margin-top: 12px; padding: 10px 0; border-radius: 999px; cursor: pointer;
+    font: 600 12px/1 var(--sans); letter-spacing: .04em; color: #8a4a2c;
+    background: linear-gradient(180deg, rgba(230,190,160,.38), rgba(213,138,99,.2));
+    backdrop-filter: blur(10px) saturate(1.4);
+    box-shadow: inset 0 0 0 1px rgba(213,138,99,.4), inset 0 1px 0 rgba(255,255,255,.6), 0 6px 16px -10px rgba(201,122,82,.45);
+    transition: transform .1s ease-out, background .2s; }
+  .btn-danger:hover { background: linear-gradient(180deg, rgba(230,190,160,.5), rgba(213,138,99,.3)); }
+  .btn-danger:active { transform: scale(.97); }
+  .btn-danger::before { content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1.2px;
+    background: conic-gradient(from var(--ang), transparent 0deg, transparent 270deg, rgba(255,220,190,.95) 330deg, transparent 360deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
+    animation: orbit 2s linear infinite; pointer-events: none; }
+
+  /* 面板内确认层(dim to focus) */
+  .confirm { position: absolute; inset: 0; z-index: 5; border-radius: inherit; padding: 20px;
+    background: rgba(250,247,240,.92); backdrop-filter: blur(8px);
+    display: flex; flex-direction: column; justify-content: center; gap: 9px;
+    text-align: center;
+    opacity: 0; pointer-events: none; transition: opacity .3s; }
+  .confirm.on { opacity: 1; pointer-events: auto; }
+  .confirm h4 { font: 700 14px/1.4 var(--serif); }
+  .confirm p { font-size: 11.5px; color: #7a6a58; line-height: 1.7; }
+  .confirm .code { font-family: ui-monospace, monospace; color: #a2563b; background: rgba(213,138,99,.12); padding: 1px 6px; border-radius: 6px; }
+  .confirm input { border: 1px solid rgba(213,138,99,.4); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; outline: none; }
+  .confirm input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(213,138,99,.15); }
+  .confirm .row { display: flex; gap: 24px; justify-content: center; margin-top: 12px; }
+  .confirm .ok:disabled { opacity: .4; cursor: not-allowed; }
+  .confirm .ok { color: #8a4a2c; background: linear-gradient(180deg, rgba(230,190,160,.38), rgba(213,138,99,.2)); }
+
+  /* ── Variant A:右上锚定浮层 ── */
+  #vA { top: 74px; right: 26px; width: 340px; transform-origin: top right; }
+
+  /* ── Variant B:右侧 dock 栏(左标签右控件) ── */
+  #vB { top: 0; right: 0; bottom: 0; width: 372px; border-radius: 0; padding: 24px 22px; overflow-y: auto; }
+  #vB .frow-b { display: grid; grid-template-columns: 82px 1fr; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(110,147,124,.12); }
+  #vB .frow-b:last-of-type { border-bottom: 0; }
+  #vB .frow-b label { font: 600 11.5px/1.4 var(--sans); color: #6b7568; }
+  #vB input { border: 1px solid rgba(110,147,124,.22); border-radius: 10px; padding: 8px 11px; font: 12.5px var(--sans);
+    color: var(--ink); background: rgba(255,255,255,.85); outline: none; width: 100%; }
+  #vB .groups { display: flex; flex-direction: column; gap: 18px; }
+
+  /* ── Variant C:底部 sheet ── */
+  #vC { left: 50%; bottom: 84px; width: min(760px, 92vw); transform-origin: bottom center; padding: 20px 24px 22px; }
+  #vC .grab { width: 42px; height: 5px; border-radius: 3px; background: rgba(110,147,124,.35); margin: 0 auto 14px; }
+  #vC .cols { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
+  #vC .coltitle { font: 700 11px/1 var(--sans); letter-spacing: .08em; color: var(--primary-deep); margin-bottom: 10px; }
+
+  /* ── 原型切换底栏(非设计的一部分) ── */
+  .switcher { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 99;
+    display: flex; align-items: center; gap: 4px; padding: 7px 10px; border-radius: 999px;
+    background: #232823; color: #eef1ec; font: 600 12px/1 ui-monospace, monospace;
+    box-shadow: 0 12px 32px -10px rgba(0,0,0,.5); }
+  .switcher button { border: 0; background: rgba(255,255,255,.12); color: #eef1ec; width: 30px; height: 30px;
+    border-radius: 50%; cursor: pointer; font-size: 14px; transition: background .2s; }
+  .switcher button:hover { background: rgba(255,255,255,.25); }
+  .switcher .label { padding: 0 10px; letter-spacing: .03em; }
+  .vdesc { position: fixed; bottom: 62px; left: 50%; transform: translateX(-50%); z-index: 99;
+    font: 500 11px/1.5 var(--sans); color: #5d675e; background: rgba(255,255,255,.75); backdrop-filter: blur(10px);
+    padding: 6px 14px; border-radius: 999px; box-shadow: 0 8px 24px -12px rgba(47,58,49,.4); }
+
+  /* ── 输入条:尺寸贴合 v7(720px/gap12/padding10·18)+ 发送钮「液滴挤出」出生 ── */
+  .inputbar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px; width: min(720px, 90%); padding: 10px 12px 10px 18px;
+    border-radius: 999px; z-index: 20;
+    background: linear-gradient(160deg, rgba(255,255,255,.66), rgba(255,255,255,.44));
+    backdrop-filter: blur(20px) saturate(170%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 14px 36px -16px rgba(47,58,49,.45);
+    transition: box-shadow .25s, transform .34s var(--ease); }
+  /* 聚焦:胶囊本体宽度不变,整体左移让位(分镜 6.47s);失焦复位 */
+  .inputbar:focus-within { transform: translateX(calc(-50% - 24px));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 0 0 3px rgba(163,177,138,.28), 0 14px 36px -16px rgba(47,58,49,.5); }
+  .inputbar .ib-mic { position: relative; z-index: 2; width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer; flex: none;
+    display: flex; align-items: center; justify-content: center; color: #56645b;
+    background: rgba(255,255,255,.55); box-shadow: inset 0 0 0 1px rgba(255,255,255,.8);
+    transition: transform .1s ease-out; }
+  .inputbar .ib-mic:active { transform: scale(.92); }
+  .inputbar .ib-mic svg { width: 15px; height: 15px; }
+  .inputbar input { position: relative; z-index: 2; flex: 1; border: 0; background: transparent; outline: none; font: 13px/1.5 var(--sans); color: #33413a; min-width: 0; }
+  .inputbar input::placeholder { color: rgba(62,58,53,.5); }
+  /* 发送圆钮(纸飞机):绝对定位于胶囊右端外侧;聚焦时从右缘「液芽分体」落位(分镜 6.37-6.60s) */
+  .ib-send { position: absolute; right: -56px; top: 50%; margin-top: -22px; z-index: 2; border: 0; cursor: pointer;
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; color: #3d5a49;
+    background: linear-gradient(180deg, rgba(163,177,138,.42), rgba(110,147,124,.22));
+    box-shadow: inset 0 0 0 1px rgba(163,177,138,.6), inset 0 1px 0 rgba(255,255,255,.75), 0 4px 12px -6px rgba(94,127,106,.5);
+    opacity: 0; transform: translateX(-32px) scale(.25); pointer-events: none;
+    transition: transform .34s var(--ease), opacity .18s ease, background .2s; }
+  .inputbar:focus-within .ib-send { opacity: 1; transform: none; pointer-events: auto; }
+  .ib-send:hover { background: linear-gradient(180deg, rgba(163,177,138,.54), rgba(110,147,124,.32)); }
+  .ib-send:active { transform: scale(.9); }
+  .ib-send svg { width: 16px; height: 16px; flex: none; }
+  .ib-send.pop { animation: sendpop .35s var(--ease); }
+  @keyframes sendpop { 40% { transform: scale(.82); } }
+  /* goo 剪影:白色液芽只在动画瞬间显形(静止=零重影);鼓出→缩颈→掐断→让位给绿玻璃钮 */
+  .ib-goo { position: absolute; right: 0; top: 0; bottom: 0; width: 150px; filter: url(#goo); pointer-events: none; z-index: 1; }
+  .ib-goo .g-bar { position: absolute; right: 0; top: 4px; bottom: 4px; width: 64px; border-radius: 999px;
+    background: rgba(255,255,255,.6); opacity: 0; }
+  .ib-goo .g-drop { position: absolute; top: 50%; margin-top: -22px; right: 26px; width: 44px; height: 44px;
+    border-radius: 50%; background: rgba(255,255,255,.92); opacity: 0; }
+  .inputbar:focus-within .g-bar { animation: goobar .5s var(--ease) both; }
+  .inputbar:focus-within .g-drop { animation: bud .5s var(--ease) both; }
+  @keyframes goobar { 0% { opacity: 0; } 12% { opacity: .6; } 50% { opacity: .6; } 68%, 100% { opacity: 0; } }
+  @keyframes bud {
+    0% { right: 26px; transform: scale(.3); opacity: 0; }
+    18% { opacity: 1; }
+    45% { transform: scale(.72); }                 /* 蜂腰缩颈(goo 拉丝) */
+    62% { right: -56px; transform: scale(1.05); }  /* 掐断分离+微过冲 */
+    78% { opacity: 1; }
+    100% { right: -56px; transform: scale(1); opacity: 0; }  /* 白滴让位,绿玻璃钮接位 */
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition-duration: .01ms !important; }
+  }
+</style>
+<svg width="0" height="0" style="position:absolute"><filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -8" result="g"/><feComposite in="SourceGraphic" in2="g" operator="atop"/></filter></svg>
+</head>
+<body>
+<div class="stage">
+  <!-- 工具栏:状态 chip 替代三 tab -->
+  <header class="toolbar">
+    <div class="logo"><svg class="mark-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 5 9.04 7.96a2.17 2.17 0 0 0 0 3.08c.82.82 2.13.85 3 .07l2.07-1.9a2.82 2.82 0 0 1 3.79 0l2.96 2.66"/><path d="M18 15l-2-2"/><path d="m15 18-2-2"/></svg>心栖阁<span style="font-size:10px;color:var(--muted);font-family:var(--sans);font-weight:400;margin-left:2px">UI 品味原型</span></div>
+    <button class="chip" id="chip" data-testid="route-chip" title="当前业务状态(自动轮转演示 · 点击看三路明细)">
+      <span class="ci" id="chipIc"></span><span class="cl" id="chipLb">idle</span><span class="state"></span>
+    </button>
+    <div class="chip-pop" id="chipPop" style="display:none">
+      <div class="row" id="popAnswer"><b>answer</b><span>直接答 · 知识科普</span></div>
+      <div class="row" id="popCollect"><b>collect</b><span>多轮采集 · 黑板共生</span></div>
+      <div class="row" id="popCrisis"><b>crisis</b><span>危机通道 · 热线 12356</span></div>
+    </div>
+    <span style="flex:1"></span>
+    <button class="tbtn glow" id="btnStation"><i data-lucide="sparkles"></i>补给站</button>
+    <button class="tbtn glow" id="btnSettings" data-testid="settings-entry"><i data-lucide="settings-2"></i>设置</button>
+    <button class="tbtn glow" id="btnMood"><i data-lucide="cloud-sun"></i>今日心情</button>
+  </header>
+
+  <!-- 假黑板:让玻璃材质有东西可透 -->
+  <div class="board-wrap">
+    <div class="chalk t">心里的那棵树</div>
+    <div class="chalk l1">· 情境:最近总在深夜醒来</div>
+    <div class="chalk l2">· 想法:「是不是我哪里做错了」</div>
+    <div class="chalk circ"></div>
+
+    <!-- 输入条:薄玻璃 + 发送液滴分离(goo 剪影层在下方,真实控件骑上) -->
+    <form class="inputbar" id="inputbar" onsubmit="return false">
+      <div class="ib-goo" id="ibGoo" aria-hidden="true"><div class="g-bar"></div><div class="g-drop"></div></div>
+      <button class="ib-mic" type="button" title="语音输入"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
+      <input placeholder="想说什么都可以,我在听…" data-testid="proto-input">
+      <button class="ib-send" type="submit" id="ibSend" data-testid="proto-send" title="发送"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+    </form>
+  </div>
+</div>
+
+<!-- ══ Variant A · 右上锚定浮层 ══ -->
+<aside class="panel" id="vA" data-variant="A">
+  <div class="p-h"><span class="dotmark"></span>设置<i data-lucide="settings-2" style="width:14px;height:14px;color:#a3b18a"></i><button class="p-x" data-close>✕</button></div>
+  <div class="group">
+    <div class="g-t">模型配置</div>
+    <div class="frow">
+      <label>LLM 服务</label>
+      <div class="seg" id="segProvider">
+        <div class="thumb"></div>
+        <button class="on" data-v="deepseek">DeepSeek</button>
+        <button data-v="ollama">Ollama</button>
+      </div>
+    </div>
+    <div class="frow"><label>模型</label><input value="deepseek-v4-flash"></div>
+    <div class="frow"><label>API 地址</label><input value="https://api.deepseek.com"></div>
+    <div class="frow"><label>API Key</label><input type="password" placeholder="已配置 · 留空即不改"><div class="hint">AES-GCM 加密落库 · 永不回显</div></div>
+    <div class="voice">
+      <div class="v"><b>ASR</b>SenseVoice 本地 · 转写即弃</div>
+      <div class="v"><b>TTS</b>CosyVoice2 · sidecar 隔离</div>
+    </div>
+  </div>
+  <div class="group">
+    <div class="g-t">记忆治理</div>
+    <div class="trow"><span class="d">09-05</span><span class="m">低落</span><span class="s">心情选择</span></div>
+    <div class="trow"><span class="d">09-04</span><span class="m">平静</span><span class="s">研判</span></div>
+    <button class="btn-danger" data-confirm-open>一键清除记忆</button>
+  </div>
+  <div class="act"><button class="btn-main">保存并生效</button></div>
+  <div class="confirm" id="confirmA">
+    <h4>确认清除全部记忆?</h4>
+    <p>将永久删除:当前会话记忆、对话摘要、心情趋势、已生成方案书。<b>不可恢复。</b></p>
+    <p>请输入 <span class="code">清除记忆</span> 确认</p>
+    <input placeholder="清除记忆" id="confirmInputA">
+    <div class="row">
+      <button class="btn-ghost" data-confirm-cancel>取消</button>
+      <button class="btn-danger ok" style="width:auto;margin:0;padding:10px 18px" id="confirmOkA" disabled>确认清除</button>
+    </div>
+  </div>
+</aside>
+
+<!-- ══ Variant B · 右侧 dock 栏 ══ -->
+<aside class="panel" id="vB" data-variant="B">
+  <div class="p-h"><span class="dotmark"></span>设置<button class="p-x" data-close>✕</button></div>
+  <div class="groups">
+    <section>
+      <div class="g-t">模型配置</div>
+      <div class="seg" id="segProviderB" style="margin-bottom:12px">
+        <div class="thumb"></div>
+        <button class="on" data-v="deepseek">DeepSeek</button>
+        <button data-v="ollama">Ollama</button>
+      </div>
+      <div class="frow-b"><label>模型</label><input value="deepseek-v4-flash"></div>
+      <div class="frow-b"><label>API 地址</label><input value="https://api.deepseek.com"></div>
+      <div class="frow-b"><label>API Key</label><input type="password" placeholder="已配置 · 留空即不改"></div>
+      <div class="frow-b"><label>加密</label><div class="hint" style="margin:0">AES-GCM · 永不回显</div></div>
+      <div class="act"><button class="btn-main">保存并生效</button></div>
+    </section>
+    <section>
+      <div class="g-t">语音</div>
+      <div class="voice" style="grid-template-columns:1fr;">
+        <div class="v"><b>ASR</b>SenseVoice 本地 · 转写即弃不落库</div>
+        <div class="v"><b>TTS</b>CosyVoice2 · sidecar 进程隔离</div>
+      </div>
+    </section>
+    <section>
+      <div class="g-t">记忆治理</div>
+      <div class="trow"><span class="d">09-05</span><span class="m">低落</span><span class="s">心情选择</span></div>
+      <div class="trow"><span class="d">09-04</span><span class="m">平静</span><span class="s">研判</span></div>
+      <button class="btn-danger" data-confirm-open>一键清除记忆</button>
+    </section>
+  </div>
+  <div class="confirm" id="confirmB">
+    <h4>确认清除全部记忆?</h4>
+    <p>将永久删除:当前会话记忆、对话摘要、心情趋势、已生成方案书。<b>不可恢复。</b></p>
+    <p>请输入 <span class="code">清除记忆</span> 确认</p>
+    <input placeholder="清除记忆" id="confirmInputB">
+    <div class="row">
+      <button class="btn-ghost" data-confirm-cancel>取消</button>
+      <button class="btn-danger ok" style="width:auto;margin:0;padding:10px 18px" id="confirmOkB" disabled>确认清除</button>
+    </div>
+  </div>
+</aside>
+
+<!-- ══ Variant C · 底部 sheet ══ -->
+<aside class="panel" id="vC" data-variant="C">
+  <div class="grab"></div>
+  <div class="p-h"><span class="dotmark"></span>设置<button class="p-x" data-close>✕</button></div>
+  <div class="cols">
+    <section>
+      <div class="coltitle">模型配置</div>
+      <div class="seg" id="segProviderC" style="margin-bottom:12px">
+        <div class="thumb"></div>
+        <button class="on" data-v="deepseek">DeepSeek</button>
+        <button data-v="ollama">Ollama</button>
+      </div>
+      <div class="frow"><label>模型</label><input value="deepseek-v4-flash"></div>
+      <div class="frow"><label>API 地址</label><input value="https://api.deepseek.com"></div>
+      <div class="frow"><label>API Key</label><input type="password" placeholder="已配置 · 留空即不改"></div>
+      <div class="act"><button class="btn-main">保存并生效</button></div>
+    </section>
+    <section>
+      <div class="coltitle">语音</div>
+      <div class="voice" style="grid-template-columns:1fr;margin-top:0">
+        <div class="v"><b>ASR</b>SenseVoice 本地 · 转写即弃</div>
+        <div class="v"><b>TTS</b>CosyVoice2 · sidecar 隔离</div>
+      </div>
+      <div class="coltitle" style="margin-top:16px">记忆治理</div>
+      <div class="trow"><span class="d">09-05</span><span class="m">低落</span><span class="s">心情选择</span></div>
+      <button class="btn-danger" data-confirm-open>一键清除记忆</button>
+    </section>
+  </div>
+  <div class="confirm" id="confirmC">
+    <h4>确认清除全部记忆?</h4>
+    <p>将永久删除:当前会话记忆、对话摘要、心情趋势、已生成方案书。<b>不可恢复。</b></p>
+    <p>请输入 <span class="code">清除记忆</span> 确认</p>
+    <input placeholder="清除记忆" id="confirmInputC">
+    <div class="row">
+      <button class="btn-ghost" data-confirm-cancel>取消</button>
+      <button class="btn-danger ok" style="width:auto;margin:0;padding:10px 18px" id="confirmOkC" disabled>确认清除</button>
+    </div>
+  </div>
+</aside>
+
+<!-- 原型切换底栏 -->
+<div class="vdesc" id="vdesc"></div>
+<div class="switcher" id="switcher">
+  <button id="prevV">←</button>
+  <span class="label" id="vlabel"></span>
+  <button id="nextV">→</button>
+</div>
+
+<script>
+/* ── 迷你 spring(critically damped 可中断):每帧从当前值出发,天然可逆 ── */
+function spring(el, apply, target, { damping = 1.0, response = 0.35 } = {}) {
+  if (el._springRaf) cancelAnimationFrame(el._springRaf);
+  let value = el._val ?? 0;
+  const omega = (2 * Math.PI) / response;
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
+    const x = value - target;
+    const accel = -omega * omega * x - 2 * damping * omega * (el._vel ?? 0);
+    el._vel = (el._vel ?? 0) + accel * dt;
+    value += el._vel * dt;
+    if (Math.abs(value - target) < 0.001 && Math.abs(el._vel) < 0.001) {
+      value = target; apply(value); el._val = value; el._springRaf = null; return;
+    }
+    apply(value);
+    el._springRaf = requestAnimationFrame(frame);
+  }
+  el._springRaf = requestAnimationFrame(frame);
+}
+
+/* ── 浮层互斥管理:一次只开一个;materialize = blur+scale+opacity 同动 ── */
+let openPanel = null;
+const PANELS = { A: document.getElementById('vA'), B: document.getElementById('vB'), C: document.getElementById('vC') };
+const CONFIRMS = ['confirmA', 'confirmB', 'confirmC'].map(id => document.getElementById(id));
+
+function panelTo(el, open) {
+  if (el._springRaf) cancelAnimationFrame(el._springRaf);
+  spring(el, (v) => {
+    el._val = v;
+    const s = (0.94 + 0.06 * v).toFixed(4);
+    const o = v.toFixed(3);
+    let tf;
+    if (el.dataset.variant === 'A') tf = `translate(0, ${((1 - v) * -10).toFixed(1)}px) scale(${s})`;
+    else if (el.dataset.variant === 'B') tf = `translate(${((1 - v) * 30).toFixed(1)}px, 0) scale(${s})`;
+    else tf = `translate(calc(-50% + ${((1 - v) * 60).toFixed(1)}px), ${((1 - v) * 60).toFixed(1)}px) scale(${s})`;
+    el.style.opacity = o;
+    el.style.transform = tf;
+    el.style.visibility = v > 0.01 ? 'visible' : 'hidden';
+    el.style.backdropFilter = `blur(${(24 * v).toFixed(1)}px) saturate(175%)`;
+  }, open ? 1 : 0, { damping: 1.0, response: 0.34 });
+}
+function openOne(key) {
+  if (openPanel === key) { panelTo(PANELS[key], false); openPanel = null; return; }
+  if (openPanel) panelTo(PANELS[openPanel], false);
+  openPanel = key;
+  panelTo(PANELS[key], true);
+}
+document.getElementById('btnSettings').addEventListener('click', () => openOne(variant));
+document.getElementById('btnStation').addEventListener('click', () => openOne(variant));
+document.getElementById('btnMood').addEventListener('click', () => openOne(variant));
+document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => { if (openPanel) { panelTo(PANELS[openPanel], false); openPanel = null; } }));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && openPanel) { panelTo(PANELS[openPanel], false); openPanel = null; } });
+
+/* 确认层:两步门(输入短语才解锁) */
+document.querySelectorAll('[data-confirm-open]').forEach((b) => b.addEventListener('click', () => {
+  const cf = b.closest('.panel').querySelector('.confirm'); cf.classList.add('on');
+  const inp = cf.querySelector('input'); inp.value = ''; cf.querySelector('.ok').disabled = true; inp.focus();
+}));
+document.querySelectorAll('[data-confirm-cancel]').forEach((b) => b.addEventListener('click', () => b.closest('.confirm').classList.remove('on')));
+CONFIRMS.forEach((cf) => {
+  const inp = cf.querySelector('input'), ok = cf.querySelector('.ok');
+  inp.addEventListener('input', () => { ok.disabled = inp.value !== '清除记忆'; });
+  ok.addEventListener('click', () => { cf.classList.remove('on'); alert('(原型)已模拟清除 — 正式实现调 POST /admin/clear_memory'); });
+});
+
+/* ── 分段药丸:滑块 spring 滑动 ── */
+document.querySelectorAll('.seg').forEach((seg) => {
+  seg.querySelectorAll('button').forEach((btn, i) => btn.addEventListener('click', () => {
+    seg.classList.toggle('right', i === 1);
+    seg.querySelectorAll('button').forEach((b2) => b2.classList.remove('on'));
+    btn.classList.add('on');
+  }));
+});
+
+/* ── 状态 chip:图标+英文链路+状态灯,自动轮转(图标=prototype 定稿款内联 SVG) ── */
+const SVG_IC = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const STATES = [
+  { id: 'idle', crisis: false, ic: SVG_IC('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>') },
+  { id: 'answer', crisis: false, ic: SVG_IC('<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>') },
+  { id: 'collect', crisis: false, ic: SVG_IC('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>') },
+  { id: 'crisis', crisis: true, ic: SVG_IC('<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>') },
+];
+let chipIdx = 0;
+const chip = document.getElementById('chip');
+const chipIc = document.getElementById('chipIc'), chipLb = document.getElementById('chipLb');
+function setChip(i) {
+  chipIdx = i;
+  const s = STATES[i];
+  /* 出:三部分同步上移淡出 → 同步换内容 → 同步弹入(整体切换,不各自错峰) */
+  chipIc.classList.add('out'); chipLb.classList.add('out');
+  setTimeout(() => {
+    chipIc.innerHTML = s.ic;
+    chipLb.textContent = s.id;
+    chip.classList.toggle('crisis', s.crisis);
+    chipIc.classList.remove('out'); chipLb.classList.remove('out');
+    chipIc.classList.add('in'); chipLb.classList.add('in');
+    setTimeout(() => { chipIc.classList.remove('in'); chipLb.classList.remove('in'); }, 300);
+  }, 150);
+}
+setInterval(() => setChip((chipIdx + 1) % STATES.length), 3200);
+chip.addEventListener('click', () => {
+  const pop = document.getElementById('chipPop');
+  pop.style.display = pop.style.display === 'none' ? 'flex' : 'none';
+});
+setChip(0);
+
+/* ── 发送钮:聚焦「液芽分体」出现(纯 CSS),失焦即收回;发送=清空+小弹跳 ── */
+const bar = document.getElementById('inputbar');
+const inp = bar.querySelector('input');
+const ibSend = document.getElementById('ibSend');
+bar.addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (ibSend.classList.contains('pop')) return;
+  inp.value = '';
+  ibSend.classList.add('pop');
+  ibSend.addEventListener('animationend', () => ibSend.classList.remove('pop'), { once: true });
+  inp.focus();
+});
+
+/* ── 原型切换器:?variant= + ←/→ 键 + 底栏(非设计的一部分) ── */
+const VAR_INFO = {
+  A: ['A · Glass 浮层', '右上锚定 materialize:开合同路径,浮层互斥,边缘流光 hover 才流转'],
+  B: ['B · 右侧 dock 栏', '常驻侧栏:表单左标签右控件,信息密度更高,适合多字段'],
+  C: ['C · 底部 sheet', '底部抽屉:两栏分区,画布最宽;grabber 为后续拖拽留位'],
+};
+let variant = new URLSearchParams(location.search).get('variant') || 'A';
+if (!VAR_INFO[variant]) variant = 'A';
+function applyVariant(v, push) {
+  variant = v;
+  Object.entries(PANELS).forEach(([k, el]) => {
+    if (el._springRaf) cancelAnimationFrame(el._springRaf);
+    el.style.visibility = 'hidden'; el._val = 0;
+  });
+  if (openPanel) { openPanel = null; }
+  document.getElementById('vlabel').textContent = VAR_INFO[v][0];
+  document.getElementById('vdesc').textContent = VAR_INFO[v][1];
+  if (push) history.replaceState(null, '', `?variant=${v}`);
+  const demo = () => openOne(v);
+  setTimeout(demo, 260);
+}
+document.getElementById('prevV').addEventListener('click', () => stepVariant(-1));
+document.getElementById('nextV').addEventListener('click', () => stepVariant(1));
+function stepVariant(d) {
+  const keys = Object.keys(VAR_INFO);
+  const i = (keys.indexOf(variant) + d + keys.length) % keys.length;
+  applyVariant(keys[i], true);
+}
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key === 'ArrowLeft') stepVariant(-1);
+  if (e.key === 'ArrowRight') stepVariant(1);
+});
+applyVariant(variant, false);
+window.lucide?.createIcons();
+</script>
+</body>
+</html>

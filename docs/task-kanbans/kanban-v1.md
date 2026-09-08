@@ -41,10 +41,14 @@
 #### A. 生产级验收前置(功能可用 + 可复现)
 
 - [x] 1. **answer 链路语义定位定论→混合知识库分流**:案例语料(case=来访者问题/治疗思路)与 seed(科普=知识问/科普答)语义类型不同。定论=answer 直答查「科普知识库」(当前 15 条种子垫底,内容后续 PRD 扩),collect/station 查「案例库」(14944 条)。engine 拆 `hrp_kb_knowledge`+`hrp_kb_case` 两 Chroma 集合,retrieve/ingest 加 `library` 参数(深模块);answer 链打通。test_gateway 15/15 + test_retrieve 8/8 + ruff/mypy 过;store 两库齐全(14944+15)。
-- [ ] 2. **前端模型配置 UI**:后端 admin/config 已接;前端设置入口(含模型配置)未点亮——MVP 明确项,补后端→前端打通才功能完整。
+- [x] 2. **前端设置面板(模型配置 + 记忆治理)**:GET /admin/config 读口(契约 §1 同步)+ 设置面板(预填/分段药丸/保存 + 趋势/一键清除两步确认)。附带完成 UI 范式定稿与正式化(状态 chip/液芽输入条/薄玻璃材质,范式=`preview/l1-ui-taste.html`,规格与冲突裁定见 frontend-plan)。test_admin 9 + 前端 69 用例全绿;E2E 设置面板判据+三路链路回归通过。
 - [ ] 3. **模型下载脚本入库**:新克隆需 curl 重建 bge-m3/reranker(`backend/models/` gitignore);下载脚本未入库(见 PRD Further Notes)。
 - [ ] 4. **RAG 启动 warm-up 预热**:bge-m3 冷启动重,超 answer 60s 预算;涉后端启动行为,做前打招呼。
 - [ ] 5. **`npm run l2d:fetch` 命令可见性**:业务 script 单源=package.json 已收录;CLAUDE.md §4 命令块是否补,重审。
+
+#### A.5 架构改造·记忆分层(ADR 001 `MemoryTiering`,已审定通过)
+
+- [ ] **记忆分层落地(近期原始轮次/长期摘要)**:ADR 001 定案——热层改存 `recent_turns` 原始轮次(短TTL 30min)+精修「原始文本只短留」隐私边界;重连读 recent_turns 重建 `CollectState.turns`。涟漪=spec §4 L7 + §9.4 · `state.py`(`SessionContext` 加字段)· `memory/store.py`(热层结构)· `gateway.py`(重连重建)· 测试补重连一致用例。**与 A#2 解耦,独立落地**。
 
 #### B. 生产级验收
 

@@ -14,6 +14,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from app import config
 from app import logger as app_logger
 from app.admin.config_store import (
     ConfigKeyError,
@@ -70,3 +71,30 @@ async def set_config(body: LLMConfigIn) -> dict[str, Any]:
     apply_llm_config(stored)
     logger.info("config_saved", provider=body.provider, has_key=body.api_key is not None)
     return {"ok": True, "provider": body.provider, "model": body.model}
+
+
+def _current_llm_config() -> dict[str, Any]:
+    """当前生效 LLM 配置(读进程 config;api_key 只给布尔,绝不回显密钥,spec §4 L7)。"""
+
+    active = config.LLM_PROVIDER
+    active_key_set = bool(config.DEEPSEEK_API_KEY) if active == "deepseek" else False
+    providers = [
+        {
+            "id": "deepseek",
+            "model": config.DEEPSEEK_MODEL,
+            "base_url": config.DEEPSEEK_BASE_URL,
+        },
+        {
+            "id": "ollama",
+            "model": config.OLLAMA_MODEL,
+            "base_url": config.OLLAMA_URL,
+        },
+    ]
+    return {"provider": active, "api_key_set": active_key_set, "providers": providers}
+
+
+@router.get("/config")
+async def get_config() -> dict[str, Any]:
+    """读当前 LLM 配置供前端预填;绝不回显 api_key。"""
+
+    return _current_llm_config()

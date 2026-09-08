@@ -130,6 +130,26 @@ def test_config_invalid_provider_422(cfg_store: ConfigStore):
     assert res.status_code == 422
 
 
+def test_config_get_shape_no_key(monkeypatch: pytest.MonkeyPatch):
+    """GET /admin/config:形状正确,providers 两源,api_key 只给布尔绝不回显。"""
+
+    monkeypatch.setattr(config, "LLM_PROVIDER", "deepseek")
+    monkeypatch.setattr(config, "DEEPSEEK_MODEL", "m1")
+    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "sk-plain-text")
+    monkeypatch.setattr(config, "OLLAMA_MODEL", "qwen3:8b")
+
+    res = client.get("/admin/config")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["provider"] == "deepseek"
+    assert body["api_key_set"] is True
+    ids = {p["id"]: p for p in body["providers"]}
+    assert ids["deepseek"]["model"] == "m1"
+    assert ids["ollama"]["model"] == "qwen3:8b"
+    # 无密钥回显:任何字段都不含明文
+    assert "sk-plain-text" not in res.text
+
+
 def test_config_store_singleton_reset_guard():
     """reset_config_store 后 get 重建(测试隔离口可用)。"""
 

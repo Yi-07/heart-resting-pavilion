@@ -26,6 +26,8 @@ import ChatPanel from './chat/ChatPanel.vue'
 import MoodOverlay from './mood/MoodSelector.vue'
 import StationPanel from './station/StationPanel.vue'
 import { bindStation, openStation } from './station/station'
+import SettingsPanel from './admin/SettingsPanel.vue'
+import { openSettings } from './admin/settings'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
 
@@ -51,11 +53,37 @@ const frames = ref<{ kind: string; brief: string }[]>([])
 
 const avatar = computed(() => avatarSvg(expressionFor(round.emotionLabel)))
 
-const ROUTE_TABS = [
-  { id: 'answer', label: 'answer · 直接答' },
-  { id: 'collect', label: 'collect · 多轮采集' },
-  { id: 'crisis', label: 'crisis · 危机' },
-] as const
+// ── 状态 chip(prototypes/ui-taste 定稿):图标+英文链路+状态灯,三部分同步切换 ──
+// answer 无 first_frame 帧信号(契约 §3.1),chip 显示 idle/collect/crisis 三态,与旧 route-tabs 同局限。
+const SVG_IC = (d: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`
+const CHIP_ICONS = {
+  idle: SVG_IC('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>'),
+  collect: SVG_IC('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'),
+  crisis: SVG_IC(
+    '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>',
+  ),
+} as const
+type ChipState = keyof typeof CHIP_ICONS
+const chipState = computed<ChipState>(() =>
+  round.crisis ? 'crisis' : round.phase === 'idle' ? 'idle' : round.route,
+)
+const chipLabel = ref<ChipState>('idle')
+const chipIcon = ref<string>(CHIP_ICONS.idle)
+const chipOut = ref(false)
+const chipIn = ref(false)
+watch(chipState, (s) => {
+  chipOut.value = true
+  window.setTimeout(() => {
+    chipLabel.value = s
+    chipIcon.value = CHIP_ICONS[s]
+    chipOut.value = false
+    chipIn.value = true
+    window.setTimeout(() => {
+      chipIn.value = false
+    }, 300)
+  }, 150)
+})
 
 const moodPillText = computed(() => `此刻 · ${round.emotionLabel ?? '平静'}`)
 const boardTitle = computed(() => {
@@ -270,24 +298,24 @@ function toggleMic(): void {
     <!-- 工具栏 -->
     <header class="toolbar glass">
       <div class="logo">
-        <div class="mark"></div>
+        <svg class="mark-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 5 9.04 7.96a2.17 2.17 0 0 0 0 3.08c.82.82 2.13.85 3 .07l2.07-1.9a2.82 2.82 0 0 1 3.79 0l2.96 2.66"/><path d="M18 15l-2-2"/><path d="m15 18-2-2"/></svg>
         心栖阁<span class="tag">技术原型</span>
       </div>
-      <div class="route-tabs">
-        <span
-          v-for="t in ROUTE_TABS"
-          :key="t.id"
-          class="rt"
-          :class="{ on: round.crisis ? t.id === 'crisis' : t.id === round.route && round.phase !== 'idle' }"
-        >
-          {{ t.label }}
-        </span>
-      </div>
+      <button
+        class="chip"
+        type="button"
+        data-testid="route-chip"
+        :class="{ crisis: chipState === 'crisis' }"
+      >
+        <span class="ci" :class="{ out: chipOut, in: chipIn }" v-html="chipIcon"></span>
+        <span class="cl" :class="{ out: chipOut, in: chipIn }">{{ chipLabel }}</span>
+        <span class="state"></span>
+      </button>
       <button class="tb" type="button" @click="mood.show()">今日心情</button>
       <button class="tb" type="button" data-testid="station-entry" @click="openStation()">心灵补给站</button>
       <button class="tb" type="button" disabled title="二期">心灵练习</button>
       <button class="tb" type="button" disabled title="二期">留言墙</button>
-      <button class="tb" type="button" disabled title="模型配置单源=backend/.env.example">设置</button>
+      <button class="tb" type="button" title="模型配置 · 记忆治理" data-testid="settings-entry" @click="openSettings()">设置</button>
       <span class="sp"></span>
       <button class="mood-pill" type="button" data-testid="mood-pill" @click="mood.show()">
         {{ moodPillText }}
@@ -327,8 +355,15 @@ function toggleMic(): void {
     <!-- 心灵补给站:方案书懒生成(点击触发)→轮询→md 预览/导出 -->
     <StationPanel />
 
-    <!-- 输入条 -->
+    <!-- 设置:模型配置 + 记忆治理(趋势/一键清除带两步确认) -->
+    <SettingsPanel />
+
+    <!-- 输入条:薄玻璃 + 发送钮「液芽分体」(goo 剪影只在动画瞬间显形;文字骑在滤镜上) -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b" /><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -8" result="g" /><feComposite in="SourceGraphic" in2="g" operator="atop" /></filter>
+    </svg>
     <form class="inputbar glass" @submit.prevent="submit">
+      <div class="ib-goo" aria-hidden="true"><div class="g-bar"></div><div class="g-drop"></div></div>
       <button
         class="mic"
         :class="{ rec: recording }"
@@ -351,8 +386,14 @@ function toggleMic(): void {
         placeholder="想说什么都可以,我在听…(试试:最近很焦虑睡不着 / 什么是正念)"
         data-testid="chat-input"
       />
-      <button class="send" type="submit" :disabled="wsStatus !== 'open' || draft.trim() === ''" data-testid="send-btn">
-        发送
+      <button
+        class="send"
+        type="submit"
+        :disabled="wsStatus !== 'open' || draft.trim() === ''"
+        title="发送"
+        data-testid="send-btn"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>
       </button>
     </form>
   </div>
@@ -417,12 +458,10 @@ function toggleMic(): void {
   gap: 9px;
   margin-right: 6px;
 }
-.logo .mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #a3b18a, #6e937c);
-  box-shadow: 0 2px 8px rgba(110, 147, 124, 0.45);
+.logo .mark-ic {
+  width: 17px;
+  height: 17px;
+  color: var(--primary-deep);
 }
 .logo .tag {
   font-size: 10px;
@@ -434,44 +473,189 @@ function toggleMic(): void {
   border-radius: 999px;
   margin-left: 2px;
 }
-.route-tabs {
-  display: flex;
-  gap: 5px;
-  margin-left: 4px;
-}
-.rt {
-  font-size: 12px;
-  color: var(--muted);
-  padding: 6px 13px;
+/* ── 状态 chip(ui-taste 定稿):图标+英文链路+灯点;边缘流光 hover 显形;三部分同步切换 ── */
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 15px;
   border-radius: 999px;
-  border: 1px solid transparent;
-  transition: all 0.22s;
-  background: transparent;
-  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.1s ease-out;
 }
-.rt.on {
-  color: #fff;
-  background: var(--primary);
-  box-shadow: 0 3px 12px -3px rgba(110, 147, 124, 0.5);
+.chip:active {
+  transform: scale(0.96);
+}
+.chip:hover {
+  border-color: rgba(110, 147, 124, 0.45);
+}
+.chip::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.2px;
+  background: conic-gradient(
+    from var(--ang),
+    transparent 0deg,
+    transparent 108deg,
+    rgba(163, 177, 138, 0.7) 187deg,
+    rgba(255, 255, 255, 0.85) 240deg,
+    transparent 342deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  clip-path: inset(0 round 999px);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.chip:hover::before {
+  opacity: 1;
+  animation: orbit 1.6s linear infinite;
+}
+.chip .ci {
+  display: flex;
+  color: var(--primary-deep);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.chip .ci :deep(svg),
+.chip .ci svg {
+  width: 15px;
+  height: 15px;
+}
+.chip .cl {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #4c5a50;
+  min-width: 52px;
+  text-align: left;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.chip .ci.out,
+.chip .cl.out {
+  opacity: 0;
+  transform: translateY(-7px);
+}
+.chip .ci.in,
+.chip .cl.in {
+  animation: chipin 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.chip .state {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary-deep);
+  animation: pulse 1.6s infinite;
+}
+.chip.crisis {
+  border-color: rgba(213, 138, 99, 0.45);
+  background: linear-gradient(135deg, #f2e0d0, #f7e9db);
+}
+.chip.crisis .ci {
+  color: #b0643f;
+}
+.chip.crisis .cl {
+  color: #8a4a2c;
+}
+.chip.crisis .state {
+  background: var(--accent);
+}
+.chip.crisis::before {
+  background: conic-gradient(
+    from var(--ang),
+    transparent 0deg,
+    transparent 108deg,
+    rgba(224, 163, 124, 0.7) 187deg,
+    rgba(255, 236, 220, 0.85) 240deg,
+    transparent 342deg
+  );
+}
+@keyframes chipin {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes orbit {
+  to {
+    --ang: 360deg;
+  }
 }
 .sp { flex: 1; }
+/* ── 工具按钮(ui-taste 定稿):薄玻璃 + hover 边缘流光 + pointerdown 即按压 ── */
 .tb {
-  font-size: 12px;
-  color: var(--muted);
-  padding: 6px 12px;
+  position: relative;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: #56645b;
+  padding: 8px 15px;
   border-radius: 999px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.22s;
-  border: 1px solid transparent;
-  background: transparent;
   white-space: nowrap;
+  border: 0;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.4));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(110, 147, 124, 0.14),
+    0 2px 8px -4px rgba(47, 58, 49, 0.3);
+  transition:
+    transform 0.1s ease-out,
+    box-shadow 0.25s;
+}
+.tb:active {
+  transform: scale(0.96);
 }
 .tb:hover:not(:disabled) {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 6px 16px -8px rgba(47, 58, 49, 0.45);
+}
+.tb::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.2px;
+  background: conic-gradient(
+    from var(--ang),
+    transparent 0deg,
+    transparent 108deg,
+    rgba(163, 177, 138, 0.7) 187deg,
+    rgba(255, 255, 255, 0.85) 240deg,
+    transparent 342deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  clip-path: inset(0 round 999px);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.tb:hover:not(:disabled)::before {
+  opacity: 1;
+  animation: orbit 1.6s linear infinite;
 }
 .tb:disabled {
   opacity: 0.45;
@@ -604,12 +788,12 @@ function toggleMic(): void {
   transform: rotate(90deg);
 }
 
-/* ── 输入条 ── */
+/* ── 输入条(ui-taste 定稿):薄玻璃 + focus 光晕 + 发送钮「液芽分体」 ── */
 .inputbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 18px;
+  padding: 10px 12px 10px 18px;
   flex: none;
   border-radius: 999px;
   max-width: 720px;
@@ -617,20 +801,108 @@ function toggleMic(): void {
   width: 100%;
   position: relative;
   z-index: 30;
+  transition: box-shadow 0.25s;
+}
+.inputbar:focus-within {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 0 0 3px rgba(163, 177, 138, 0.28),
+    0 24px 70px -30px rgba(62, 58, 53, 0.35);
+}
+/* goo 剪影:白色液芽只在聚焦动画瞬间显形(静止零重影);文字骑在滤镜上方 */
+.ib-goo {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 150px;
+  filter: url(#goo);
+  pointer-events: none;
+  z-index: 1;
+}
+.ib-goo .g-bar {
+  position: absolute;
+  right: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 64px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  opacity: 0;
+}
+.ib-goo .g-drop {
+  position: absolute;
+  top: 50%;
+  margin-top: -21px;
+  right: 26px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  opacity: 0;
+}
+.inputbar:focus-within .g-bar {
+  animation: goobar 0.5s var(--ease) both;
+}
+.inputbar:focus-within .g-drop {
+  animation: bud 0.5s var(--ease) both;
+}
+@keyframes goobar {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  68%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes bud {
+  0% {
+    right: 26px;
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  45% {
+    transform: scale(0.72);
+  }
+  62% {
+    right: -52px;
+    transform: scale(1.05);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    right: -52px;
+    transform: scale(1);
+    opacity: 0;
+  }
 }
 .mic {
+  position: relative;
+  z-index: 2;
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: var(--muted);
+  color: #56645b;
   flex: none;
-  transition: all 0.25s;
+  transition: transform 0.1s ease-out;
   border: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
 }
 .mic:disabled {
   opacity: 0.4;
@@ -642,8 +914,8 @@ function toggleMic(): void {
   animation: pulse 1.2s infinite;
 }
 .mic svg {
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
   stroke: currentColor;
   fill: none;
   stroke-width: 2;
@@ -651,32 +923,69 @@ function toggleMic(): void {
   stroke-linejoin: round;
 }
 .inputbar input {
+  position: relative;
+  z-index: 2;
   flex: 1;
+  min-width: 0;
   border: 0;
   background: transparent;
   outline: none;
-  font-size: 13.5px;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--ink);
   font-family: var(--sans);
 }
-.inputbar input::placeholder { color: var(--muted); }
+.inputbar input::placeholder {
+  color: var(--muted);
+}
+/* 发送圆钮(纸飞机):聚焦时从右缘液芽分体落位;未聚焦/禁用时不占视觉 */
 .send {
-  border: 0;
-  background: var(--primary);
-  color: #fff;
-  font-size: 13px;
-  padding: 10px 24px;
-  border-radius: 999px;
+  position: absolute;
+  right: -52px;
+  top: 50%;
+  margin-top: -21px;
+  z-index: 2;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  box-shadow: 0 3px 12px -3px rgba(110, 147, 124, 0.5);
-  transition: transform 0.28s var(--ease);
-  font-family: var(--sans);
+  color: #3d5a49;
+  border: 0;
+  background: linear-gradient(180deg, rgba(163, 177, 138, 0.42), rgba(110, 147, 124, 0.22));
+  box-shadow:
+    inset 0 0 0 1px rgba(163, 177, 138, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 4px 12px -6px rgba(94, 127, 106, 0.5);
+  opacity: 0;
+  transform: translateX(-32px) scale(0.25);
+  pointer-events: none;
+  transition:
+    transform 0.34s var(--ease),
+    opacity 0.18s ease,
+    background 0.2s;
+}
+.send svg {
+  width: 16px;
+  height: 16px;
+}
+.inputbar:focus-within .send {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.send:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(163, 177, 138, 0.54), rgba(110, 147, 124, 0.32));
+}
+.send:active:not(:disabled) {
+  transform: scale(0.9);
 }
 .send:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
+  opacity: 0.5;
 }
-.send:hover:not(:disabled) { transform: translateY(-2px); }
 
 /* ── 危机横幅 + 审计 ── */
 .crisis-banner {
