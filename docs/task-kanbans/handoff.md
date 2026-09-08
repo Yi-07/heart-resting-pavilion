@@ -59,6 +59,7 @@
 - Pinia store 跨「setup 构造的控制器类↔组件」同实例直接赋值;E2E 观察存疑先页内轮询打点(工具往返时延会造成误判)。
 - **tsconfig `noUncheckedIndexedAccess` 已开**——数组下标读取退化 `| undefined`,测试/纯函数传参需收窄(mymodels.spec 曾踩)。
 - **截图视觉复核**:子agent `model: "sonnet"`(环境映射 ANTHROPIC_DEFAULT_SONNET_MODEL 视觉模型)Read 图逐项判基准——文本判据外的溢出/遮挡它抓得准(步骤5/7/9 均立功)。
+- **live2d 切换=renderer 单例换模型**:pixi `Application.destroy` 会杀 canvas 的 WebGL context——同 canvas 重建必在 shader 编译抛 `checkMaxIfStatementsInShader(0)` 永久回落 SVG(实测);故 Application 模块级单例复用、destroy 只做模型级清理、全量释放仅 `disposeLive2D`(App 卸载)。
 
 ## 5. 现状
 
