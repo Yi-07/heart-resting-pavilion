@@ -90,6 +90,10 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     # 拉起真 sidecar 或多出 audio_chunk 破坏既有帧序断言;语音用例自行覆盖
     monkeypatch.setattr("app.voice.tts.synthesize", lambda text: None)
     monkeypatch.setattr("app.voice.fillers.pick", lambda: None)
+    # sidecar 进程编排不进测试:TestClient 触发 lifespan 时不得真拉 sidecar,
+    # 也不得留下 _stopping=True 污染同进程的后续语音用例;语音用例自行还原
+    monkeypatch.setattr("app.voice.tts.ensure_sidecar", lambda timeout_s=None: False)
+    monkeypatch.setattr("app.voice.tts.shutdown_spawned", lambda: None)
     return mem
 
 

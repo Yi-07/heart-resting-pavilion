@@ -46,7 +46,8 @@
 **后端**(在 backend/ 目录下,uv 管依赖):
 ```bash
 uv sync
-uv run uvicorn app.main:app --port 8000
+uv run hrp                # 启动(默认 127.0.0.1:8000;--reload 热载开发,配 TTS_SIDECAR_KILL_ON_EXIT=0)
+                          # 自动拉起并版本握手 TTS sidecar,退出有序关停;手动起 sidecar 可选
 uv run ruff check app
 uv run mypy app
 uv run pytest

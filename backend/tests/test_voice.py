@@ -16,6 +16,8 @@ import pytest
 from app import config
 from app.voice import fillers, tts
 from app.voice.fillers import pick as _orig_pick
+from app.voice.sidecar_protocol import SIDECAR_VERSION
+from app.voice.tts import ensure_sidecar as _orig_ensure_sidecar
 from app.voice.tts import synthesize as _orig_synthesize
 
 
@@ -23,7 +25,7 @@ class _FakeSidecar(BaseHTTPRequestHandler):
     wav_payload = b"FAKEWAVBYTES"
 
     def do_GET(self):
-        body = json.dumps({"ready": True, "error": None}).encode()
+        body = json.dumps({"ready": True, "error": None, "version": SIDECAR_VERSION}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -47,9 +49,13 @@ class _FakeSidecar(BaseHTTPRequestHandler):
 @pytest.fixture(autouse=True)
 def _real_voice(monkeypatch: pytest.MonkeyPatch):
     """本文件测真 voice 客户端:恢复 conftest 静音桩之前的原函数
-    (须在模块导入期捕获——fixture 里现取会拿到已打桩的假货)。"""
+    (须在模块导入期捕获——fixture 里现取会拿到已打桩的假货);
+    进程编排状态(_stopping/_spawned)一并复位。"""
     monkeypatch.setattr("app.voice.tts.synthesize", _orig_synthesize)
+    monkeypatch.setattr("app.voice.tts.ensure_sidecar", _orig_ensure_sidecar)
     monkeypatch.setattr("app.voice.fillers.pick", _orig_pick)
+    monkeypatch.setattr(tts, "_stopping", False)
+    monkeypatch.setattr(tts, "_spawned", None)
 
 
 @pytest.fixture()

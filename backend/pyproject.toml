@@ -19,6 +19,16 @@ dependencies = [
     "uvicorn[standard]>=0.52.4",
 ]
 
+[project.scripts]
+hrp = "app.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
 [dependency-groups]
 dev = [
     "mypy>=2.3.1",
@@ -38,4 +48,6 @@ overrides = [
   # funasr 无 py.typed;torchaudio/cosyvoice 只在 CosyVoice sidecar venv 存在
   { module = ["funasr", "funasr.*"], ignore_missing_imports = true },
   { module = ["torchaudio", "torchaudio.*", "cosyvoice.*"], ignore_missing_imports = true },
+  # sidecar_protocol 以脚本目录顶层导入(tts_sidecar.py 无包上下文运行)
+  { module = ["sidecar_protocol"], ignore_missing_imports = true },
 ]

@@ -125,6 +125,9 @@ TTS_SIDECAR_PYTHON = os.getenv(
 TTS_SIDECAR_READY_TIMEOUT_S = 120.0
 """sidecar 首次拉起等待(进程+模型加载,CPU/GPU 冷启可到分钟级)"""
 
+TTS_SIDECAR_KILL_ON_EXIT = os.getenv("TTS_SIDECAR_KILL_ON_EXIT", "1") != "0"
+"""backend 退出时是否关停自己拉起的 sidecar;--reload 热载开发设 0,免得改一行代码陪杀模型"""
+
 AUDIO_INPUT_MAX_S = 15.0
 """语音输入单段上限(契约 §4.1;前端录音侧执行)"""
 

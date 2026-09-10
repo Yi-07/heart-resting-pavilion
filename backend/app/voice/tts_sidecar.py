@@ -21,6 +21,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sidecar_protocol import (
+    SIDECAR_VERSION,
+)
+
 if TYPE_CHECKING:
     import torch
 
@@ -33,6 +38,15 @@ PORT = int(os.environ.get("TTS_SIDECAR_PORT", "9880"))
 
 _state_lock = threading.Lock()
 _state: dict[str, Any] = {"ready": False, "error": None}
+
+
+def _health_payload() -> dict[str, Any]:
+    with _state_lock:
+        return {
+            "ready": bool(_state["ready"]),
+            "error": _state["error"],
+            "version": SIDECAR_VERSION,
+        }
 
 
 def _tensor_from_wav_path(path: str | Path, target_sr: int) -> torch.Tensor:
@@ -135,9 +149,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/health":
             self.send_error(404)
             return
-        with _state_lock:
-            payload = {"ready": bool(_state["ready"]), "error": _state["error"]}
-        body = json.dumps(payload).encode()
+        body = json.dumps(_health_payload()).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
