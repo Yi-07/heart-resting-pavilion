@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -324,19 +325,28 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
         await conn.send_done()
 
 
-async def _speak(conn: Connection, text: str) -> None:
-    """TTS 分句流式直发(每句一个 audio_chunk);失败记 degraded 跳过——
-    音频缺席不影响文字链路(契约原则)。"""
+async def _speak_stream(conn: Connection, text: str, dead: Callable[[], bool]) -> None:
+    """分句流式合成+直发公共体(每句一个 audio_chunk);dead() 命中即弃余块。
+    放线程跑(合成阻塞),帧经 run_coroutine_threadsafe 回事件循环保序。"""
     from app.voice import tts
 
     loop = asyncio.get_running_loop()
 
     def _produce() -> None:
         for wav in tts.synthesize_stream(text):
+            if dead():
+                return
             asyncio.run_coroutine_threadsafe(conn.send_audio(wav), loop).result()
 
+    await asyncio.to_thread(_produce)
+
+
+async def _speak(conn: Connection, text: str) -> None:
+    """回合内同步语音(危机热线):失败记 degraded——音频缺席不影响文字链路。"""
+    from app.voice import tts
+
     try:
-        await asyncio.to_thread(_produce)
+        await _speak_stream(conn, text, lambda: False)
     except tts.TTSError as exc:
         conn.log("degraded", level="WARN", reason="tts_failed", detail=str(exc)[:120])
     except Exception:  # noqa: BLE001 — 发送失败(WS 断开等):音频链路静默收尾
@@ -350,20 +360,23 @@ def _soothe_evaporated(conn: Connection, trace: int) -> bool:
 
 async def _speak_if_current(conn: Connection, text: str, trace: int) -> None:
     """异步安抚语:逐句合成逐句判定蒸发——已合成未发的部分静默丢弃。"""
-    from app.voice import tts
-
-    loop = asyncio.get_running_loop()
-
-    def _produce() -> None:
-        for wav in tts.synthesize_stream(text):
-            if _soothe_evaporated(conn, trace):
-                return
-            asyncio.run_coroutine_threadsafe(conn.send_audio(wav), loop).result()
-
     try:
-        await asyncio.to_thread(_produce)
+        await _speak_stream(conn, text, lambda: _soothe_evaporated(conn, trace))
     except Exception:  # noqa: BLE001 — 安抚语缺席无副作用,不记 degraded
         return
+
+
+async def _speak_summary(conn: Connection, text: str, trace: int) -> None:
+    """异步总结语音:回合已收尾后继续流出,仅抢占(trace 变)才蒸发——
+    蒸发条件与安抚语不同:安抚语随回合收尾蒸发,总结语音恰恰要在收尾后播完。"""
+    from app.voice import tts
+
+    try:
+        await _speak_stream(conn, text, lambda: conn.current_trace != trace)
+    except tts.TTSError as exc:
+        conn.log("degraded", level="WARN", reason="tts_failed", detail=str(exc)[:120])
+    except Exception:  # noqa: BLE001 — 发送失败(WS 断开/抢占打断发送):静默收尾
+        conn.log("degraded", level="WARN", reason="tts_send_failed")
 
 
 async def _crisis_sequence(conn: Connection) -> None:
@@ -425,6 +438,8 @@ async def _collect_sequence(
         event = await run_collect(state, emitter)
     finally:
         if conn.current_emitter is emitter:
+            # 先标 dead 再摘引用:run_collect 挂掉的残余流(如总结文本)不得再发帧
+            emitter.mark_dead()
             conn.current_emitter = None
     await _settle_collect_event(conn, trace, event)
 
@@ -459,7 +474,9 @@ async def _settle_collect_event(
                 summary_len=len(summary),
             )
             if summary:
-                await _speak(conn, summary)  # 总结语音(text 收尾后、done 前)
+                # 总结语音异步流出(done 后到达,抢占即蒸发):不占 60s 处理窗口,
+                # 长总结不再触发 timeout 兜底;ws-contract §6.2 时序措辞已同步
+                asyncio.create_task(_speak_summary(conn, summary, trace))
         await conn.send_done()
     elif isinstance(event, Escalate):
         conn.collect_state = None

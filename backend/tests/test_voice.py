@@ -90,6 +90,9 @@ def test_synthesize_roundtrip_against_fake_sidecar(fake_sidecar):
 
 def test_synthesize_degrades_when_sidecar_down(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "TTS_SIDECAR_PORT", 59999)  # 无人监听
+    monkeypatch.setattr(
+        "app.voice.tts.ensure_sidecar", lambda timeout_s=None: False
+    )  # 显式不可用:不能走真拉起(会遗留 sidecar 进程)
     monkeypatch.setattr(config, "TTS_SIDECAR_READY_TIMEOUT_S", 0.5)
     assert tts.synthesize("你好") is None  # 降级 None 不抛
     assert tts.synthesize("") is None  # 空文本短路

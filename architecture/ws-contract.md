@@ -107,6 +107,9 @@
 { "type": "audio_chunk", "seq": 6, "format": "mp3", "data": "<base64>", "final": false }
 ```
 
+- **可多帧**:TTS 按句合成,一段语音 = 多个 audio_chunk(seq 单调递增),前端按序连播
+- **时序例外**:总结语音与安抚语异步流出,可在 `done` 之后到达(见 §6.2);前端播放队列独立于回合状态,下一回合 `first_frame` 清队(音频打断由 AudioQueue 承担)
+
 ### 3.5 done
 
 ```json
@@ -225,8 +228,8 @@ S→C  text_delta (确认 + 第 3 问)
 S→C  audio_chunk ×N (等待语音,可选)
 S→C  draw (精稿: 完整 formulation)
 S→C  text_delta ×N (人话总结,末尾拼心灵补给站邀请语)
-S→C  audio_chunk ×N (总结语音,可选)
 S→C  done
+S→C  audio_chunk ×N (总结语音,异步流出,可选;done 后到达,抢占即蒸发)
 ```
 
 - **降级**(答案过短/话题漂移/负面词):后端跳过剩余轮次,直接发精稿 draw + 转共情陪聊/已采字段收尾;情绪变差命中软预筛 → 改发危机序列(§6.3)
