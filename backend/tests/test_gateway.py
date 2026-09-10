@@ -166,7 +166,9 @@ def test_crisis_speaks_hotline(monkeypatch):
     """危机热线 TTS:text → audio_chunk(wav·final·seq 递增)→ done。"""
     import base64 as b64mod
 
-    monkeypatch.setattr("app.voice.tts.synthesize", lambda text: b"WAVDATA")
+    monkeypatch.setattr(
+        "app.voice.tts.synthesize_stream", lambda text: iter((b"WAVDATA",))
+    )
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "我不想活了")
         assert _recv(ws)["type"] == "first_frame"

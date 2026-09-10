@@ -1,18 +1,20 @@
-"""TTS 客户端:懒拉起 CosyVoice sidecar 并经 HTTP 合成。
+"""TTS 客户端:懒拉起 CosyVoice sidecar 并经 HTTP 流式合成。
 
-- ensure_sidecar:探活 → 不在则用 CosyVoice venv python 起 tts_sidecar.py → 等 ready
-- synthesize(text) → wav bytes | None(任何失败 WARN 降级返回 None,调用方跳过音频、
-  文字链路照常——契约原则:失败跳过音频不阻塞回合)
+- ensure_sidecar:版本握手探活 → 不在/过期则用 CosyVoice venv python 起 tts_sidecar.py → 等 ready
+- synthesize_stream(text) → 逐句 wav 字节迭代(POST /tts_stream NDJSON);失败抛异常
+- synthesize(text) → 拼接整段 wav | None(失败 WARN 降级;fillers 离线生成用)
 - 同步阻塞(网关用 asyncio.to_thread 调);urllib stdlib 零新依赖
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -136,21 +138,41 @@ def ensure_sidecar(timeout_s: float | None = None) -> bool:
     return False
 
 
+class TTSError(RuntimeError):
+    """sidecar 不可用/合成失败;调用方按契约降级跳过音频、不杀回合。"""
+
+
+def synthesize_stream(text: str) -> Iterator[bytes]:
+    """文本 → 逐句 wav 字节流(POST /tts_stream NDJSON);失败抛 TTSError。
+
+    同步阻塞;sidecar 就绪检查含版本握手,不匹配视为不可用(不静默复用旧进程)。
+    """
+    if not text.strip():
+        return
+    if not ensure_sidecar():
+        raise TTSError("sidecar 不可用")
+    req = urllib.request.Request(
+        f"{_base()}/tts_stream",
+        data=json.dumps({"text": text}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            for line in resp:
+                piece = json.loads(line.decode())["wav"]
+                yield base64.b64decode(piece)
+    except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
+        raise TTSError(str(exc)[:160]) from exc
+
+
 def synthesize(text: str) -> bytes | None:
-    """文本 → wav bytes;失败 None(降级跳过音频)。同步阻塞。"""
+    """文本 → 拼接整段 wav bytes;失败 WARN 降级 None(离线生成用,如 fillers;
+    网关热路径走 synthesize_stream 逐句直发)。空文本返回 None。"""
     if not text.strip():
         return None
     try:
-        if not ensure_sidecar():
-            return None
-        req = urllib.request.Request(
-            f"{_base()}/tts",
-            data=json.dumps({"text": text}).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return resp.read()
-    except Exception as exc:  # noqa: BLE001 — TTS 任何失败都降级,不杀回合
+        return b"".join(synthesize_stream(text))
+    except TTSError as exc:
         logger.warning("tts_degraded", reason=str(exc)[:160])
         return None

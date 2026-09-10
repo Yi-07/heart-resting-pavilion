@@ -1,16 +1,20 @@
 """CosyVoice2 TTS sidecar —— 在 models/voices/CosyVoice 自备 venv(Python 3.10)下
 运行的独立 HTTP 服务,与 backend venv 进程隔离(两套 torch 版本互不兼容)。
 
-- stdlib http.server,零框架依赖;POST /tts {"text": ...} → audio/wav(24k);
-  GET /health → {"ready": bool}(模型后台加载,首次合成前 ready=false)
+- stdlib http.server,零框架依赖;POST /tts_stream {"text": ...} → NDJSON 逐句
+  出料(每行 {"wav": "<b64>"} 一句);GET /health → {"ready","error","version"}
+  (模型后台加载,首次合成前 ready=false;version 供 backend 握手防旧进程复用)
+- 合成:split_for_tts 分句逐句调 inference_zero_shot 并消费完整生成器
+  (stream=False 也按句 yield——旧版 next() 只取第一块,长文本丢 3/4 音频,已修)
 - 音色:零样本模式,固定用仓库自带 asset/zero_shot_prompt.wav(+ 配套提示文本),
   保证与 fillers 预生成同音色
-- 启动方式:backend/app/voice/tts.py 懒拉起(也可手动:
+- 启动方式:backend 主进程 lifespan 自动拉起(也可手动:
   models/voices/CosyVoice/.venv/Scripts/python.exe backend/app/voice/tts_sidecar.py)
 """
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -24,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sidecar_protocol import (
     SIDECAR_VERSION,
+    split_for_tts,
 )
 
 if TYPE_CHECKING:
@@ -133,15 +138,20 @@ def _load_model() -> None:
         print(f"[sidecar] load failed: {exc}", flush=True)
 
 
-def synth(text: str) -> bytes:
-    """文本 → wav 字节(24k);合成串行(单卡单模型)。"""
+def synth_sentences(text: str) -> Any:
+    """文本 → 逐句 wav 字节生成器(24k);合成串行(单卡单模型)。
+
+    消费完整生成器:inference_zero_shot 对 stream=False 也按块 yield,
+    只取 next() 会截断长文本(存量 bug,已修)。
+    """
     with _state_lock:
         model = _state.get("model")
         prompt = _state.get("prompt")
     if model is None or prompt is None:
         raise RuntimeError("模型未就绪")
-    result = next(model.inference_zero_shot(text, PROMPT_TEXT, prompt, stream=False))
-    return _wav_bytes(result["tts_speech"], 24000)
+    for sent in split_for_tts(text):
+        for result in model.inference_zero_shot(sent, PROMPT_TEXT, prompt, stream=False):
+            yield _wav_bytes(result["tts_speech"], 24000)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -157,14 +167,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
-        if self.path != "/tts":
+        if self.path != "/tts_stream":
             self.send_error(404)
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             text = json.loads(self.rfile.read(length))["text"]
-            wav = synth(text)
-        except Exception as exc:  # noqa: BLE001 — 合成失败回 500 文本
+            pieces = synth_sentences(text)
+        except Exception as exc:  # noqa: BLE001 — 请求解析/模型未就绪回 500 文本
             body = str(exc).encode()
             self.send_response(500)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -172,11 +182,19 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        # NDJSON 逐句出料:一行 {"wav": "<b64>"} 一句;HTTP/1.0 连接关闭即流结束
         self.send_response(200)
-        self.send_header("Content-Type", "audio/wav")
-        self.send_header("Content-Length", str(len(wav)))
+        self.send_header("Content-Type", "application/x-ndjson")
         self.end_headers()
-        self.wfile.write(wav)
+        try:
+            for wav in pieces:
+                line = json.dumps({"wav": base64.b64encode(wav).decode("ascii")}) + "\n"
+                self.wfile.write(line.encode("ascii"))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # 客户端提前断开(抢占/关停):停止合成即可
+        except Exception as exc:  # noqa: BLE001 — 合成中途失败:日志可查,流已部分发出
+            print(f"[sidecar] synth error: {exc}", flush=True)
 
     def log_message(self, fmt: str, *args: object) -> None:
         print(f"[sidecar] {fmt % args}", flush=True)

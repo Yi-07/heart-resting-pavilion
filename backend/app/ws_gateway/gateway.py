@@ -325,26 +325,45 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
 
 
 async def _speak(conn: Connection, text: str) -> None:
-    """TTS 合成直发(audio_chunk);失败 None 跳过——音频缺席不影响文字链路。"""
+    """TTS 分句流式直发(每句一个 audio_chunk);失败记 degraded 跳过——
+    音频缺席不影响文字链路(契约原则)。"""
     from app.voice import tts
 
-    wav = await asyncio.to_thread(tts.synthesize, text)
-    if wav is not None:
-        await conn.send_audio(wav)
+    loop = asyncio.get_running_loop()
+
+    def _produce() -> None:
+        for wav in tts.synthesize_stream(text):
+            asyncio.run_coroutine_threadsafe(conn.send_audio(wav), loop).result()
+
+    try:
+        await asyncio.to_thread(_produce)
+    except tts.TTSError as exc:
+        conn.log("degraded", level="WARN", reason="tts_failed", detail=str(exc)[:120])
+    except Exception:  # noqa: BLE001 — 发送失败(WS 断开等):音频链路静默收尾
+        conn.log("degraded", level="WARN", reason="tts_send_failed")
+
+
+def _soothe_evaporated(conn: Connection, trace: int) -> bool:
+    """安抚语蒸发判定:抢占(trace 变)或回合已收尾(current 完成)。"""
+    return conn.current_trace != trace or conn.current is None or conn.current.done()
 
 
 async def _speak_if_current(conn: Connection, text: str, trace: int) -> None:
-    """异步安抚语:合成落地时若已抢占(trace 变)或回合已收尾(current 完成)则蒸发。"""
+    """异步安抚语:逐句合成逐句判定蒸发——已合成未发的部分静默丢弃。"""
     from app.voice import tts
 
-    wav = await asyncio.to_thread(tts.synthesize, text)
-    if wav is None:
+    loop = asyncio.get_running_loop()
+
+    def _produce() -> None:
+        for wav in tts.synthesize_stream(text):
+            if _soothe_evaporated(conn, trace):
+                return
+            asyncio.run_coroutine_threadsafe(conn.send_audio(wav), loop).result()
+
+    try:
+        await asyncio.to_thread(_produce)
+    except Exception:  # noqa: BLE001 — 安抚语缺席无副作用,不记 degraded
         return
-    if conn.current_trace != trace:
-        return
-    if conn.current is None or conn.current.done():
-        return
-    await conn.send_audio(wav)
 
 
 async def _crisis_sequence(conn: Connection) -> None:
