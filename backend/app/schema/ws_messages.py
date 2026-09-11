@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from .formulation import TEMPLATE_DATA, TemplateData
-from .literals import ErrorCode, MessageMode, MoodKey, TemplateId
+from .literals import ErrorCode, MoodKey, TemplateId
 
 # ---------- S→C ----------
 
@@ -89,22 +89,12 @@ S2CMsg = Annotated[
 
 
 class UserInput(BaseModel):
-    """§4.1 用户文字/音频输入;采集轮次回答同用此消息;mode 决定 text/audio 必填"""
+    """§4.1 用户文本输入;语音经 /asr/transcribe 转写回填后同此发送(ADR-004,输入单源文本)"""
 
     type: Literal["user_input"] = "user_input"
     session_id: str | None = None
-    mode: MessageMode
-    text: str | None = None
-    audio: str | None = None  # base64,webm/opus,单段 ≤15s
+    text: str = Field(min_length=1)  # 空串拒收(与原 mode validator 等价)
     ts: int
-
-    @model_validator(mode="after")
-    def _mode_payload(self) -> "UserInput":
-        if self.mode == "text" and not self.text:
-            raise ValueError("字段缺失: text")
-        if self.mode == "audio" and not self.audio:
-            raise ValueError("字段缺失: audio")
-        return self
 
 
 class MoodSelect(BaseModel):

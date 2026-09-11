@@ -26,6 +26,7 @@ import ChatPanel from './chat/ChatPanel.vue'
 import MoodOverlay from './mood/MoodSelector.vue'
 import StationPanel from './station/StationPanel.vue'
 import { bindStation, openStation } from './station/station'
+import { appendDraft, transcribeAudio } from './voice/asr'
 import SettingsPanel from './admin/SettingsPanel.vue'
 import { openSettings } from './admin/settings'
 
@@ -234,25 +235,27 @@ onUnmounted(() => {
 function submit(): void {
   const text = draft.value.trim()
   if (text === '' || wsStatus.value !== 'open') return
-  client.send({ type: 'user_input', mode: 'text', text, audio: null, ts: Math.floor(Date.now() / 1000) })
+  client.send({ type: 'user_input', text, ts: Math.floor(Date.now() / 1000) })
   round.transition({ kind: 'user_sent' })
   chat.appendUser(text)
   draft.value = ''
 }
 
-// ── 语音输入(步骤8):MediaRecorder webm/opus,单段 ≤15s;base64 上报,转写走后端同流 ──
+// ── 语音输入(ADR-004 两步式):录音 → /asr/transcribe 转写 → 追加回填文本框,
+// 用户确认后按文本发送(输入单源文本);转写与 WS 解耦,失败提示转打字 ──
 
 const recording = ref(false)
+const transcribing = ref(false)
+const voiceHint = ref('')
 let recorder: MediaRecorder | null = null
+let hintTimer: ReturnType<typeof setTimeout> | null = null
 
-function arrayBufferToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf)
-  let binary = ''
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  }
-  return btoa(binary)
+function showVoiceHint(text: string): void {
+  voiceHint.value = text
+  if (hintTimer !== null) clearTimeout(hintTimer)
+  hintTimer = setTimeout(() => {
+    voiceHint.value = ''
+  }, 3000)
 }
 
 function toggleMic(): void {
@@ -275,25 +278,25 @@ function toggleMic(): void {
         stream.getTracks().forEach((t) => t.stop())
         recording.value = false
         const blob = new Blob(chunks, { type: rec.mimeType })
-        if (blob.size === 0 || wsStatus.value !== 'open') return
-        void blob.arrayBuffer().then((buf) => {
-          client.send({
-            type: 'user_input',
-            mode: 'audio',
-            text: null,
-            audio: arrayBufferToBase64(buf),
-            ts: Math.floor(Date.now() / 1000),
-          })
-          round.transition({ kind: 'user_sent' })
-          chat.appendUser('🎙(语音消息)')
-        })
+        if (blob.size === 0) return
+        void (async () => {
+          transcribing.value = true
+          try {
+            const text = await transcribeAudio(blob)
+            if (text === null) showVoiceHint('语音转写暂时不可用,试试打字吧')
+            else if (text === '') showVoiceHint('没听清你在说什么,再说一次或直接打字吧')
+            else draft.value = appendDraft(draft.value, text)
+          } finally {
+            transcribing.value = false
+          }
+        })()
       }
       recorder = rec
       recording.value = true
       rec.start()
       window.setTimeout(() => {
         if (rec.state === 'recording') rec.stop()
-      }, 15_000) // 契约 §4.1 单段上限
+      }, 15_000) // 契约 §1 单段上限
     } catch (err) {
       logger.warn('app', `录音不可用: ${String(err)}`)
     }
@@ -371,13 +374,13 @@ function toggleMic(): void {
       <filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b" /><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -8" result="g" /><feComposite in="SourceGraphic" in2="g" operator="atop" /></filter>
     </svg>
     <form class="inputbar glass" @submit.prevent="submit">
+      <div v-if="voiceHint" class="voice-hint" data-testid="voice-hint">{{ voiceHint }}</div>
       <div class="ib-goo" aria-hidden="true"><div class="g-bar"></div><div class="g-drop"></div></div>
       <button
         class="mic"
-        :class="{ rec: recording }"
+        :class="{ rec: recording, busy: transcribing }"
         type="button"
-        :disabled="wsStatus !== 'open'"
-        title="按一下开始录音,再点结束(≤15 秒)"
+        :title="transcribing ? '转写中…' : recording ? '再点一下结束(≤15 秒)' : '按一下开始录音,再点结束(≤15 秒)'"
         aria-label="语音输入"
         data-testid="mic-btn"
         @click="toggleMic"
@@ -922,6 +925,11 @@ function toggleMic(): void {
   color: #fff;
   animation: pulse 1.2s infinite;
 }
+.mic.busy {
+  background: rgba(255, 255, 255, 0.75);
+  color: #8a9a8e;
+  animation: pulse 1.2s infinite;
+}
 .mic svg {
   width: 15px;
   height: 15px;
@@ -930,6 +938,22 @@ function toggleMic(): void {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+/* ── 语音转写提示(ADR-004:失败/空结果温和引导,3s 自撤) ── */
+.voice-hint {
+  position: absolute;
+  top: -44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #6b6257;
+  background: rgba(255, 250, 240, 0.94);
+  border: 1px solid rgba(213, 190, 138, 0.45);
+  padding: 7px 16px;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px -14px rgba(62, 58, 53, 0.35);
 }
 .inputbar input {
   position: relative;

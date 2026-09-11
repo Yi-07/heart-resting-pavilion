@@ -15,6 +15,7 @@
 | 编码 | JSON,UTF-8,文本帧 |
 | 管理通道 | 记忆清除/趋势/模型配置走 HTTP REST(`POST /admin/clear_memory`·`GET /admin/trends`·`GET /admin/config`·`POST /admin/config`)，不进 WS；WS 仅对话 8 消息 |
 | 补给站通道 | 心灵补给站方案书走 HTTP REST:`POST /station/report/generate`(点击触发懒生成) · `GET /station/report/latest`(轮询,等待态"正在为你整理…")；不进 WS |
+| 语音转写通道 | 语音输入两步式(ADR-004):`POST /asr/transcribe`(base64 webm/opus → 转写文本)供前端回填文本框,用户确认后按文本输入发送;不进 WS |
 
 **补给站 REST 响应**(HTTP 200,两端点同形):
 
@@ -28,6 +29,22 @@
 | report_md | string | 仅 ready 返回;md 正文,前端预览/导出 |
 
 - generate 受理即返;latest 轮询——生成中 `pending`,完成 `ready`+`report_md`
+
+**语音转写请求/响应**(ADR-004)——请求 `POST /asr/transcribe`:
+
+```json
+{ "audio": "<base64 webm/opus>" }
+```
+
+响应(HTTP 200):
+
+```json
+{ "text": "最近总失眠" }
+```
+
+- 请求 `audio` 必填,单段 ≤15s(前端 MediaRecorder 侧约束),后端字节护栏 1MB 超限 413
+- 转写成功(含空串="没听到")→ 200 + `text`;转写不可用(模型未加载/异常)→ 503
+- 音频转写后即弃不落存储;日志 `asr_transcribed`/`asr_empty`(脱敏:只记长度+指纹)
 
 ---
 
@@ -140,14 +157,12 @@
 {
   "type": "user_input",
   "session_id": "sess_abc",
-  "mode": "text",
   "text": "最近总失眠",
-  "audio": null,
   "ts": 1723456789
 }
 ```
 
-- `mode: text` → text 必填;`mode: audio` → audio 必填(base64, 编码 webm/opus, 单段 ≤15s)
+- `text` 必填;语音输入经 `POST /asr/transcribe` 转写回填文本框、用户确认后同此发送(ADR-004,输入单源文本)
 - **采集轮次的回答也用此消息**(后端按会话状态识别第几轮)
 
 ### 4.2 mood_select
@@ -300,7 +315,7 @@ S→C  done
 | ERROR | 消息非法、后端异常、error 帧发出 |
 | FATAL | 进程级故障 |
 
-事件: `session_open` · `user_input_received` · `crisis_gate_hit` · `route_decided` · `first_frame_sent` · `collection_round` · `sufficiency_scored` · `degraded` · `analysis_start` · `analysis_end` · `draw_sent` · `done` · `error`
+事件: `session_open` · `user_input_received` · `crisis_gate_hit` · `route_decided` · `first_frame_sent` · `collection_round` · `sufficiency_scored` · `degraded` · `analysis_start` · `analysis_end` · `draw_sent` · `done` · `error`;REST 侧: `asr_transcribed` · `asr_empty`(归属 `/asr/transcribe`,ADR-004)
 
 ### 9.4 脱敏(硬约束)
 

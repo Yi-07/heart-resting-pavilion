@@ -25,7 +25,7 @@ def _recv(ws: Any) -> dict:
 
 
 def _send_input(ws: Any, text: str) -> None:
-    ws.send_text(json.dumps({"type": "user_input", "mode": "text", "text": text, "ts": 1}))
+    ws.send_text(json.dumps({"type": "user_input", "text": text, "ts": 1}))
 
 
 def test_crisis_sequence_and_audit():
@@ -94,7 +94,7 @@ def test_invalid_json_error_then_connection_alive():
 
 def test_invalid_user_input_payload():
     with client.websocket_connect("/ws") as ws:
-        ws.send_text(json.dumps({"type": "user_input", "mode": "text", "text": None, "ts": 3}))
+        ws.send_text(json.dumps({"type": "user_input", "text": None, "ts": 3}))
         err = _recv(ws)
         assert err["code"] == "invalid_message"
         assert "text" in err["message"]
@@ -125,12 +125,61 @@ def test_answer_seq_global_across_rounds(monkeypatch):
         _recv(ws)
 
 
-# ---- 语音链路(步骤8;真 ASR/TTS 见 tests/test_voice.py,此处钉网关接线) ----
+# ---- 语音转写预览(ADR-004;/asr/transcribe REST,真 ASR 见 tests/test_voice.py) ----
 
 
-def test_audio_mode_transcribed_same_stream(monkeypatch):
-    """mode=audio:转写文本走同 text 流(用例4 链路判据;音频即弃)。"""
+def test_asr_transcribe_rest_ok_and_audited(monkeypatch):
+    """转写成功:200+text;日志 asr_transcribed 只记长度+指纹(脱敏,不含原文)。"""
     monkeypatch.setattr("app.voice.asr.transcribe", lambda audio: "最近很焦虑睡不着")
+    events: list[dict[str, Any]] = []
+    handle = capture_events(events.append)
+    try:
+        res = client.post("/asr/transcribe", json={"audio": "ZmFrZS13ZWJt"})  # b"fake-webm"
+    finally:
+        from loguru import logger
+
+        logger.remove(handle)
+    assert res.status_code == 200
+    assert res.json() == {"text": "最近很焦虑睡不着"}
+    hits = [e for e in events if e["extra"].get("event") == "asr_transcribed"]  # record.extra 即字段
+    assert len(hits) == 1
+    assert hits[0]["extra"]["length"] == len("最近很焦虑睡不着")
+    assert "最近很焦虑睡不着" not in json.dumps(events, default=str)  # 原文不落日志
+
+
+def test_asr_transcribe_rest_empty_ok(monkeypatch):
+    """空转写(="没听到")→ 200+空串+asr_empty,不算错误。"""
+    monkeypatch.setattr("app.voice.asr.transcribe", lambda audio: "")
+    res = client.post("/asr/transcribe", json={"audio": "eg=="})
+    assert res.status_code == 200
+    assert res.json() == {"text": ""}
+
+
+def test_asr_transcribe_rest_unavailable(monkeypatch):
+    """转写不可用(模型未加载/异常)→ 503,前端引导转打字。"""
+    from app.voice.asr import ASRError
+
+    def _boom(audio: bytes) -> str:
+        raise ASRError("model not loaded")
+
+    monkeypatch.setattr("app.voice.asr.transcribe", _boom)
+    res = client.post("/asr/transcribe", json={"audio": "eg=="})
+    assert res.status_code == 503
+
+
+def test_asr_transcribe_rest_bad_base64():
+    res = client.post("/asr/transcribe", json={"audio": "not-base64!!!"})
+    assert res.status_code == 422
+
+
+def test_asr_transcribe_rest_oversize(monkeypatch):
+    monkeypatch.setattr("app.voice.routes._MAX_AUDIO_BYTES", 8)  # 护栏分支,不必造 1MB 载荷
+    res = client.post("/asr/transcribe", json={"audio": "ZmFrZS13ZWJtLW92ZXItbGltaXQ="})
+    assert res.status_code == 413
+
+
+def test_legacy_audio_input_rejected():
+    """旧 mode=audio 形状(ADR-004 前)→ invalid_message:输入单源文本,音频不进 WS。"""
     with client.websocket_connect("/ws") as ws:
         ws.send_text(
             json.dumps(
@@ -138,28 +187,14 @@ def test_audio_mode_transcribed_same_stream(monkeypatch):
                     "type": "user_input",
                     "mode": "audio",
                     "text": None,
-                    "audio": "ZmFrZS13ZWJt",  # b"fake-webm"
+                    "audio": "ZmFrZS13ZWJt",
                     "ts": 5,
                 }
             )
         )
-        first = _recv(ws)
-        assert first["type"] == "first_frame"
-        assert first["route"] == "collect"
-        assert first["mood_select"] is True
-
-
-def test_audio_mode_empty_transcript_degrades(monkeypatch):
-    monkeypatch.setattr("app.voice.asr.transcribe", lambda audio: "")
-    with client.websocket_connect("/ws") as ws:
-        ws.send_text(
-            json.dumps(
-                {"type": "user_input", "mode": "audio", "text": None, "audio": "eg==", "ts": 6}
-            )
-        )
         reply = _recv(ws)
-        assert reply["type"] == "text_delta"  # 温和降级,不发 first_frame
-        assert _recv(ws)["type"] == "done"
+        assert reply["type"] == "error"
+        assert reply["code"] == "invalid_message"
 
 
 def test_crisis_speaks_hotline(monkeypatch):
@@ -329,7 +364,6 @@ def test_reconnect_adopts_session_id(monkeypatch):
                 {
                     "type": "user_input",
                     "session_id": "sess_previous_round",
-                    "mode": "text",
                     "text": "什么是正念",
                     "ts": 6,
                 }

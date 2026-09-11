@@ -84,7 +84,7 @@ describe('WSClient', () => {
   it('未连接时 send 抛 WSError', () => {
     const { client } = makeClient()
     expect(() =>
-      client.send({ type: 'user_input', mode: 'text', text: 'hi', audio: null, ts: 1 }),
+      client.send({ type: 'user_input', text: 'hi', ts: 1 }),
     ).toThrow(WSError)
   })
 
@@ -96,7 +96,7 @@ describe('WSClient', () => {
       template: null, emotion_label: null, mood_select: false, text: '嗯',
     })
 
-    client.send({ type: 'user_input', mode: 'text', text: 'hi', audio: null, ts: 2 })
+    client.send({ type: 'user_input', text: 'hi', ts: 2 })
     const sent = JSON.parse(socketAt(sockets, 0).sent[0] as string) as { session_id?: string }
     expect(sent.session_id).toBe('sess_x')
   })

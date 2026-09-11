@@ -144,12 +144,8 @@ class WsClient:
 
 
 def user_text(text: str, session_id: str | None = None) -> dict[str, Any]:
-    return {"type": "user_input", "mode": "text", "text": text, "ts": int(time.time() * 1000),
+    return {"type": "user_input", "text": text, "ts": int(time.time() * 1000),
             **({"session_id": session_id} if session_id else {})}
-
-
-def user_audio(b64: str) -> dict[str, Any]:
-    return {"type": "user_input", "mode": "audio", "audio": b64, "ts": int(time.time() * 1000)}
 
 
 def result(name: str, ok: bool, detail: str) -> None:

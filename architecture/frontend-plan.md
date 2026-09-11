@@ -29,7 +29,7 @@
 | mood | 今日心情选择器(浮出/超时/mood_select 上报) |
 | l2d | pixi-live2d-display 封装+表情映射(版本钉子=§1,不重复) |
 | audio | 音频队列与播放:enqueue(chunk) 入队顺序播放 · stopAndFade() 淡出当前声并清队(first_frame 抢占时调,时长见 §6)· onPlayback(cb) 广播播放状态;l2d 订阅播放事件驱动口型,播放不依赖立绘加载 |
-| chat | 气泡+流式文本+危机横幅(ChatPanel);文字/麦克风输入(录音→上传 ASR)(input) |
+| chat | 气泡+流式文本+危机横幅(ChatPanel);输入单源文本:文字/麦克风(录音→/asr/transcribe 转写→追加回填文本框,用户确认发送,ADR-004)(input) |
 | station | 心灵补给站:触发生成/等待态/md 预览/导出 |
 | state | 回合状态机 transition(event)(§3)·持当前情绪 emotionLabel:写者按 first_frame.emotion_label → mood_select 本地写 → 精稿 draw.data.emotion.label 次序覆盖,本回合内用户手点不被精稿回退,first_frame 重置;Pinia store |
 | logger | console 彩色 logger(INFO/WARN/ERROR) |

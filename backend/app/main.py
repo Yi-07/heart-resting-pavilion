@@ -1,4 +1,4 @@
-"""入口装配(backend-plan §2):挂 /ws·/station·/admin;启动应用持久模型配置;
+"""入口装配(backend-plan §2):挂 /ws·/station·/admin·/asr;启动应用持久模型配置;
 CORS 白名单放行前端 dev 跨源访问 REST(WS 无同源约束)。
 进程编排:startup 后台拉起 TTS sidecar(模型加载分钟级,不阻塞文字链路),
 shutdown 有序关停自己拉起的子进程(外部启动的不越权,版本握手防旧进程静默复用)。"""
@@ -16,6 +16,7 @@ from app import admin, config
 from app import logger as app_logger
 from app.logger import setup_logger
 from app.station import router as station_router
+from app.voice.routes import router as asr_router
 from app.ws_gateway import handle_connection
 
 setup_logger(verbose=os.getenv("HRP_VERBOSE") == "1")
@@ -93,6 +94,7 @@ app.add_middleware(
 )
 app.include_router(station_router)
 app.include_router(admin.router)
+app.include_router(asr_router)
 
 
 @app.websocket("/ws")

@@ -16,6 +16,3 @@ MoodKey = Literal["难过", "低落", "平静", "还好", "开心", "很好"]
 
 ErrorCode = Literal["invalid_message", "timeout", "server_error"]
 """error 帧 code(§3.6)"""
-
-MessageMode = Literal["text", "audio"]
-"""user_input.mode(§4.1)"""

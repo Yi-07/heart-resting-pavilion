@@ -30,6 +30,8 @@
 
 ## 3. 已定案的架构裁定(勿重开;详见 ADR-002/003 与各模块 docstring)
 
+- **ADR-004(语音输入两步式)**:录音 → REST `POST /asr/transcribe`(base64 webm/opus → {text};空串=没听到 200,不可用 503,字节护栏 1MB=413)→ 前端追加式回填文本框 → 用户确认按文本发送;**输入单源文本**——`user_input` 无 mode/audio 字段,网关无 audio 分支,e2e_b_asr 已删;危机判定吃用户确认文本,ASR 质量不直入安全链路;转写日志 asr_transcribed/asr_empty 归属 REST 端点(事件名不变)。
+
 - done 帧**带** session_id;user_input/mood_select 的 session_id **可空**;重连带原 id → 网关认领+热层 snapshot 恢复(仅 history_summary;turns 重建属 ADR-001 待办)。
 - **轮次回答=同回合连续不发 first_frame**;分析中抢占=cancel+旧 emitter 标 dead(未发帧蒸发)。
 - **ADR-002(TTS 分句流式+进程统一)**:sidecar `POST /tts_stream` NDJSON 逐句出料(消费完整生成器——旧版 next() 截断 bug 已修);网关逐句直发,每句一个 audio_chunk(seq 单调);**总结语音 done 之后异步流出,仅抢占(trace 变)蒸发**——60s 回合超时不再罩 TTS;sidecar `/health` 带 version 握手,旧进程拒绝静默复用;协议常量单源=`app/voice/sidecar_protocol.py`(backend 与 CosyVoice venv 共享的零依赖模块)。

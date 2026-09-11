@@ -13,8 +13,8 @@
 - LLM 失败 → 话术库降级;处理满 LLM_TIMEOUT_S → error(timeout) 兜底
 - 发号:仅 draw/text_delta/audio_chunk/done 盖章(seq 预增,首帧=1);
   first_frame/error 不带不消耗;计数器=连接内存(会话内全局递增)
-- 非法消息 → error(invalid_message),不崩连接;mode=audio 步骤 8 已接:
-  转写同流(ASR 失败/空文本温和降级);安抚语/总结/危机 TTS 直发 audio_chunk,
+- 非法消息 → error(invalid_message),不崩连接;输入单源文本(语音经 /asr/transcribe
+  转写回填,ADR-004);安抚语/总结/危机 TTS 直发 audio_chunk,
   全部可失败跳过(音频缺席不影响文字链路)
 """
 
@@ -233,37 +233,11 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
     conn.log(
         "user_input_received",
         trace_id=trace,
-        mode=msg.mode,
-        fingerprint=app_logger.text_fingerprint(msg.text or msg.audio or ""),
+        fingerprint=app_logger.text_fingerprint(msg.text),
     )
 
-    if msg.mode == "audio":
-        # 语音链路:base64 webm/opus → ffmpeg wav16k → SenseVoice 只取文本;
-        # 音频字节即弃不落任何存储(红线 §7),日志只记指纹与长度
-        from app.voice import asr
-
-        try:
-            text = await asyncio.to_thread(asr.transcribe, base64.b64decode(msg.audio or ""))
-        except asr.ASRError as exc:
-            conn.log(
-                "degraded", level="WARN", trace_id=trace, reason="asr_failed", detail=str(exc)[:120]
-            )
-            await conn.send_text("这段语音我没听清,可以再说一遍吗?", final=True)
-            await conn.send_done()
-            return
-        if not text:
-            conn.log("asr_empty", trace_id=trace)
-            await conn.send_text("好像没听到声音,再试一次?", final=True)
-            await conn.send_done()
-            return
-        conn.log(
-            "asr_transcribed",
-            trace_id=trace,
-            length=len(text),
-            fingerprint=app_logger.text_fingerprint(text),
-        )
-    else:
-        text = msg.text or ""
+    # 语音输入已在 /asr/transcribe 转写并经用户确认回填(ADR-004),此处只吃文本
+    text = msg.text
     result = gate.check(text)
     conn.log(
         "crisis_gate_hit",

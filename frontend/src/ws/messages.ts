@@ -13,9 +13,6 @@ export type MoodKey = '难过' | '低落' | '平静' | '还好' | '开心' | '�
 /** error 帧 code(契约 §3.6) */
 export type ErrorCode = 'invalid_message' | 'timeout' | 'server_error'
 
-/** user_input.mode(契约 §4.1) */
-export type MessageMode = 'text' | 'audio'
-
 // ---------- 数据对象(契约 §5.1) ----------
 
 /** formulation.emotion 子对象;label/intensity 均可 null(研判无强度可缺省) */
@@ -111,13 +108,11 @@ export type S2CMsg = FirstFrame | Draw | TextDelta | AudioChunk | Done | ErrorFr
 
 // ---------- C→S(契约 §4) ----------
 
-/** 用户文字/音频输入;采集轮次回答同用此消息;mode 决定 text/audio 必填 */
+/** 用户文本输入;语音经 /asr/transcribe 转写回填后同此发送(ADR-004,输入单源文本) */
 export interface UserInput {
   type: 'user_input'
   session_id?: string | null // 重连时带原 id;首条可省(连接即建会话,§1)
-  mode: MessageMode
-  text: string | null
-  audio: string | null // mode=audio 必填(base64,webm/opus,单段 ≤15s)
+  text: string
   ts: number
 }
 

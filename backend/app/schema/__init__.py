@@ -15,7 +15,7 @@ from .formulation import (
     StageMapData,
     TemplateData,
 )
-from .literals import ErrorCode, MessageMode, MoodKey, Route, TemplateId
+from .literals import ErrorCode, MoodKey, Route, TemplateId
 from .station import StationReportResponse, StationReportStatus
 from .ws_messages import (
     AudioChunk,
@@ -43,7 +43,6 @@ __all__ = [
     "ErrorFrame",
     "FirstFrame",
     "Formulation",
-    "MessageMode",
     "MoodKey",
     "MoodSelect",
     "Route",

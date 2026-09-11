@@ -59,7 +59,7 @@ def _recv(ws: Any) -> dict:
 
 
 def _send(ws: Any, text: str) -> None:
-    ws.send_text(json.dumps({"type": "user_input", "mode": "text", "text": text, "ts": 1}))
+    ws.send_text(json.dumps({"type": "user_input", "text": text, "ts": 1}))
 
 
 def test_collect_full_round(monkeypatch):

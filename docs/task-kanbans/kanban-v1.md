@@ -26,10 +26,11 @@
 - [x] **A1 危机核心词表扩充**:现仅 9 核心词,补常见真实表述 ~20 条(跳楼/割腕/吃安眠药/一了百了/熬不下去/想离开这个世界/没有我会更好/我是累赘/人间不值得等)入 `gate.CORE_TERMS/SOFT_TERMS` + 钉测试。安全底线,内测前置。(落定:核心 9→23·软 5→10;"吃安眠药"有医疗正用归软档,吞药入核心;词表逐条钉死,三件套全绿)
 - [x] **A2 prototypes/tts-latency 归档**:判定标准——`e2e_lib.py` + ADR-003 五用例脚本(e2e2_*)迁 `backend/tests/` 作业务回归素材;**freeze_gpu_blueprint.txt / freeze_sidecar_rollback.txt 必须保留**(D1 venv 重建锚,迁 backend/scripts/ 或随 D1 落位);bench_*/FINDINGS.md 删(结论已沉淀 ADR-002/003);其余按同原则处置。(落定:e2e_lib+两轮 E2E 共 10 脚本已迁 `backend/tests/e2e/`,ruff/mypy 清零+ping_interval=None 修正+日志路径改 backend 相对+e2e_b_asr 语音素材改命令行传入;bench/FINDINGS/运行日志/中间产物已删;freeze 两文件按人裁定留原地随 D1 处置;实况回归待 B2)
 - 注:~~RAG 启动 warm-up 预热~~ ✅ 已随 ADR-003 落地(lifespan warm() + retrieve_async 降级 + E2E 验证,commit `5dfeea6`);~~模型下载脚本~~ → 并入 D1(部署配置归属)。
+- [x] **A3 语音输入两步式(ADR-004)**:B1 盘点发现 ASR 音频直入对话流→转写偏差可致危机漏检,改两步式:录音 → `POST /asr/transcribe` 转写(200/413/422/503)→ 追加式回填文本框(末尾非标点补逗号)→ 用户确认按文本发送。输入单源文本:`user_input` 删 mode/audio 字段,网关删 audio 分支,e2e_b_asr 作废删除;语音故障与 WS 解耦。(契约/schema/前后端/测试同步,三件套+前端检查全绿;交互实况归 B2 手测)
 
 ### B. 业务测试(新窗口执行)
 
-- [ ] **B1 验收清单落地**:清单文档写 `docs/tests/acceptance-v1.md`(判据载体),看板只挂状态。指标口径=三链路流畅度(帧序完整/无冻结/首包时长,基线=ADR-002/003 E2E 实测)+ 危机词表抽测 20-30 条真实表达(样本从 `backend/logs/` 的 crisis_gate_hit 反推,**筛 `"hit": true` 且 matched 非空的行**)+ 环境前置节(内测访问形态/Redis/模型/l2d)。达成「应对 80%+ 应用场景」即可交付第一版。
+- [x] **B1 验收清单落地**:清单文档写 `docs/tests/acceptance-v1.md`(判据载体),看板只挂状态。指标口径=三链路流畅度(帧序完整/无冻结/首包时长,基线=ADR-002/003 E2E 实测)+ 危机词表抽测 20-30 条真实表达(样本从 `backend/logs/` 的 crisis_gate_hit 反推,**筛 `"hit": true` 且 matched 非空的行**)+ 环境前置节(内测访问形态/Redis/模型/l2d)。达成「应对 80%+ 应用场景」即可交付第一版。(落定:7 节——环境前置/三链路/语音/ADR-003 场景/词表抽测/记忆恢复/工具;抽测样本实测=日志 82 条 hit 中 80 条"不想活"+2 条"自杀"分布单一,改以 A1 词表 33 条构造变体句全覆盖+误伤负样本;**双用例原则**=三链路+门控场景各配简单+复杂两条话术防偶然,复杂变体含裁量规则——概念问句变体判内容轮不硬判挂、求助句被抢占=硬挂)
 - [ ] **B2 完整三链路业务测试**:answer/collect/crisis 全链实况(吸收原 B-6)。执行素材:`backend/tests/e2e/`(e2e_lib + 两轮 E2E 脚本,跑法见 e2e_lib 头注;`uv run python tests/e2e/e2e2_a_gate_concept.py`,Windows 直接 python 不经 pytest);本机需在跑 `uv run hrp`(lifespan 自动拉 sidecar+RAG 预热)。并纳入:station 方案书 REST 实测、Redis 宕机降级实测、跨会话 memory_restored、概念问句门控/求助句留场(ADR-003 场景)、词表抽测(依赖 A1)。判据挂 B1 的 acceptance-v1.md。
 
 ### C. code review
