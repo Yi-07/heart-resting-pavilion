@@ -24,13 +24,13 @@
 ### A. 遗留问题完善
 
 - [x] **A1 危机核心词表扩充**:现仅 9 核心词,补常见真实表述 ~20 条(跳楼/割腕/吃安眠药/一了百了/熬不下去/想离开这个世界/没有我会更好/我是累赘/人间不值得等)入 `gate.CORE_TERMS/SOFT_TERMS` + 钉测试。安全底线,内测前置。(落定:核心 9→23·软 5→10;"吃安眠药"有医疗正用归软档,吞药入核心;词表逐条钉死,三件套全绿)
-- [ ] **A2 prototypes/tts-latency 归档**:判定标准——`e2e_lib.py` + ADR-003 五用例脚本(e2e2_*)迁 `backend/tests/` 作业务回归素材;**freeze_gpu_blueprint.txt / freeze_sidecar_rollback.txt 必须保留**(D1 venv 重建锚,迁 backend/scripts/ 或随 D1 落位);bench_*/FINDINGS.md 删(结论已沉淀 ADR-002/003);其余按同原则处置。
+- [x] **A2 prototypes/tts-latency 归档**:判定标准——`e2e_lib.py` + ADR-003 五用例脚本(e2e2_*)迁 `backend/tests/` 作业务回归素材;**freeze_gpu_blueprint.txt / freeze_sidecar_rollback.txt 必须保留**(D1 venv 重建锚,迁 backend/scripts/ 或随 D1 落位);bench_*/FINDINGS.md 删(结论已沉淀 ADR-002/003);其余按同原则处置。(落定:e2e_lib+两轮 E2E 共 10 脚本已迁 `backend/tests/e2e/`,ruff/mypy 清零+ping_interval=None 修正+日志路径改 backend 相对+e2e_b_asr 语音素材改命令行传入;bench/FINDINGS/运行日志/中间产物已删;freeze 两文件按人裁定留原地随 D1 处置;实况回归待 B2)
 - 注:~~RAG 启动 warm-up 预热~~ ✅ 已随 ADR-003 落地(lifespan warm() + retrieve_async 降级 + E2E 验证,commit `5dfeea6`);~~模型下载脚本~~ → 并入 D1(部署配置归属)。
 
 ### B. 业务测试(新窗口执行)
 
 - [ ] **B1 验收清单落地**:清单文档写 `docs/tests/acceptance-v1.md`(判据载体),看板只挂状态。指标口径=三链路流畅度(帧序完整/无冻结/首包时长,基线=ADR-002/003 E2E 实测)+ 危机词表抽测 20-30 条真实表达(样本从 `backend/logs/` 的 crisis_gate_hit 反推,**筛 `"hit": true` 且 matched 非空的行**)+ 环境前置节(内测访问形态/Redis/模型/l2d)。达成「应对 80%+ 应用场景」即可交付第一版。
-- [ ] **B2 完整三链路业务测试**:answer/collect/crisis 全链实况(吸收原 B-6)。执行素材:`prototypes/tts-latency/e2e_lib.py` + e2e2_* 五脚本(若 A2 归档已执行,用迁移后新位置);本机需在跑 `uv run hrp`(lifespan 自动拉 sidecar+RAG 预热)。并纳入:station 方案书 REST 实测、Redis 宕机降级实测、跨会话 memory_restored、概念问句门控/求助句留场(ADR-003 场景)、词表抽测(依赖 A1)。判据挂 B1 的 acceptance-v1.md。
+- [ ] **B2 完整三链路业务测试**:answer/collect/crisis 全链实况(吸收原 B-6)。执行素材:`backend/tests/e2e/`(e2e_lib + 两轮 E2E 脚本,跑法见 e2e_lib 头注;`uv run python tests/e2e/e2e2_a_gate_concept.py`,Windows 直接 python 不经 pytest);本机需在跑 `uv run hrp`(lifespan 自动拉 sidecar+RAG 预热)。并纳入:station 方案书 REST 实测、Redis 宕机降级实测、跨会话 memory_restored、概念问句门控/求助句留场(ADR-003 场景)、词表抽测(依赖 A1)。判据挂 B1 的 acceptance-v1.md。
 
 ### C. code review
 
@@ -43,6 +43,7 @@
 ### D. 交付文档(部署配置并入此处)
 
 - [ ] **D1 新克隆环境一键就绪 + README/CONTRIBUTING**:全部模型/素材配置脚本化并实测一次(临时目录 clone 验证),再落 README:
+  - **仓库文档大规模分类整理**(人裁定并入:防推远程时文档污染)——全库文档盘点去留/归位;`prototypes/` 区制品处置,含 freeze 两文件 venv 重建锚迁 `backend/scripts/`(或等价落位)并入库
   - RAG 两模型:`uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3`(失败/超时切镜像 `HF_ENDPOINT=https://hf-mirror.com`);**缓存落点显式设 `HF_HOME=D:\hf_cache`**(hf 默认进 C 盘 `.cache\huggingface\hub`,GB 级且中文用户名有 sentencepiece 历史坑)或 `--local-dir` 直落 `backend/models/`
   - CosyVoice venv 重建脚本(重):GPU torch 蓝本安装(`prototypes/tts-latency/freeze_gpu_blueprint.txt`,setuptools<81 坑)+ CosyVoice2 权重(5.3GB,`models/voices/` gitignored)
   - SenseVoice:首用自动从 ModelScope 拉(~900MB),文档写清 `MODELSCOPE_CACHE` 落盘位

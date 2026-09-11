@@ -22,11 +22,11 @@
 - **RAG 模型本地化**:bge-m3 `backend/models/bge-m3/`(2.2G)+ reranker(2.1G),**gitignore 不入库;新克隆需重建**(下载脚本待补=看板 D1,下载命令已内联看板;本机走 hf-mirror `curl -sL`,huggingface_hub Xet 分片在本机报 FileMetadataError,底层 HTTP 通)。缺件不炸:answer 走降级直答(日志 `rag_warm_failed`/`degraded rag_failed`)。
 - **Chroma**=`backend/.rag_store/`:`hrp_kb_knowledge`(15 条科普库/answer 用)· `hrp_kb_case`(14944 条案例库/collect·station 用)。重建=`uv run python -m app.rag.ingest --reset`;**全量编码纯 CPU 易被 OOM 杀,限线程 `OMP_NUM_THREADS=8` 可稳**(本机 15.8G 内存)。检索已异步化(`rag.retrieve_async`,未就绪 2s 超时降级),不阻塞事件循环。
 - **内存压力**:系统内存不足时后端/后台进程会被系统结束(非代码问题,重启即恢复)——9880/8000 端口被占时先 `netstat -ano | grep 端口`+`taskkill //F //PID`。
-- **WS 测试脚本**:`websockets` 库建议传 `ping_interval=None`(长任务/冷启下 20s 默认 keepalive 会误断;现存 e2e 脚本未带该参,自行加);前端浏览器原生 WS 不受影响。
+- **E2E 脚本现场**:已迁 `backend/tests/e2e/`(e2e_lib + 两轮共 10 脚本,ruff/mypy 干净);跑法=e2e_lib 头注(`uv run python tests/e2e/e2e2_a_gate_concept.py`,Windows 直接 python);e2e_b_asr 需命令行传真实语音 wav(样本不入库);日志路径=backend/tests/e2e 相对 backend/logs。`prototypes/tts-latency/` 仅剩 freeze 两文件(venv 重建锚,gitignore 不入库,**随 D1 迁 backend/scripts/ 入库**)。
+- **WS 测试脚本**:`websockets` 库建议传 `ping_interval=None`(长任务/冷启下 20s 默认 keepalive 会误断;e2e_lib 已带该参,自写脚本记得加);前端浏览器原生 WS 不受影响。
 - **Windows 坑**:仓库文本 CRLF(前端读 `architecture/*.md` 正则要 `\r?\n`+`s`);git-bash 管道下 Python print 中文 GBK 乱码(仅显示,断言在脚本内做);TestClient 的 WS 测试是同步函数不能 `await`。
 - **Live2D 素材**:`frontend/public/vendor/` 整体 gitignore(授权禁再分发);新克隆跑 `npm run l2d:fetch` 重建,缺失自动回退 CDN→SVG 手绘兜底。目录单源=`src/l2d/models.ts`。
 - **CORS**:白名单=`config.CORS_ALLOW_ORIGINS`(默认 5173 两址)——队友内测若跨机访问需扩。
-- **E2E 脚本现场**:`prototypes/tts-latency/`(e2e_lib.py + e2e2_* 五用例 + bench/原型产物)=本轮业务回归素材;归档处置=看板 A2。
 
 ## 3. 已定案的架构裁定(勿重开;详见 ADR-002/003 与各模块 docstring)
 
