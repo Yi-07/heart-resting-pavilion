@@ -23,7 +23,7 @@
 
 ### A. 遗留问题完善
 
-- [ ] **A1 危机核心词表扩充**:现仅 9 核心词,补常见真实表述 ~20 条(跳楼/割腕/吃安眠药/一了百了/熬不下去/想离开这个世界/没有我会更好/我是累赘/人间不值得等)入 `gate.CORE_TERMS/SOFT_TERMS` + 钉测试。安全底线,内测前置。
+- [x] **A1 危机核心词表扩充**:现仅 9 核心词,补常见真实表述 ~20 条(跳楼/割腕/吃安眠药/一了百了/熬不下去/想离开这个世界/没有我会更好/我是累赘/人间不值得等)入 `gate.CORE_TERMS/SOFT_TERMS` + 钉测试。安全底线,内测前置。(落定:核心 9→23·软 5→10;"吃安眠药"有医疗正用归软档,吞药入核心;词表逐条钉死,三件套全绿)
 - [ ] **A2 prototypes/tts-latency 归档**:判定标准——`e2e_lib.py` + ADR-003 五用例脚本(e2e2_*)迁 `backend/tests/` 作业务回归素材;**freeze_gpu_blueprint.txt / freeze_sidecar_rollback.txt 必须保留**(D1 venv 重建锚,迁 backend/scripts/ 或随 D1 落位);bench_*/FINDINGS.md 删(结论已沉淀 ADR-002/003);其余按同原则处置。
 - 注:~~RAG 启动 warm-up 预热~~ ✅ 已随 ADR-003 落地(lifespan warm() + retrieve_async 降级 + E2E 验证,commit `5dfeea6`);~~模型下载脚本~~ → 并入 D1(部署配置归属)。
 

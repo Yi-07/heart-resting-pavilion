@@ -49,3 +49,37 @@ def test_empty_text_safe():
     assert r.hit is False
     assert r.matched == []
     assert r.severity == 0.0
+
+
+def test_all_core_terms_hit_individually():
+    # A1 扩充钉死:核心词表每条必须独立命中(防词表手滑改档/漏登记)
+    for term in gate.CORE_TERMS:
+        r = gate.check(term)
+        assert r.hit is True, f"核心词未命中: {term}"
+        assert r.severity == 1.0
+        assert term in r.matched
+
+
+def test_all_soft_terms_match_below_threshold():
+    for term in gate.SOFT_TERMS:
+        r = gate.check(term)
+        assert r.hit is False, f"软信号词单独不应触危机: {term}"
+        assert r.severity == 0.4
+        assert term in r.matched
+
+
+def test_new_real_expressions_hit():
+    # 看板 A1 抽钉:真实表述样本(全量覆盖见 test_all_core_terms_hit_individually)
+    for text in ["站在天台上想跳楼", "手腕上有伤是割腕的", "觉得一了百了就轻松了",
+                 "我想离开这个世界", "没有我会更好吧", "吞药是不是就不疼了"]:
+        r = gate.check(text)
+        assert r.hit is True, f"真实危机表述未命中: {text}"
+
+
+def test_medical_sleeping_pill_usage_no_hit():
+    # "吃安眠药"有医疗正用→软档:单独出现不触发,但仍入 matched 供 risk 复核
+    r = gate.check("我每晚都要吃安眠药才能睡着")
+    assert r.hit is False
+    assert "吃安眠药" in r.matched
+    # 过量自杀表述仍走核心档命中
+    assert gate.check("想吞药一了百了").hit is True
