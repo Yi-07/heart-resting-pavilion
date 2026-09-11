@@ -58,6 +58,12 @@ class CollectState:
     # C
     turns: list[Turn] = field(default_factory=list)
     session_context: SessionContext = field(default_factory=SessionContext)
+    suspended: bool = False
+    """短答支线挂起标记(ADR-003 采集态门控):概念问句切 answer 时不弃采集态,
+    只置挂起;下一输入恢复(turns/字段全保留)。只活连接内存,不进记忆快照。"""
+    pending_ask_count: int = 0
+    """采集内连续追问计数(ADR-003 短答升级):answer 命中且非纯概念时累加,
+    满 2 或显式要求回答即允许短答;回采集后清零。"""
 
 
 # ---- 图出口事件(§3.4;网关按事件收尾,不读 state 内部) ----

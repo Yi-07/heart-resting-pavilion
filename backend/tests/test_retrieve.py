@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from app.rag.corpus import Ref, RagLibrary, load_corpus
+from app.rag.corpus import RagLibrary, Ref, load_corpus
 from app.rag.engine import RagEngine
 
 _SEEDS = Path(__file__).resolve().parents[1] / "data" / "rag_retrieve_test_seeds.jsonl"

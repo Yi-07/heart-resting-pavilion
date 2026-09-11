@@ -282,11 +282,46 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
 
     try:
         cls = classifier.classify_rules(text)
+        if cls.route == "answer" and conn.collect_state is not None:
+            # 采集态门控(ADR-003):采集中的输入默认服务采集主线——
+            # 纯概念问句/连续追问满 2/显式要求回答 → 短答支线:挂起不清空
+            # (无 first_frame,前端黑板天然保活),下一输入恢复采集;
+            # 其余求助句(怎么办/建议类,依赖场景)→ 留 collect,由提取/陪聊路径
+            # 轻回应,不硬切科普
+            state = conn.collect_state
+            if (
+                classifier.is_pure_concept(text)
+                or classifier.is_explicit_ask(text)
+                or state.pending_ask_count >= 2
+            ):
+                state.suspended = True
+                conn.log(
+                    "route_decided",
+                    trace_id=trace,
+                    route="answer",
+                    source=cls.source,
+                    needs_rag=cls.needs_rag,
+                    via="concept_suspend",
+                    ask_count=state.pending_ask_count,
+                )
+                await asyncio.wait_for(
+                    _answer_sequence(conn, text, cls), timeout=config.LLM_TIMEOUT_S
+                )
+                return
+            state.pending_ask_count += 1
+            state.suspended = False
+            conn.log(
+                "route_decided",
+                trace_id=trace,
+                route="collect",
+                source=cls.source,
+                via="in_round_gate",
+            )
+            await asyncio.wait_for(
+                _collect_sequence(conn, trace, text, cls, carried=False), timeout=config.LLM_TIMEOUT_S
+            )
+            return
         if cls.route == "answer":
-            if conn.collect_state is not None:
-                # 等待期抢占:输入判 answer → 弃采集态,直接直答(§8 抢占)
-                conn.log("preempted", trace_id=trace, reason="answer_route")
-                conn.collect_state = None
             conn.log(
                 "route_decided",
                 trace_id=trace,
@@ -298,6 +333,8 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
                 _answer_sequence(conn, text, cls), timeout=config.LLM_TIMEOUT_S
             )
         else:
+            if conn.collect_state is not None:
+                conn.collect_state.pending_ask_count = 0  # 回正题:追问计数清零
             conn.log(
                 "route_decided",
                 trace_id=trace,
@@ -507,12 +544,16 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
     refs: list[Ref] = []
     if cls.needs_rag:
         try:
-            from app.rag import get_engine  # 懒加载:chroma/模型首次 answer 才进内存
-            from app.rag.corpus import RagLibrary  # 轻量枚举,无重依赖
+            from app.rag import (
+                retrieve_async,  # 懒加载:chroma/模型只在预热/检索路径进内存
+            )
+            from app.rag.corpus import RagLibrary
 
-            refs = get_engine().retrieve(text, k=config.RAG_TOP_K, library=RagLibrary.KNOWLEDGE)
+            refs = await retrieve_async(
+                text, k=config.RAG_TOP_K, library=RagLibrary.KNOWLEDGE
+            )
             conn.log("rag_retrieved", refs=[r.id for r in refs])
-        except Exception as exc:  # noqa: BLE001 — RAG 任意失败都降级直答,不杀回合
+        except Exception as exc:  # noqa: BLE001 — RAG 失败/未就绪都降级直答,不杀回合
             conn.log("degraded", level="WARN", reason="rag_failed", detail=str(exc)[:120])
             refs = []
 

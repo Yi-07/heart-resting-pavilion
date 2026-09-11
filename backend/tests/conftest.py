@@ -94,6 +94,14 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     # 也不得留下 _stopping=True 污染同进程的后续语音用例;语音用例自行还原
     monkeypatch.setattr("app.voice.tts.ensure_sidecar", lambda timeout_s=None: False)
     monkeypatch.setattr("app.voice.tts.shutdown_spawned", lambda: None)
+    # RAG 预热旗标置位:单测不跑真预热(真实加载 ~18s),retrieve_async 直通
+    import threading
+
+    import app.rag as _rag
+
+    ready = threading.Event()
+    ready.set()
+    monkeypatch.setattr(_rag, "_ready", ready)
     return mem
 
 

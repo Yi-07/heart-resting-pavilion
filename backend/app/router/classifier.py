@@ -37,6 +37,17 @@ GREETINGS: tuple[str, ...] = (
     "你好", "您好", "嗨", "哈喽", "早上好", "中午好", "下午好", "晚上好",
     "晚安", "在吗", "hi", "hello",
 )
+PURE_CONCEPT_PATTERNS: tuple[str, ...] = (
+    "什么是", "是什么意思", "何为", "区别", "原理", "介绍一下", "科普",
+)
+"""纯概念问句(ADR-003 采集态门控):问"X 是什么"式概念,与用户具体场景无关。
+求助性词(怎么办/建议/缓解)不在内——它们依赖场景,采集态中留 collect 轻回应。
+词表为 MVP 最小占位,内容运行时补。"""
+
+EXPLICIT_ASK_TERMS: tuple[str, ...] = (
+    "你先回答", "先回答我", "你倒是", "直接回答", "我想知道", "你先告诉我",
+)
+"""用户明确要求先回答(ADR-003 短答升级):命中即允许短答支线,不必凑满两次追问。"""
 QUICK_LABELS: dict[str, str] = {"焦虑": "焦虑", "紧张": "焦虑", "失眠": "疲惫", "累": "疲惫", "低落": "低落", "难过": "低落"}
 """快速研判第一级标签(粗稿用);两级标签第二级=分析阶段 LLM 复核"""
 
@@ -63,6 +74,17 @@ def quick_label(text: str) -> str | None:
         if signal in text:
             return label
     return None
+
+
+def is_pure_concept(text: str) -> bool:
+    """纯概念问句判定(采集态门控用;ADR-003)。求助性词已在 KNOWLEDGE_PATTERNS
+    命中但不算纯概念——"我该怎么办"依赖用户场景,采集态中不该切走。"""
+    return _hit(PURE_CONCEPT_PATTERNS, text)
+
+
+def is_explicit_ask(text: str) -> bool:
+    """用户明确要求先回答(采集态短答升级;ADR-003)。"""
+    return _hit(EXPLICIT_ASK_TERMS, text)
 
 
 def _hit(patterns: tuple[str, ...], text: str) -> bool:

@@ -228,7 +228,7 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
 
     refs: list = []
     try:
-        from app.rag import get_engine  # 懒加载
+        from app.rag import retrieve_async  # 懒加载
 
         query = " ".join(
             part
@@ -239,8 +239,8 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
             )
             if part
         )
-        refs = get_engine().retrieve(query or "情绪", k=2)
-    except Exception:  # noqa: BLE001 — RAG 失败降级无引用总结
+        refs = await retrieve_async(query or "情绪", k=2)
+    except Exception:  # noqa: BLE001 — RAG 失败/未就绪降级无引用总结
         em.log("degraded", level="WARN", reason="rag_failed")
 
     # 蒸馏总结文本:随流攒全量,Finish 带给网关落温层(降级用话术兜底文本)

@@ -39,6 +39,10 @@ export class WSClient {
   private connected = false
   private attempts = 0
   private manualClose = false
+  /** 重连回调(App 挂断线提示;null=不关心) */
+  onReconnecting: ((attempt: number) => void) | null = null
+  /** 重连成功回调(撤提示) */
+  onReconnected: (() => void) | null = null
 
   constructor(
     private readonly url: string,
@@ -92,10 +96,15 @@ export class WSClient {
     const delay = RECONNECT_BACKOFF_MS[Math.min(this.attempts, RECONNECT_BACKOFF_MS.length - 1)]
     this.attempts += 1
     logger.warn('ws', `连接断开,${delay}ms 后第 ${this.attempts} 次重连`)
+    this.onReconnecting?.(this.attempts)
     setTimeout(() => {
-      this.connect().catch(() => {
-        /* 失败进入下一轮退避 */
-      })
+      this.connect()
+        .then(() => {
+          this.onReconnected?.()
+        })
+        .catch(() => {
+          /* 失败进入下一轮退避 */
+        })
     }, delay)
   }
 

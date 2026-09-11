@@ -5,6 +5,7 @@ shutdown 有序关停自己拉起的子进程(外部启动的不越权,版本握
 
 import asyncio
 import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -41,12 +42,43 @@ async def _warm_sidecar() -> None:
         )
 
 
+async def _warm_rag() -> None:
+    """后台预热 RAG(模型/索引加载 ~18s 级,ADR-003:禁止请求路径同步加载)。
+    失败只 WARN:检索请求 2s 等不到就绪即降级直答,文字链路不受影响。"""
+    from app.rag import warm
+
+    try:
+        await asyncio.to_thread(warm)
+    except Exception as exc:  # noqa: BLE001 — 预热失败不挡主进程
+        _logger.warning("rag_warm_failed", detail=str(exc)[:160])
+        return
+    _logger.info("rag_warm_ready")
+
+
+async def _loop_watchdog() -> None:
+    """事件循环阻塞看门狗(ADR-003):lag>2s 记 WARN。RAG 冷启动静默断连的
+    教训——同步调用堵 loop 时超时/降级机制全部失灵,唯一可靠信号是时钟漂移。"""
+    while True:
+        t0 = time.perf_counter()
+        await asyncio.sleep(1)
+        lag = time.perf_counter() - t0 - 1
+        if lag > 2:
+            _logger.warning(
+                "event_loop_lag", lag_s=round(lag, 2),
+                hint="某处同步调用阻塞了事件循环,按时间戳查同时刻调用栈",
+            )
+
+
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     admin.load_and_apply()  # 持久配置读回应用;无配置/失败 WARN 走 env
     warm = asyncio.create_task(_warm_sidecar())
+    rag_warm = asyncio.create_task(_warm_rag())
+    watchdog = asyncio.create_task(_loop_watchdog())
     yield
     warm.cancel()  # 没就绪就退了:不再等
+    rag_warm.cancel()
+    watchdog.cancel()
     from app.voice import tts  # 懒加载(同 warmup)
 
     tts.shutdown_spawned()

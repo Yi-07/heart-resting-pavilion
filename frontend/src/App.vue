@@ -46,6 +46,7 @@ const l2dBusy = ref(false)
 let l2d: Live2DController | null = null
 let l2dEntry: ModelEntry | null = null
 const wsStatus = ref<'connecting' | 'open' | 'closed'>('connecting')
+const wsReconnecting = ref(false)
 const draft = ref('')
 const lastTemplate = ref<string | null>(null)
 const protoOpen = ref(false)
@@ -203,11 +204,18 @@ onMounted(() => {
     .connect()
     .then(() => {
       wsStatus.value = 'open'
+      wsReconnecting.value = false
     })
     .catch((err: unknown) => {
       wsStatus.value = 'closed'
       logger.error('app', `连接失败: ${String(err)}`)
     })
+  client.onReconnecting = () => {
+    wsReconnecting.value = true
+  }
+  client.onReconnected = () => {
+    wsReconnecting.value = false
+  }
 
   audio.onPlayback((active) => l2d?.setSpeaking(active))
 })
@@ -399,6 +407,7 @@ function toggleMic(): void {
   </div>
 
   <!-- 危机横幅 + 审计标签(后端规则硬判才出现,前端零判定逻辑) -->
+  <div v-if="wsReconnecting" class="ws-banner" data-testid="ws-banner">连接断开了，正在重连…</div>
   <div v-if="round.crisis" class="crisis-banner" data-testid="crisis-banner">
     <span class="cb-ic">
       <svg viewBox="0 0 24 24">
@@ -985,6 +994,22 @@ function toggleMic(): void {
 .send:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+/* ── 断线提示(WSClient 退避重连期间可见,重连成功即撤) ── */
+.ws-banner {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 65;
+  font-size: 12px;
+  color: #6b6257;
+  background: rgba(255, 250, 240, 0.92);
+  border: 1px solid rgba(213, 190, 138, 0.45);
+  padding: 8px 18px;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px -14px rgba(62, 58, 53, 0.35);
 }
 
 /* ── 危机横幅 + 审计 ── */
