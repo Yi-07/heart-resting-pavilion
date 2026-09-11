@@ -2,7 +2,7 @@
 
 > **职能**:多对话窗口接力的共享执行清单——步骤执行状态单源;勾选=已完成并 commit。
 > **优先级**:新会话开工必读顺序 = CLAUDE.md → 本文 → 同目录 `handoff.md`;步骤状态与本文冲突时以本文为准(优于任何会话记忆)。
-> **单源边界**:构建顺序/验收判据/命令单源 = CLAUDE.md §4/§8,本文只记执行状态与分派,不复制判据;完成一步的前提=跑过 §8 对应用例并停下汇报获人确认。
+> **单源边界**:构建顺序/命令/构建验收判据单源 = CLAUDE.md §4/§8,业务测试判据单源 = `docs/tests/acceptance-v1.md`(B1 产出),本文只记执行状态与分派,不复制判据;完成一步的前提=跑过对应用例并停下汇报获人确认。
 
 ## 0. 工作方式(本看板的执行模式)
 
@@ -15,51 +15,52 @@
 - 依据:单窗口实测,工具中间输出(测试日志/浏览器快照/检索面)会快速吃掉主上下文并污染推理现场。
 - 汇报纪律不变:每步完成停下汇报 → 人确认 → commit(勾选+handoff 同步)→ 继续。
 
-## 1. 构建顺序(CLAUDE.md §8;每步=前后端联动切片)
+## 1. 主线构建(全部完成)
 
-- [x] 步骤1 契约类型(schema+messages.ts)· `6c58aae`
-- [x] 步骤2 WS 网关最小版+危机闸门 · `f226fbb`
-- [x] 步骤3 answer(种子语料真检索) · `324bf0a`
-- [x] 步骤4 collect 多轮采集(逻辑层先验) · `07cc917`
-- [x] 步骤5 黑板(SVG 渲染+视觉判据) · `089165e`
-- [x] 步骤6 记忆(Redis 前置) · `c82a343`
-- [x] 步骤7 Live2D · `fdeaa46`(附带 `1db9e72` 修 ws 重连链断裂,步骤2 遗留)
-- [x] 步骤8 语音(ASR+TTS) · `e1251d6`
-- [x] 步骤9 工具(station 懒生成·admin) · `0b5435e`
-- [x] 排后·全量语料接入(队友 `dataset/` 已到位不入库;步骤9 后单做,走 `docs/data-contract.md` §4 回验替换 15 条种子——本项为看板级排程追加,非 CLAUDE.md §8 构建顺序成员)· 翻译层+bge-m3(见 PRD `docs/prds/rag-full-corpus-bge-m3.md`)
+步骤1-9(契约类型→WS 网关→answer→collect→黑板→记忆→Live2D→语音→工具)+ 排后·全量语料接入(bge-m3,14944 条)全部完成。逐项实现/验证口径单源=**git log 的详细 commit message**(git show <hash>);决策背景查 `ARCHITECTURE_PROGRESS.md`(注意:它是决策台账,无逐项 commit 指针,且文档地图待 D2 刷新)。构建顺序单源仍为 CLAUDE.md §8。
 
-## 2. 步骤状态(排后·全量语料接入 已完成)
+## 2. 第一版交付冲刺
 
-**完成情况**:排后·全量语料接入 已落地——翻译层(`dataset/all_base.md` → `backend/data/rag_corpus.jsonl` 14944 条四条字段)+ embedding 换 **bge-m3**(本地 `backend/models/bge-m3/`)+ reranker 本地化 + 分批 upsert。全量已 `ingest --reset` 灌入生产 `.rag_store`(`hrp_kb count=14944`)。方案详见 `docs/prds/rag-full-corpus-bge-m3.md`;测试口径见 `backend/tests/test_retrieve.py`(改 bge-m3 + 测试种子 `rag_retrieve_test_seeds.jsonl`)。
+### A. 遗留问题完善
 
-**验证**:test_retrieve 7/7、半量(均衡一半 7472 条)检索合并命中率 98.5%、ruff/mypy 全过。`test_memory` 需本机 Redis 6379(环境前提,非代码)。
+- [ ] **A1 危机核心词表扩充**:现仅 9 核心词,补常见真实表述 ~20 条(跳楼/割腕/吃安眠药/一了百了/熬不下去/想离开这个世界/没有我会更好/我是累赘/人间不值得等)入 `gate.CORE_TERMS/SOFT_TERMS` + 钉测试。安全底线,内测前置。
+- [ ] **A2 prototypes/tts-latency 归档**:判定标准——`e2e_lib.py` + ADR-003 五用例脚本(e2e2_*)迁 `backend/tests/` 作业务回归素材;**freeze_gpu_blueprint.txt / freeze_sidecar_rollback.txt 必须保留**(D1 venv 重建锚,迁 backend/scripts/ 或随 D1 落位);bench_*/FINDINGS.md 删(结论已沉淀 ADR-002/003);其余按同原则处置。
+- 注:~~RAG 启动 warm-up 预热~~ ✅ 已随 ADR-003 落地(lifespan warm() + retrieve_async 降级 + E2E 验证,commit `5dfeea6`);~~模型下载脚本~~ → 并入 D1(部署配置归属)。
 
-### 第一版生产级制程(主线已完成,以下为到达「第一版软件应用」的分步)
+### B. 业务测试(新窗口执行)
 
-> MVP 完整词表(单源)=`architecture/architecture-spec.md` §10;此处只列「未完成项 + 可交付性」,不复制词表。二期(spec §10)由用户新开 PRD,不排第一版,本看板不追踪。
+- [ ] **B1 验收清单落地**:清单文档写 `docs/tests/acceptance-v1.md`(判据载体),看板只挂状态。指标口径=三链路流畅度(帧序完整/无冻结/首包时长,基线=ADR-002/003 E2E 实测)+ 危机词表抽测 20-30 条真实表达(样本从 `backend/logs/` 的 crisis_gate_hit 反推,**筛 `"hit": true` 且 matched 非空的行**)+ 环境前置节(内测访问形态/Redis/模型/l2d)。达成「应对 80%+ 应用场景」即可交付第一版。
+- [ ] **B2 完整三链路业务测试**:answer/collect/crisis 全链实况(吸收原 B-6)。执行素材:`prototypes/tts-latency/e2e_lib.py` + e2e2_* 五脚本(若 A2 归档已执行,用迁移后新位置);本机需在跑 `uv run hrp`(lifespan 自动拉 sidecar+RAG 预热)。并纳入:station 方案书 REST 实测、Redis 宕机降级实测、跨会话 memory_restored、概念问句门控/求助句留场(ADR-003 场景)、词表抽测(依赖 A1)。判据挂 B1 的 acceptance-v1.md。
 
-#### A. 生产级验收前置(功能可用 + 可复现)
+### C. code review
 
-- [x] 1. **answer 链路语义定位定论→混合知识库分流**:案例语料(case=来访者问题/治疗思路)与 seed(科普=知识问/科普答)语义类型不同。定论=answer 直答查「科普知识库」(当前 15 条种子垫底,内容后续 PRD 扩),collect/station 查「案例库」(14944 条)。engine 拆 `hrp_kb_knowledge`+`hrp_kb_case` 两 Chroma 集合,retrieve/ingest 加 `library` 参数(深模块);answer 链打通。test_gateway 15/15 + test_retrieve 8/8 + ruff/mypy 过;store 两库齐全(14944+15)。
-- [x] 2. **前端设置面板(模型配置 + 记忆治理)**:GET /admin/config 读口(契约 §1 同步)+ 设置面板(预填/分段药丸/保存 + 趋势/一键清除两步确认)。附带完成 UI 范式定稿与正式化(状态 chip/液芽输入条/薄玻璃材质,范式=`preview/l1-ui-taste.html`,规格与冲突裁定见 frontend-plan)。test_admin 9 + 前端 69 用例全绿;E2E 设置面板判据+三路链路回归通过。
-- [ ] 3. **模型下载脚本入库**:新克隆需 curl 重建 bge-m3/reranker(`backend/models/` gitignore);下载脚本未入库(见 PRD Further Notes)。
-- [ ] 4. **RAG 启动 warm-up 预热**:bge-m3 冷启动重,超 answer 60s 预算;涉后端启动行为,做前打招呼。
-- [ ] 5. **`npm run l2d:fetch` 命令可见性**:业务 script 单源=package.json 已收录;CLAUDE.md §4 命令块是否补,重审。
+- [ ] **C1 全库代码审查**(子 agent 分片并行,kanban §0):三个现成 skill(/simplify·/security-review·mattpocock code-review)均为 diff 型不适配全库——**借 mattpocock 两轴方法学自定义**:
+  - Standards 轴=CLAUDE.md §5 代码风格/§7 日志安全红线 + backend-plan §2 深模块原则 + Fowler smell 基线(该 skill SKILL.md 内置 12 项);
+  - Spec 轴=实现是否符合 ADR-002/003 与架构文档原意(缺失/偏差/scope creep);
+  - 独立安全轴=危机判定/脱敏/密钥/注入面(危机与脱敏相关改动逐条过);
+  - 切片建议:voice+gateway / agents+collect / rag+memory / station+admin / frontend,各片一个子 agent 回收结论,主会话汇总分轴呈现。
 
-#### A.5 架构改造·记忆分层(ADR 001 `MemoryTiering`,已审定通过)
+### D. 交付文档(部署配置并入此处)
 
-- [ ] **记忆分层落地(近期原始轮次/长期摘要)**:ADR 001 定案——热层改存 `recent_turns` 原始轮次(短TTL 30min)+精修「原始文本只短留」隐私边界;重连读 recent_turns 重建 `CollectState.turns`。涟漪=spec §4 L7 + §9.4 · `state.py`(`SessionContext` 加字段)· `memory/store.py`(热层结构)· `gateway.py`(重连重建)· 测试补重连一致用例。**与 A#2 解耦,独立落地**。
+- [ ] **D1 新克隆环境一键就绪 + README/CONTRIBUTING**:全部模型/素材配置脚本化并实测一次(临时目录 clone 验证),再落 README:
+  - RAG 两模型:`uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3`(失败/超时切镜像 `HF_ENDPOINT=https://hf-mirror.com`);**缓存落点显式设 `HF_HOME=D:\hf_cache`**(hf 默认进 C 盘 `.cache\huggingface\hub`,GB 级且中文用户名有 sentencepiece 历史坑)或 `--local-dir` 直落 `backend/models/`
+  - CosyVoice venv 重建脚本(重):GPU torch 蓝本安装(`prototypes/tts-latency/freeze_gpu_blueprint.txt`,setuptools<81 坑)+ CosyVoice2 权重(5.3GB,`models/voices/` gitignored)
+  - SenseVoice:首用自动从 ModelScope 拉(~900MB),文档写清 `MODELSCOPE_CACHE` 落盘位
+  - Live2D 素材:`npm run l2d:fetch`(已收录 package.json,README 补可见性);CLAUDE.md §4 命令块同步
+  - 环境前提:Redis 6379、`HF_HOME`/`MODELSCOPE_CACHE` 系统变量、`.env` 从 example 复制
+- [ ] **D2 交付批核对**:ADR 状态、PROGRESS 归档与文档地图刷新(现文档地图已过时:ADR 实有 3 篇仍写"首篇待首个编码期决策",头注日期停在旧值)。
 
-#### B. 生产级验收
+## 3. 待办池(不排程;内测反馈后再定优先级)
 
-- [ ] 6. **后端 §8 三用例 E2E 完整验收**:answer/collect/crisis 真链路(含 collect 完整链 + 心灵补给站触发),作生产级最终验收。
+- 记忆分层落地(ADR-001 `MemoryTiering` 已审定):热层改存 recent_turns 原始轮次+重连重建;涟漪=spec §4 L7(ADR 原文另引的 spec §9.4 编号在现行 spec 不存在,落地时按现行 spec 重新定位审计节)· state.py · memory/store.py · gateway.py · 测试。
+- 陪聊轮保留 pending_question:E2E 观察的 UX 缺口(求助句走陪聊后,下一条内容只进转录不做字段提取);高频出现再修。
+- 阶段 2 四问 LLM 结构化分类器(用户 discourse-stack 方案):仅门控命中时调用,等 route_decided 日志积累偏差数据。
+- 路由准确率/回接率评估(需标注集;route_decided 日志已在积累)。
+- 「不想聊了」显式退出采集(需词表设计)。
+- 短答回接话术 LLM 润色(等恢复体验实况)。
+- LLM_TIMEOUT_S 单值预算拆分(慢流式下总结被兜底截断的偶发风险)。
 
-#### C. 交付产物(验收通过后)
-
-- [ ] 7. **README / CONTRIBUTING 建立**:PROGRESS 文档地图标「编码后建立」,当前缺——验收通过后补,交付阶段产出。
-- [ ] 8. **人看架构文档 + AGENT.md 副本**:PROGRESS 标「交付前批」,验收通过后、交付前补。
-
-## 3. 接力规程
+## 4. 接力规程
 
 1. 收尾窗口(达成交接点):更新本文勾选与 §2 → 重写 `handoff.md` 为最新现状 → 一并 commit → 告知人可开新窗。
 2. 新窗口开工:读 CLAUDE.md → 本文 → handoff.md → 按本文 §0 工作方式继续当前步骤。

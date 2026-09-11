@@ -5,7 +5,7 @@
   权重 0.4(单独不足以致危机;软信号→risk 复核归 agents,步骤 4 接)
 - severity = 命中词权重最大值(不累加,防多软词堆叠误伤)
 - hit = severity ≥ config.CRISIS_GATE_THRESHOLD(默认 0.7)
-- matched = 命中词列表(供审计 §9.4,不含原文本身)
+- matched = 命中词列表(供危机审计,不含原文本身)
 - 词典为 MVP 最小占位(危机核心词先跑),内容运行时补
 纯函数、无 IO、无状态;目标 ≤10ms/条;emotion_label 绝不进本模块。
 """

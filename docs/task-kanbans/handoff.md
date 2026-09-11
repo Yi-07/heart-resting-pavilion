@@ -7,72 +7,67 @@
 
 | 场景 | 技能 |
 |---|---|
-| 排后·全量语料接入(纯数据/检索回验) | 常规编码;检索结果复核可 `doc-standards` |
-| 后续 UI 定稿前 | `design-taste-frontend`;动效 `emil-design-eng` |
-| E2E 验证(真实前后端) | `webapp-testing`(playwright);截图**视觉复核**派多模态子agent(见 §4 末) |
-| 改架构/大方向前 | `grilling`;决策定案落 `docs/adr/` |
+| 业务测试执行(B2;脚本见 §2 e2e 现场) | 常规编码+`webapp-testing`;测试派子 agent 黑盒跑(见 kanban §0) |
+| UI 定稿前 | `design-taste-frontend`;动效 `emil-design-eng` |
+| 改架构/大方向前 | `mattpocock-skills:grilling`;决策定案落 `docs/adr/` |
 | 写/改交付文档、清扫避用词 | `doc-standards`(十判据) |
-| 默认生效 | `i-have-adhd`(输出友好) |
+| code review(C1) | 按 kanban C1 自定义两轴子 agent 方案(三个现成 review skill 均 diff 型,不适配全库) |
+| 默认生效 | `i-have-adhd`(输出友好;会话技能清单未收录时以此清单为准) |
 
 ## 2. 环境现场(命令与判据单源=CLAUDE.md §4/§8,此处只记坑)
 
-- **RAG 模型本地化(排后项,非 HF hub)**:bge-m3 `backend/models/bge-m3/`(2.2G)+ reranker `backend/models/bge-reranker-v2-m3/`(2.1G),**本地 curl 走 hf-mirror 下载**(huggingface_hub 1.29 走 Xet 分片在本机报 `FileMetadataError` 误判,但底层 HTTP 通,`curl -sL` 跟随重定向可下)——`engine.py _EMBED_MODEL/_RERANK_MODEL` 已指向本地绝对路径。**`models/` gitignore,不入库;新克隆需 curl 重建**(下载脚本待补/见 PRD)。HF_HOME=D:\MetaverseStudy\hf_cache 仅用于其他(SenseVoice 等);MODELSCOPE_CACHE=D:\MetaverseStudy\modelscope_cache(SenseVoice ~900MB);CosyVoice2-0.5B 权重 5.3GB 在 `models/voices/CosyVoice/pretrained_models/`。**HF_ENDPOINT 不需设**(模型已本地路径,不触发 hub 下载)。
-- **Chroma(混合知识库,A#1 拆两库)**=`backend/.rag_store/`:`hrp_kb_knowledge`(count=15,科普库/answer 直答用)· `hrp_kb_case`(count=14944,案例库/collect·station 用)——**两库已灌好可用**,源=`backend/data/rag_corpus.jsonl`(14944 条,git 可复现)+`rag_knowledge_corpus.jsonl`(15 条),`RAG_CORPUS_PATH`/`RAG_KNOWLEDGE_CORPUS_PATH` 单源。重建=`uv run python -m app.rag.ingest --reset`;bge-m3 全量编码纯 CPU 费力,**本机 15.8GB 内存、高线程易被 OOM 杀**(实测 16-24 线程被终止),重建时**限线程如 `OMP_NUM_THREADS=8` 可稳**。RAG 冷启动重(bge-m3 ~2GB)超 answer 60s 预算触发设计内降级——演示/验收前先打一条知识问题预热。
-- **服务现场**:5173 vite 常驻;**8000 后端视内存可起**(系统内存不足时会被内存管理机制结束进程,非代码问题——本会话后端曾被结束 2 次,重启即恢复,与 E2E 无关)。起后端=`uv run uvicorn app.main:app --port 8000`(不用 --reload;脚本直连用 `127.0.0.1`,uvicorn 只绑 IPv4)。**TTS sidecar 不常驻**(内存不足时后台进程会被结束)——`app/voice/tts.py` 按需懒拉起,首次 TTS 等模型 ~40s 就绪;优先先把 sidecar 预热到就绪再跑 collect 完整链,可避开「总结 TTS 冷启 vs 60s 回合超时上限」的预算冲突(§6 遗留)。手动起=`models/voices/CosyVoice/.venv/Scripts/python.exe backend/app/voice/tts_sidecar.py`(先清 9880 旧监听:`netstat -ano | grep 9880`+`taskkill //F //PID`)。
-- **WS 测试脚本坑**:`websockets` 库默认 keepalive ping 20s,RAG 冷加载会断——传 `ping_interval=None`;前端浏览器原生 WebSocket 不受影响。
-- **Windows 坑**:仓库文本 CRLF——前端读 `architecture/*.md` 正则要 `\r?\n`+`s` 标志;git-bash 管道下 Python print 中文 GBK 乱码(仅显示,断言在脚本内做);TestClient 的 WS 测试是同步函数不能 `await`;reload 断 WS 时 Proactor ERROR 是已知噪音。
-- **Live2D 素材本地化(步骤7 追加)**:素材=运行时产物 `frontend/public/vendor/`(core+4 模型+models.json),**整体 gitignore**(授权禁止再分发);新克隆跑 `npm run l2d:fetch` 重建(需网络,fetch 脚本对可达镜像 404 权威跳过;本地 vendor 缺失自动回退 CDN)。l2d 目录单源=`src/l2d/models.ts`。
-- **CORS(步骤9)**:后端已挂 `CORSMiddleware`,白名单=`config.CORS_ALLOW_ORIGINS`(默认 5173 两址,env 可调)。浏览器内 REST(station/admin)受同源策略约束,WS 不受——改前端或新增 REST 端点时留意。
+- **服务入口已换短命令**:`cd backend && uv run hrp`(=pyproject scripts→`app/cli.py`,默认 127.0.0.1:8000)。lifespan 自动完成三件事:sidecar 拉起(版本握手,SIDECAR_VERSION=2)· RAG 预热(日志 `rag_warm_ready`,~30s)· 事件循环看门狗——**不再需要手动拉 sidecar 或"演示前先打一条知识问题预热"**。`--reload` 开发配 `TTS_SIDECAR_KILL_ON_EXIT=0`(免得热载陪杀模型)。
+- **CosyVoice venv 已重建为 GPU torch**(torch 2.3.1+cu121,本机 RTX 4050 6GB):蓝本=`prototypes/tts-latency/freeze_gpu_blueprint.txt`(回滚锚=同目录 freeze_sidecar_rollback.txt);坑=setuptools 必须 <81(pyworld 依赖 pkg_resources)、cosyvoice.dataset.processor 连带 pyarrow/pyworld。**仍别随手往该 venv pip 装东西**(历史版本地狱,重装成本高)。
+- **改 sidecar 代码必须重启 sidecar**:backend 版本握手会拒绝旧进程(日志 `tts_sidecar_version_mismatch` ERROR + TTS 降级),自己拉起的会自动杀掉重拉,外部手动拉起的只报错。
+- **RAG 模型本地化**:bge-m3 `backend/models/bge-m3/`(2.2G)+ reranker(2.1G),**gitignore 不入库;新克隆需重建**(下载脚本待补=看板 D1,下载命令已内联看板;本机走 hf-mirror `curl -sL`,huggingface_hub Xet 分片在本机报 FileMetadataError,底层 HTTP 通)。缺件不炸:answer 走降级直答(日志 `rag_warm_failed`/`degraded rag_failed`)。
+- **Chroma**=`backend/.rag_store/`:`hrp_kb_knowledge`(15 条科普库/answer 用)· `hrp_kb_case`(14944 条案例库/collect·station 用)。重建=`uv run python -m app.rag.ingest --reset`;**全量编码纯 CPU 易被 OOM 杀,限线程 `OMP_NUM_THREADS=8` 可稳**(本机 15.8G 内存)。检索已异步化(`rag.retrieve_async`,未就绪 2s 超时降级),不阻塞事件循环。
+- **内存压力**:系统内存不足时后端/后台进程会被系统结束(非代码问题,重启即恢复)——9880/8000 端口被占时先 `netstat -ano | grep 端口`+`taskkill //F //PID`。
+- **WS 测试脚本**:`websockets` 库建议传 `ping_interval=None`(长任务/冷启下 20s 默认 keepalive 会误断;现存 e2e 脚本未带该参,自行加);前端浏览器原生 WS 不受影响。
+- **Windows 坑**:仓库文本 CRLF(前端读 `architecture/*.md` 正则要 `\r?\n`+`s`);git-bash 管道下 Python print 中文 GBK 乱码(仅显示,断言在脚本内做);TestClient 的 WS 测试是同步函数不能 `await`。
+- **Live2D 素材**:`frontend/public/vendor/` 整体 gitignore(授权禁再分发);新克隆跑 `npm run l2d:fetch` 重建,缺失自动回退 CDN→SVG 手绘兜底。目录单源=`src/l2d/models.ts`。
+- **CORS**:白名单=`config.CORS_ALLOW_ORIGINS`(默认 5173 两址)——队友内测若跨机访问需扩。
+- **E2E 脚本现场**:`prototypes/tts-latency/`(e2e_lib.py + e2e2_* 五用例 + bench/原型产物)=本轮业务回归素材;归档处置=看板 A2。
 
-## 3. 已定案的架构裁定(勿重开,详见 git log 与各模块 docstring)
+## 3. 已定案的架构裁定(勿重开;详见 ADR-002/003 与各模块 docstring)
 
-- done 帧**带** session_id;user_input/mood_select 的 session_id **可空**;重连带原 id → 网关认领(`reconnect_adopted`)+热层 snapshot 恢复。
-- **轮次回答=同回合连续不发 first_frame**;等待期抢占落 answer/危机;分析中抢占=cancel+弃 state+emitter 标记失效(未发帧不再发出)→entry 承接。
+- done 帧**带** session_id;user_input/mood_select 的 session_id **可空**;重连带原 id → 网关认领+热层 snapshot 恢复(仅 history_summary;turns 重建属 ADR-001 待办)。
+- **轮次回答=同回合连续不发 first_frame**;分析中抢占=cancel+旧 emitter 标 dead(未发帧蒸发)。
+- **ADR-002(TTS 分句流式+进程统一)**:sidecar `POST /tts_stream` NDJSON 逐句出料(消费完整生成器——旧版 next() 截断 bug 已修);网关逐句直发,每句一个 audio_chunk(seq 单调);**总结语音 done 之后异步流出,仅抢占(trace 变)蒸发**——60s 回合超时不再罩 TTS;sidecar `/health` 带 version 握手,旧进程拒绝静默复用;协议常量单源=`app/voice/sidecar_protocol.py`(backend 与 CosyVoice venv 共享的零依赖模块)。
+- **ADR-003(采集态门控+防阻塞)**:采集态中 answer 命中不弃态——纯概念问句/连续追问满 2/显式要求回答→短答支线(`suspended` 挂起,无 first_frame 黑板保活,下一输入自动恢复);求助句(怎么办/建议类)留 collect 由提取/陪聊轻回应。RAG=lifespan 预热+`retrieve_async`(未就绪 2s 降级);事件循环看门狗 lag>2s WARN;前端 WS 断线横幅。
 - 模糊输入规则速判按 collect 兜底(first_frame ≤300ms);LLM 异步精化 emotion_label 未接(非必须)。
-- 种子语料 15 条人审定稿;全量语料=队友 `dataset/` **排后单做**(看板「排后」项,走 data-contract §4)。
 - StageMapData `from_` 序列化必须 `model_dump_json(by_alias=True)`。
 - 增量/精稿 draw 前端不可实时区分→「轮答提交→analysis→draw→final」纯前端推断;emotionLabel 写序=first_frame→draw(未手点锁)→mood_select(手点锁,first_frame 解锁)。
-- **语音裁定(步骤8)**:ASR=SenseVoice 本地(funasr[knf]);TTS=CosyVoice2-0.5B 经 sidecar HTTP 进程隔离(两套 venv torch 不兼容);音频 IO 全 ffmpeg+stdlib 免疫版本漂移;fillers 预生成同音色。
-- **station/admin(步骤9)**:方案书=独立 REST(REST 基址由 `VITE_WS_URL` 换算,单源);危机回合不产素材(网关序列不写 station:input);`clear_memory` = Redis 全键+冷层心情+reports 三清,**治理不降级**(失败 503,与记忆层「异常吞掉、保证回合进行」的默认行为相反,有意例外);config 端点 api_key 用 `HRP_CONFIG_AES_KEY` 加密落库(缺密钥拒存),响应零密钥回显。
+- **语音裁定**:ASR=SenseVoice 本地(funasr[knf],CPU 不上 GPU);TTS=CosyVoice2-0.5B 经 sidecar HTTP 进程隔离(两套 venv torch 互不兼容);音频 IO 全 ffmpeg+stdlib;fillers 预生成同音色;**6GB 显存只给 TTS 常驻**。
+- **station/admin**:方案书=独立 REST(REST 基址由 `VITE_WS_URL` 换算);危机回合不产素材;`clear_memory` 治理不降级(失败 503,与记忆层默认吞异常相反,有意例外);config 端点 api_key 用 `HRP_CONFIG_AES_KEY` 加密落库,响应零密钥回显。
 
 ## 4. 工程约定与陷阱(ruff/mypy/框架)
 
 ### 后端
 
-- **ruff 0.16 默认规则集已扩**(I/RUF/TRY/BLE):`--fix` 可修 import/`__all__`/空 spread 等;pydantic ValueError→`# noqa: TRY004`;降级盲捕→`# noqa: BLE001`;本地日聚合→`# noqa: DTZ005` 单点 helper。
+- ruff 0.16 默认规则集已扩:pydantic ValueError→`# noqa: TRY004`;降级盲捕→`# noqa: BLE001`;本地日聚合→`# noqa: DTZ005`。
 - `from __future__ import annotations` 防 TYPE_CHECKING 前向引用炸;LangGraph 节点签名 `(state, config)`,emitter 走 config;图模块级编译一次。
 - pytest-asyncio `asyncio_mode=auto`;loguru 内存 sink record:`extra` 是 dict、`level` 用 `.name`。
-- 懒加载分层:chroma/sentence-transformers/langgraph/语音模型全部函数内 import;mypy overrides:funasr/torchaudio/cosyvoice/jieba/rank_bm25 无 stub 已配。
-- **RAG(排后·bge-m3)**:`engine.py _EMBED_MODEL`=本地 `backend/models/bge-m3/`、`_RERANK_MODEL`=本地 `bge-reranker-v2-m3/`(基于 `__file__` 绝对路径,不依赖 cwd);`_QUERY_PREFIX=""`(**bge-m3 无检索前缀**,删原 bge-small 指令,保留致域偏移);`_UPSERT_BATCH=1000`(chroma 单批上限 ~5461,全量 14944 分批 upsert——**全量/半量接入必然处理**)。换模型 = 维度 512→1024,**必 `ingest --reset`**(旧 bge-small 库维度不匹配)。
-- **RAG 命名**:`config.RAG_CORPUS_PATH`(全量语料 `data/rag_corpus.jsonl`,14944 条);原种子 `rag_seeds.jsonl` → **`rag_retrieve_test_seeds.jsonl`**(git mv,仅测试夹具,`test_retrieve.py` 用;与生产语料分离)。`ingest.py` default 引用 `config.RAG_CORPUS_PATH`。**`test_memory` 是真链路测试,需本机 Redis 6379**(未启时 ConnectionError,非代码问题)。
-- **记忆(步骤6)**:单例 `get_memory()`;conftest autouse 假记忆+静音 TTS/fillers(新用例默认不触 Redis/sidecar,真链路 test_memory 需 6379);test_voice 的真客户端用例要在**模块导入期捕获原函数**再恢复(fixture 里现取会拿到 conftest 桩)。**conftest 已扩** FakeMemory 补 load_station_input/recent_moods/clear_all+monkeypatch station.routes/admin.routes 的 get_memory+tmp_reports 夹具。
-- **语音(步骤8)**:tts 客户端端口/超时调用时读 config(import 期绑定会让 monkeypatch 失效);sidecar 需在导入前覆写 `cosyvoice.utils.file_utils.load_wav`(from-import 绑定,双保险重绑 frontend 模块属性);该 venv 曾被 pip 装 matcha-tts 连锁升级到 torch 2.14——别再往里 pip 装东西,要装先想连锁。
-- **步骤9 模块**:`get_reports()`/`get_config_store()` 单例+`reset_*` 测试口;planner RAG/LLM 懒加载+永不抛(降级模板保 latest 终态 ready);pydantic str-Enum 字段传参**必须用枚举成员**(`StationReportStatus.READY`)而非裸字符串,mypy 不全收窄。cryptography 已显式加依赖。
-- **TaskStop 结束不了 python 子进程**(结束的是 bash 壳):sidecar/uvicorn 重启前先 `netstat -ano | grep 端口`+`taskkill //F //PID`,SO_REUSEADDR 会多实例占用同一端口;勿依赖长时驻留进程。
+- **conftest 桩矩阵(新用例默认零真依赖)**:假记忆+`synthesize_stream` 空流+fillers None+`ensure_sidecar=False`(防 TestClient lifespan 真拉 sidecar/留 `_stopping` 污染)+`app.rag._ready` 置位(防 2s 等待)——真链路用例(test_voice/test_memory/test_retrieve)自行还原,模式=**模块导入期捕获原函数**,fixture 里现取会拿到桩。历史教训:语音降级用例若走真拉起路径,每轮全量测试遗留一个 sidecar 僵尸进程(曾积 12 个压崩 torch 模型加载)。
+- mypy overrides:funasr/torchaudio/cosyvoice/jieba/rank_bm25 无 stub + `sidecar_protocol`(脚本目录顶层导入,无包上下文)。
+- **RAG**:`_QUERY_PREFIX=""`(bge-m3 无检索前缀);`_UPSERT_BATCH=1000`(分批安全值,chroma 硬上限 ~5461);换 embedding 模型=维度变化**必 `ingest --reset`**;`test_memory` 真链路需本机 Redis 6379。语料源=`backend/data/rag_corpus.jsonl`(14944)+`rag_knowledge_corpus.jsonl`(15)。
+- **TaskStop 结束不了 python 子进程**(杀的是 bash 壳):sidecar/uvicorn 重启前先按端口找 PID `taskkill //F`。
 
 ### 前端
 
-- **运行时创建的 SVG 吃不到 scoped CSS**——黑板动画类在 `main.css` 全局;组件测试 DOM 断言 `await nextTick()`。
-- **pixi-live2d-display 必须走 `/cubism4` 子路径**(主入口顶层硬要求 Cubism2 runtime 必炸);cubism core 走 index.html 本地 vendor+onerror 回退,`window.Live2DCubismCore` 轮询等待。
-- **Live2D 目录单源=`l2d/models.ts`**(本地 vendor 优先→source CDN 回退,localStorage 选中,`nextModel` 轮换);`createLive2D` 现接候选数组逐候选试载;切换器=l2d-name 内联⇄按钮。载入候选要传 `modelUrls(entry)`。
-- 黑板排版单源:`board/templates.ts`(zones)/`renderer.ts`(wrapChalk 词边界折行≤3行,单测钉住)。
+- 运行时创建的 SVG 吃不到 scoped CSS——黑板动画类在 `main.css` 全局;组件测试 DOM 断言 `await nextTick()`。
+- pixi-live2d-display 必须走 `/cubism4` 子路径;**切换=renderer 单例换模型**(pixi Application.destroy 会杀 WebGL context,同 canvas 重建必炸 shader 编译)。
 - Pinia store 跨「setup 构造的控制器类↔组件」同实例直接赋值;E2E 观察存疑先页内轮询打点(工具往返时延会造成误判)。
-- **tsconfig `noUncheckedIndexedAccess` 已开**——数组下标读取退化 `| undefined`,测试/纯函数传参需收窄(mymodels.spec 曾踩)。
-- **截图视觉复核**:子agent `model: "sonnet"`(环境映射 ANTHROPIC_DEFAULT_SONNET_MODEL 视觉模型)Read 图逐项判基准——文本判据外的溢出/遮挡它抓得准(步骤5/7/9 均立功)。
-- **live2d 切换=renderer 单例换模型**:pixi `Application.destroy` 会杀 canvas 的 WebGL context——同 canvas 重建必在 shader 编译抛 `checkMaxIfStatementsInShader(0)` 永久回落 SVG(实测);故 Application 模块级单例复用、destroy 只做模型级清理、全量释放仅 `disposeLive2D`(App 卸载)。
+- tsconfig `noUncheckedIndexedAccess` 已开——数组下标读取退化 `| undefined`,需收窄。
+- 截图视觉复核:子 agent Read 图逐项判基准(文本判据外的溢出/遮挡它抓得准)。
 
 ## 5. 现状
 
-- **步骤1-9 全落**:契约/网关/三路路由/RAG/采集/记忆三层/Live2D/语音/工具(station+admin)。测试后端 110(station 15 含 CORS 预检/防重/陈旧重收/planner 降级+非医疗声明硬保证/admin 12 含明文不落库+AES roundtrip)+前端 69(含 l2d models 单源/回退/轮换、admin settings 控制器钉测试)。
-- **制程 A#2 已落**:GET /admin/config 读口(契约 §1,api_key 只给布尔绝不回显)+ 前端设置面板(模型配置预填/分段药丸选 provider/保存 + 情绪趋势/一键清除两步确认,确认短语=`清除记忆`);test_admin 9 + E2E 判据全过。
-- **UI 范式定稿并正式化**:组件范式=`architecture/preview/l1-ui-taste.html`(数值单源),已落 `src/`——App 状态 chip(图标+英文+灯点三部分同步切换/crisis 暖色)/heart-handshake 裸 logo/工具按钮 hover 流光/输入条 goo 液芽分体发送钮(聚焦弹出/失焦收回)/SettingsPanel·StationPanel 薄玻璃材质。规格与**冲突裁定护栏(两参考并存未写明取舍→停下问人)**见 frontend-plan「UI 范式」;main.css 新增 `@property --ang`。chip 无 answer 态=answer 无 first_frame 帧,与旧 route-tabs 同局限。
-- **ADR 001 memory-tiering 已接受未落地**:记忆分层(近期原始轮次短 TTL/长期摘要,隐私线精修)设计定案,落地为独立步骤(涟漪=spec §4 L7/§9.4、state.py、memory/store.py、gateway.py 重连重建 turns)。
-- **prototypes/ = 临时区**(README 声明,gitignore 不入库):原型迭代/调研笔记/验证截图,后期统一清理;勿在交付文档加指针。
-- **排后·全量语料 已完成**:队友 `dataset/`(仓库根,gitignore 不入库)经翻译层→`data/rag_corpus.jsonl` 14944 条,bge-m3 已灌生产 `.rag_store`(count=14944);方案= `docs/prds/rag-full-corpus-bge-m3.md`。
+- 主线步骤 1-9 全落(见 kanban §1);**ADR-002 批次已落地**:TTS 分句流式(修长文本丢 3/4 音频的截断 bug)+总结语音出窗+`uv run hrp` 统一进程管理+版本握手;**ADR-003 批次已落地**:采集态门控(修采集中被 answer 抢占丢黑板)+RAG 预热(修 ~18s 冷启动冻结→WS 静默断连)+看门狗+断线横幅。两批均 E2E 5 用例实况 PASS(脚本在 prototypes/tts-latency/)。
+- 测试:后端 119(pytest)+前端 69+type-check/lint 干净;后端三件套与前端检查全绿。
+- **prototypes/=临时区**(gitignore 不入库):本轮挂 TTS 延迟原型(FINDINGS.md)+两轮 E2E 脚本,归档处置=看板 A2;勿在交付文档加指针。
+- 第一版交付冲刺(遗留问题→业务测试→code review→交付文档)=看板 §2,当前停在 A 段待开工。
 
-## 6. 遗留小事(不阻塞,按排程)→ 已归并看板 kanban §2 制程
+## 6. 二期语音项(不阻塞,单源=kanban §3 待办池)
 
-- **已并 kanban §2 制程 A**:RAG 冷启动预热(A#4,做前打招呼)· 模型下载脚本入库(A#3)· `npm run l2d:fetch` 命令可见性(A#5)· ~~前端设置入口/模型配置 UI(A#2)~~ 已完成(见 §5)。
-- **总结 TTS vs 60s 回合超时上限预算冲突**(步骤8/9 遗留):`error(timeout)` 在 `round_archived`(station:input 落库)之后出现,station 链不受影响——建议二期把总结 TTS 移出回合上限。演示/验收前先预热 sidecar 规避。
-- 口型=播放态点头,音频幅值真口型二期;audio_chunk=整段一帧,流式分块二期。
-- Live2D 真口型 model.speak 与 AudioQueue 双通道播放冲突,接前先设计单一播放源。
+- 口型=播放态点头,音频幅值真口型二期;真口型 model.speak 与 AudioQueue 双通道播放冲突,接前先设计单一播放源。
+- answer 链路无语音(契约设计);是否补=产品决策。
