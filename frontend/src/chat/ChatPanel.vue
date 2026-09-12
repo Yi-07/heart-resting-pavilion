@@ -1,12 +1,15 @@
 <script setup lang="ts">
 // 聊天面板:常态气泡(头部旁,点开抽屉)+ 抽屉完整记录(✕ 收起)。
 // 流式文本来自 chat 模块;analysis 等待期气泡显示「梳理中」提示(纯前端推断态)。
-import { computed } from 'vue'
-import { chat, splitStationMention } from './messages'
+// ADR-005:replay 帧回放——bubbles=幕布折叠(历史收横幅,展开降饱和气泡);
+// digest=小结卡片+「原话已按隐私设定抹去」;历史气泡不入 msgs,不随新回合清除。
+import { computed, ref } from 'vue'
+import { chat, replay, splitStationMention } from './messages'
 import { useRoundStore } from '../state/round'
 import { openStation } from '../station/station'
 
 const round = useRoundStore()
+const histOpen = ref(false)
 
 const bubbleText = computed(() => {
   const latest = chat.latestBotText()
@@ -41,6 +44,30 @@ function openDrawer(): void {
       <button class="ch-x" title="收起" @click="chat.closeDrawer()">✕</button>
     </div>
     <div class="ch-body" data-testid="chat-body">
+      <!-- ADR-005 回放区(bubbles=幕布,digest=小结卡;仅 replay 帧到过才渲染) -->
+      <template v-if="replay.mode === 'bubbles'">
+        <button class="curtain" type="button" data-testid="replay-curtain" @click="histOpen = !histOpen">
+          上次的对话 <span class="n">{{ replay.turns.length }} 条 {{ histOpen ? '收起 ▴' : '展开 ▾' }}</span>
+        </button>
+        <template v-if="histOpen">
+          <div
+            v-for="(t, i) in replay.turns"
+            :key="`h${i}`"
+            class="msg hist"
+            :class="t.role === 'user' ? 'u' : 'x'"
+          >
+            <span class="who">{{ t.role === 'user' ? '你' : '小栖' }}</span>
+            <p>{{ t.text }}</p>
+          </div>
+        </template>
+      </template>
+      <template v-else-if="replay.mode === 'digest'">
+        <div class="day2-banner" data-testid="replay-digest">距上次对话已超过 30 分钟 · 原话已按隐私设定抹去</div>
+      </template>
+      <div v-if="replay.summary !== null" class="sumcard" data-testid="replay-summary">
+        <span class="sc-tag">上次梳理小结</span>
+        <div class="sc-body">{{ replay.summary }}</div>
+      </div>
       <div v-for="m in chat.msgs" :key="m.id" class="msg" :class="m.who">
         <span class="who">{{ m.who === 'u' ? '你' : '小栖' }}</span>
         <p>
@@ -231,6 +258,32 @@ function openDrawer(): void {
   letter-spacing: 0.05em;
 }
 .msg p { margin: 0; white-space: pre-wrap; }
+/* ── ADR-005 回放:幕布横幅 + 降饱和历史气泡 + 小结卡(形态=prototypes/replay-ui 定稿) ── */
+.curtain {
+  flex: none; align-self: center; display: flex; align-items: center; gap: 8px;
+  font-size: 11px; color: var(--primary-deep); background: rgba(139, 174, 151, 0.12);
+  border: 1px dashed rgba(110, 147, 124, 0.45); border-radius: 999px;
+  padding: 6px 14px; cursor: pointer; margin-bottom: 4px; user-select: none;
+  font-family: var(--sans); transition: background 0.2s;
+}
+.curtain:hover { background: rgba(139, 174, 151, 0.2); }
+.curtain .n { font-size: 10px; opacity: 0.75; }
+.msg.hist { opacity: 0.78; }
+.msg.hist .who { opacity: 0.55; }
+.day2-banner {
+  flex: none; align-self: center; font-size: 10px; color: var(--muted);
+  background: rgba(213, 138, 99, 0.1); border-radius: 999px; padding: 4px 12px; margin-bottom: 4px;
+}
+.sumcard {
+  align-self: stretch; margin: 2px 6px 4px; padding: 11px 13px;
+  border-radius: 14px 14px 14px 4px; background: #fffdf8;
+  border: 1px solid rgba(213, 138, 99, 0.35);
+}
+.sumcard .sc-tag {
+  display: inline-block; font-size: 10px; color: var(--accent);
+  letter-spacing: 0.06em; margin-bottom: 5px; font-weight: 600;
+}
+.sumcard .sc-body { font-size: 11.5px; line-height: 1.7; color: var(--ink); opacity: 0.85; }
 .st-link {
   color: var(--primary-deep);
   cursor: pointer;

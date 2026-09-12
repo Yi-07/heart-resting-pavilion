@@ -5,6 +5,7 @@
 
 import { reactive } from 'vue'
 import { logger } from '../logger'
+import { clearPersistedSession } from '../ws/client'
 
 export type SettingsPhase = 'idle' | 'loading' | 'saved' | 'error'
 export type LlmProvider = 'deepseek' | 'ollama'
@@ -163,6 +164,9 @@ export async function clearMemory(): Promise<void> {
   settings.confirmOpen = false
   settings.confirmInput = ''
   try {
+    // ADR-005 治理联动:先清浏览器存的身份再调端点——共用电脑暴露面闭环
+    // (后端清 Redis/SQLite,前端清 localStorage;后端失败则不落,顺序不可倒)
+    clearPersistedSession()
     const { status, body } = await requestJson<{ ok?: boolean; detail?: string }>(
       '/admin/clear_memory',
       { method: 'POST' },

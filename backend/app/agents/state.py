@@ -31,10 +31,15 @@ class PendingQuestion:
 
 @dataclass(frozen=True)
 class SessionContext:
-    """记忆层快照(memory 步骤 6 接入;MVP 恒空档)"""
+    """记忆层快照(memory 步骤 6 接入;MVP 恒空档)
+
+    recent_turns=热层最近轮次原话(ADR-001/005:重连重建 turns + 回放帧数据源);
+    只活 30min(隐私线 §9.4),隔天只剩 history_summary。
+    """
 
     history_summary: str | None = None
     mood_recent: list[MoodKey] = field(default_factory=list)
+    recent_turns: list[Turn] = field(default_factory=list)
 
 
 @dataclass

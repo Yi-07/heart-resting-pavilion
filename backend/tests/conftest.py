@@ -28,6 +28,12 @@ class FakeMemory:
         return SessionContext(
             history_summary=self._snapshot.history_summary,
             mood_recent=list(self._snapshot.mood_recent),
+            recent_turns=list(self._snapshot.recent_turns),
+        )
+
+    async def append_turn(self, session_id: str, role: str, text: str) -> None:
+        self.calls.append(
+            ("append_turn", {"session_id": session_id, "role": role, "text": text})
         )
 
     async def save_round_summary(self, session_id: str, summary: str) -> None:

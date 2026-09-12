@@ -23,7 +23,7 @@ from app.schema import (
 
 WS_CONTRACT = Path(__file__).resolve().parents[2] / "architecture" / "ws-contract.md"
 
-S2C_TYPES = frozenset({"first_frame", "draw", "text_delta", "audio_chunk", "done", "error"})
+S2C_TYPES = frozenset({"first_frame", "draw", "text_delta", "audio_chunk", "done", "replay", "error"})
 CS_TYPES = frozenset({"user_input", "mood_select"})
 
 
@@ -75,7 +75,7 @@ def test_template_data_keys_match_contract():
 def test_contract_examples_parse():
     text = WS_CONTRACT.read_text(encoding="utf-8")
     blocks = list(_fenced_json_blocks(text))
-    assert {b["type"] for b in blocks} == S2C_TYPES | CS_TYPES  # 8 种消息示例全覆盖
+    assert {b["type"] for b in blocks} == S2C_TYPES | CS_TYPES  # 9 种消息示例全覆盖(ADR-005 +replay)
 
     s2c = TypeAdapter(S2CMsg)
     cs = TypeAdapter(CSMsg)

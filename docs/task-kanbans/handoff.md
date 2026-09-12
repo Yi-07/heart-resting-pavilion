@@ -30,6 +30,9 @@
 
 ## 3. 已定案的架构裁定(勿重开;详见 ADR-002/003 与各模块 docstring)
 
+- **ADR-001 已落地(随 ADR-005 批)**:热层存 recent_turns(≤20 轮原话,30min TTL)+重连重建 state.turns;formulation/round_index 不持久(黑板重画=已知局限,二期)。
+- **ADR-005(对话回放与小结卡片)**:契约新增 `replay` 帧(S→C 共 9 种;重连认领后、本回合帧前主动推一次;bubbles=30min 内原话回放,digest=隔天仅温层摘要;热温均无不发)。前端 localStorage 存 session_id(`hrp.session`,刷新后仍认领+回放);呈现=幕布折叠(bubbles)/小结卡+隐私横幅(digest);**治理联动=clear_memory 前端先清 localStorage**。assistant 回复(问句/陪聊/总结)入热层轮次——graph 轮答消费点已改按 role 倒查(不能再取 turns[-1])。UI 形态单源=prototypes/replay-ui(定稿:30min 内幕布/隔天混流)。聊天窗打开立绘左移让位(chat-open,v7 同款)。
+
 - **ADR-004(语音输入两步式)**:录音 → REST `POST /asr/transcribe`(base64 webm/opus → {text};空串=没听到 200,不可用 503,字节护栏 1MB=413)→ 前端追加式回填文本框 → 用户确认按文本发送;**输入单源文本**——`user_input` 无 mode/audio 字段,网关无 audio 分支,e2e_b_asr 已删;危机判定吃用户确认文本,ASR 质量不直入安全链路;转写日志 asr_transcribed/asr_empty 归属 REST 端点(事件名不变)。
 
 - done 帧**带** session_id;user_input/mood_select 的 session_id **可空**;重连带原 id → 网关认领+热层 snapshot 恢复(仅 history_summary;turns 重建属 ADR-001 待办)。

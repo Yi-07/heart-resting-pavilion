@@ -48,7 +48,7 @@
 
 ---
 
-## 2. 消息总览(8)
+## 2. 消息总览(9)
 
 | 方向 | 类型 | 触发方 | 说明 |
 |---|---|---|---|
@@ -57,7 +57,8 @@
 | S→C | text_delta | 后端 | 流式回复文本 |
 | S→C | audio_chunk | 后端 | TTS 音频块(base64)|
 | S→C | done | 后端 | 回合结束 |
-| C→S | user_input | 前端 | 用户文字/音频;采集轮次回答也用它 |
+| S→C | replay | 后端 | 重连回放(历史气泡/小结卡,ADR-005;无 seq)|
+| C→S | user_input | 前端 | 用户文本输入(ADR-004 输入单源);采集轮次回答也用它 |
 | C→S | mood_select | 前端 | 心情选择上报 |
 | S→C | error | 后端 | 错误帧(见 §8)|
 
@@ -135,7 +136,20 @@
 
 - 前端:收起全部等待态(心情选择器、黑板"收尾中"提示)
 
-### 3.6 error
+### 3.6 replay(重连回放,ADR-005)
+
+```json
+{ "type": "replay", "mode": "bubbles", "turns": [ {"role": "user", "text": "最近很焦虑睡不着"}, {"role": "assistant", "text": "那种睡不着的时候,脑子里在想什么?"} ], "summary": "上次梳理围绕入睡困难展开,聊到工作中被批评的委屈。", "session_id": "sess_abc" }
+```
+
+- **触发**:重连认领(`user_input` 带原 session_id)后、本回合 first_frame 之前,主动推一次;新连接(不带 id)不推
+- `mode: "bubbles"`(30min 内,热层 recent_turns 还在):`turns` 携带最近轮次原话(≤20 轮,`role: user|assistant`)+ `summary`(温层最新摘要,可为 null);前端幕布折叠式回放(历史收横幅,展开降饱和气泡)
+- `mode: "digest"`(热层已过期):无 `turns`,`summary` 必有;前端小结卡片+提示"原话已按隐私设定抹去"
+- 热层温层均无内容 → 不推帧(全新会话)
+- 无 `seq`,不进回合计数(同 first_frame/error 语义)
+- 治理联动:`POST /admin/clear_memory` 由前端先清浏览器存的身份,再调本端点
+
+### 3.7 error
 
 ```json
 { "type": "error", "code": "invalid_message", "message": "字段缺失: text" }
@@ -279,7 +293,7 @@ S→C  done
 1. 后端收到非法 C→S 消息 → 回 `error(code=invalid_message)`,**不崩连接**
 2. 采集/分析超时 → `error(code=timeout)` + 转降级回复
 3. 后端异常 → `error(code=server_error)`,前端显示温和兜底话术(非医疗、不恐慌)
-4. 重连:前端带 `session_id` 重连,后端恢复热层上下文
+4. 重连:前端带 `session_id` 重连,后端恢复热层上下文(ADR-001:重建 turns;ADR-005:先推 `replay` 帧回放)
 
 ---
 

@@ -12,6 +12,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app import config
+from app.agents.state import SessionContext
 from app.llm import LLMError
 from app.logger import capture_events
 from app.main import app
@@ -373,3 +374,92 @@ def test_reconnect_adopts_session_id(monkeypatch):
         done = _recv(ws)
         assert done["type"] == "done"
         assert done["session_id"] == "sess_previous_round"
+
+
+# ---- 重连回放(ADR-005):认领后 replay 帧 + assistant 轮次入热层 ----
+
+
+def test_reconnect_pushes_replay_bubbles(fake_memory, monkeypatch):
+    """带原 session_id 认领 + 热层 recent_turns 在 → 先推 replay(bubbles) 再走回合。"""
+    from app.agents.state import Turn
+
+    fake_memory.set_snapshot(
+        SessionContext(
+            history_summary="上次聊了失眠",
+            recent_turns=[Turn(role="user", text="最近睡不着"), Turn(role="assistant", text="在想什么?")],
+        )
+    )
+    stub = _StreamStub(["好" * 20])
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub([]))
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(
+            json.dumps({"type": "user_input", "session_id": "sess_old", "text": "晚上又睡不着", "ts": 7})
+        )
+        rp = _recv(ws)
+        assert rp["type"] == "replay"  # 先于 first_frame/text_delta
+        assert rp["mode"] == "bubbles"
+        assert [t["role"] for t in rp["turns"]] == ["user", "assistant"]
+        assert rp["turns"][0]["text"] == "最近睡不着"
+        assert rp["summary"] == "上次聊了失眠"
+        assert rp["session_id"] == "sess_old"
+        assert "seq" not in rp  # 不带号不消耗(同 first_frame 语义)
+        nxt = _recv(ws)
+        assert nxt["type"] in ("first_frame", "text_delta")  # 回放后本回合正常走
+
+
+def test_reconnect_pushes_replay_digest_when_hot_expired(fake_memory, monkeypatch):
+    """热层无 turns(30min 过)但温层摘要在 → replay(digest),无 turns 字段内容。"""
+    fake_memory.set_snapshot(SessionContext(history_summary="前天梳理过考试焦虑"))
+    stub = _StreamStub(["好" * 20])
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub([]))
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(
+            json.dumps({"type": "user_input", "session_id": "sess_old2", "text": "最近还好", "ts": 8})
+        )
+        rp = _recv(ws)
+        assert rp["type"] == "replay"
+        assert rp["mode"] == "digest"
+        assert rp["turns"] == []
+        assert rp["summary"] == "前天梳理过考试焦虑"
+
+
+def test_new_connection_no_replay(fake_memory, monkeypatch):
+    """新连接(不带 id)不推 replay(全新会话语义;§3.6)。"""
+    stub = _StreamStub(["好" * 20])
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub([]))
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(json.dumps({"type": "user_input", "text": "什么是正念", "ts": 9}))
+        first = _recv(ws)
+        assert first["type"] != "replay"
+
+
+def test_assistant_turns_logged_for_replay(fake_memory, monkeypatch):
+    """ADR-005:用户输入与 assistant 问句 → append_turn 落账。
+
+    collect 首轮(单条输入)无 done 帧——回合开放等下一轮;首问 text_delta
+    (图内发出)到达即退,settle 的 append_turn 在事件落定时执行、晚于帧,
+    退帧后小睡等落账(纯内存桩 0.5s 足够)。
+    """
+    import time
+
+    stub = _StreamStub(["好" * 20])
+    monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
+    monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub([]))
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(json.dumps({"type": "user_input", "text": "最近很焦虑睡不着", "ts": 10}))
+        while True:
+            frame = _recv(ws)
+            if frame.get("type") == "text_delta":
+                break
+        time.sleep(0.5)
+    calls = fake_memory.calls
+    roles = [c[1]["role"] for c in calls if c[0] == "append_turn"]
+    user_texts = [
+        c[1]["text"] for c in calls if c[0] == "append_turn" and c[1]["role"] == "user"
+    ]
+    assert "user" in roles
+    assert "最近很焦虑睡不着" in user_texts
+    assert "assistant" in roles  # AskNext 首问入轮次(回放含小栖一侧)

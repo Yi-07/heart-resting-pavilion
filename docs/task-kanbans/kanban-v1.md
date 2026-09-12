@@ -27,6 +27,7 @@
 - [x] **A2 prototypes/tts-latency 归档**:判定标准——`e2e_lib.py` + ADR-003 五用例脚本(e2e2_*)迁 `backend/tests/` 作业务回归素材;**freeze_gpu_blueprint.txt / freeze_sidecar_rollback.txt 必须保留**(D1 venv 重建锚,迁 backend/scripts/ 或随 D1 落位);bench_*/FINDINGS.md 删(结论已沉淀 ADR-002/003);其余按同原则处置。(落定:e2e_lib+两轮 E2E 共 10 脚本已迁 `backend/tests/e2e/`,ruff/mypy 清零+ping_interval=None 修正+日志路径改 backend 相对+e2e_b_asr 语音素材改命令行传入;bench/FINDINGS/运行日志/中间产物已删;freeze 两文件按人裁定留原地随 D1 处置;实况回归待 B2)
 - 注:~~RAG 启动 warm-up 预热~~ ✅ 已随 ADR-003 落地(lifespan warm() + retrieve_async 降级 + E2E 验证,commit `5dfeea6`);~~模型下载脚本~~ → 并入 D1(部署配置归属)。
 - [x] **A3 语音输入两步式(ADR-004)**:B1 盘点发现 ASR 音频直入对话流→转写偏差可致危机漏检,改两步式:录音 → `POST /asr/transcribe` 转写(200/413/422/503)→ 追加式回填文本框(末尾非标点补逗号)→ 用户确认按文本发送。输入单源文本:`user_input` 删 mode/audio 字段,网关删 audio 分支,e2e_b_asr 作废删除;语音故障与 WS 解耦。(契约/schema/前后端/测试同步,三件套+前端检查全绿;交互实况归 B2 手测)
+- [x] **A4 对话回放与小结卡片(ADR-001 落地+ADR-005)**:UI 原型定稿(prototypes/replay-ui,30min 内=幕布折叠/隔天=自然混流+小结卡)。ADR-001 落地=热层存 recent_turns(≤20 轮,30min TTL)+重连重建 turns;ADR-005=assistant 回复入轮次(修 turns 只记单边)+契约新增 `replay` 帧(S→C 9 种消息,重连认领后先推)+前端 localStorage 身份持久化+幕布/小结卡组件+治理清 localStorage 联动+聊天窗开立绘让位(v7 同款,顺手修)。(后端钉测 6 个+前端全绿;交互实况归 B2)
 
 ### B. 业务测试(新窗口执行)
 

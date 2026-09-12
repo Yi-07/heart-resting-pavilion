@@ -20,12 +20,32 @@ export type SocketFactory = (url: string) => WSLike
 
 const RECONNECT_BACKOFF_MS = [1000, 2000, 5000]
 
+const SESSION_KEY = 'hrp.session'
+/** 身份持久化(ADR-005):刷新后仍记得 session_id,重连带原 id → 后端认领+回放。
+ * 治理联动:clear_memory 由 settings.ts 先清此键再调端点(共用电脑暴露面闭环)。 */
+export function loadPersistedSession(): string | null {
+  try {
+    return localStorage.getItem(SESSION_KEY)
+  } catch {
+    return null // 隐私模式等 localStorage 不可用:退化为不断线场景的内存身份
+  }
+}
+
+export function clearPersistedSession(): void {
+  try {
+    localStorage.removeItem(SESSION_KEY)
+  } catch {
+    /* 同上,降级无副作用 */
+  }
+}
+
 const KNOWN_TYPES: ReadonlySet<WSMsgType> = new Set<WSMsgType>([
   'first_frame',
   'draw',
   'text_delta',
   'audio_chunk',
   'done',
+  'replay',
   'error',
   'user_input',
   'mood_select',
@@ -56,6 +76,11 @@ export class WSClient {
   /** 当前会话 id(补给站 REST 等模块读;first_frame/done 学到,重连不变) */
   get sessionId(): string | null {
     return this._sessionId
+  }
+
+  /** 恢复持久化身份(ADR-005:App 装配时从 localStorage 注入;仅内存,学习后覆写) */
+  restoreSession(sessionId: string): void {
+    if (this._sessionId === null) this._sessionId = sessionId
   }
 
   connect(): Promise<void> {
@@ -148,6 +173,16 @@ export class WSClient {
       this.lastSeq = msg.seq
     }
     if (msg.type === 'first_frame' || msg.type === 'done') {
+      this._sessionId = msg.session_id
+      // ADR-005:身份持久化(learn 即存,刷新/重开浏览器仍能认领回放)
+      try {
+        localStorage.setItem(SESSION_KEY, this._sessionId)
+      } catch {
+        /* 不可用即退化,无副作用 */
+      }
+    }
+    if (msg.type === 'replay') {
+      // 回放帧带回认领后的会话身份(ADR-005;先于 first_frame 到达)
       this._sessionId = msg.session_id
     }
     const set = this.handlers.get(msg.type)

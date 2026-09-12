@@ -106,3 +106,42 @@ async def test_degrade_when_redis_down(tmp_path: pytest.TempPathFactory):
     assert ctx.history_summary is None
     assert await mem.load_station_input("s") is None
     assert [r["mood_label"] for r in mem.recent_moods()] == ["低落"]
+
+
+async def test_recent_turns_roundtrip_and_cap(mem: Memory):
+    """ADR-001/005:热层轮次原话 roundtrip + 20 条上限滚动;30min TTL 随热层键。"""
+    sid = "sess_rt"
+    for i in range(25):
+        await mem.append_turn(sid, "user", f"用户话{i}")
+        await mem.append_turn(sid, "assistant", f"小栖话{i}")
+    ctx = await mem.snapshot(sid)
+    assert len(ctx.recent_turns) == 20  # cap 滚动,旧轮被挤掉(50 写 20 留,首条=i15)
+    assert ctx.recent_turns[0].text == "用户话15"
+    assert ctx.recent_turns[-1].text == "小栖话24"
+    assert ctx.recent_turns[0].role == "user"
+
+    # 坏数据不炸(手改热层 JSON 防御)
+    r = sync_redis.from_url(_TEST_URL, decode_responses=True)
+    raw = r.get(f"hrp:v1:hot:{sid}")
+    assert raw is not None
+    data = json.loads(raw)
+    data["recent_turns"] = [{"role": "bogus", "text": "x"}, "not-a-dict"]
+    r.set(f"hrp:v1:hot:{sid}", json.dumps(data, ensure_ascii=False))
+    r.close()
+    ctx = await mem.snapshot(sid)
+    assert ctx.recent_turns == []  # role 非法条目被滤掉
+
+
+async def test_append_turn_creates_hot_key_with_ttl(mem: Memory):
+    """append_turn 在无热层键时自建(30min TTL);与 summary/mood 同键共存。"""
+    sid = "sess_rt2"
+    await mem.save_round_summary(sid, "旧摘要")
+    await mem.append_turn(sid, "user", "新一句话")
+    ctx = await mem.snapshot(sid)
+    assert ctx.history_summary == "旧摘要"  # 共存不互踩
+    assert len(ctx.recent_turns) == 1
+    assert ctx.recent_turns[0].text == "新一句话"
+    r = sync_redis.from_url(_TEST_URL, decode_responses=True)
+    ttl = r.ttl(f"hrp:v1:hot:{sid}")
+    r.close()
+    assert 0 < ttl <= 30 * 60

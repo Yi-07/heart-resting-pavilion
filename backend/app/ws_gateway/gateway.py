@@ -32,7 +32,16 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app import config
 from app import logger as app_logger
-from app.agents import CollectState, ConnEmitter, Escalate, Finish, Turn, stream_final
+from app.agents import (
+    AskNext,
+    CollectState,
+    ConnEmitter,
+    EmpathChat,
+    Escalate,
+    Finish,
+    Turn,
+    stream_final,
+)
 from app.agents.state import CollectEvent
 from app.llm import LLMError, Message, get_provider
 from app.memory import get_memory
@@ -47,6 +56,8 @@ from app.schema import (
     ErrorFrame,
     FirstFrame,
     MoodSelect,
+    ReplayFrame,
+    ReplayTurn,
     TemplateData,
     TemplateId,
     TextDelta,
@@ -149,6 +160,16 @@ class Connection:
         await self._send(ErrorFrame(code=code, message=message))
         self.log("error", level="ERROR", code=code, detail=message)
 
+    async def send_replay(self, frame: ReplayFrame) -> None:
+        """ADR-005 重连回放;无 seq 不进回合计数(同 first_frame 语义)。"""
+        await self._send(frame)
+        self.log(
+            "replay_sent",
+            mode=frame.mode,
+            turns=len(frame.turns),
+            has_summary=frame.summary is not None,
+        )
+
     async def send_audio(self, wav: bytes) -> None:
         """TTS 直发:整段 wav 一块(final=True,前端顺序播放);空块调用方负责不传。"""
         await self._send(
@@ -208,6 +229,26 @@ async def _on_message(conn: Connection, raw: str) -> None:
     # 不 await:立刻回收下一条,保持抢占窗口
 
 
+async def _push_replay(conn: Connection) -> None:
+    """重连回放(ADR-005):认领后、first_frame 前推一次;热温均无内容不发。
+
+    bubbles=热层 recent_turns 还在(原话回放+温层摘要附卡);
+    digest=热层已过(仅小结卡);读失败按无内容处理(记忆降级原则)。
+    """
+
+    ctx = await get_memory().snapshot(conn.session_id)
+    has_turns = bool(ctx.recent_turns)
+    if not has_turns and ctx.history_summary is None:
+        return
+    frame = ReplayFrame(
+        mode="bubbles" if has_turns else "digest",
+        turns=[ReplayTurn(role=t.role, text=t.text) for t in ctx.recent_turns],
+        summary=ctx.history_summary,
+        session_id=conn.session_id,
+    )
+    await conn.send_replay(frame)
+
+
 async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
     trace = conn.next_trace()
     # 冷层情绪趋势(spec §7:上报→L7;同日同源最新胜)+ 热层 mood_recent
@@ -230,6 +271,7 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
         # (下一回合 collect entry 经 snapshot 进 state.session_context)
         conn.session_id = msg.session_id
         conn.log("reconnect_adopted", trace_id=trace)
+        await _push_replay(conn)  # ADR-005:认领后先回放(先于本回合 first_frame)
     conn.log(
         "user_input_received",
         trace_id=trace,
@@ -238,6 +280,8 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
 
     # 语音输入已在 /asr/transcribe 转写并经用户确认回填(ADR-004),此处只吃文本
     text = msg.text
+    # ADR-001/005:用户原话入热层轮次(重连重建 turns+回放数据源;30min TTL)
+    await get_memory().append_turn(conn.session_id, "user", text)
     result = gate.check(text)
     conn.log(
         "crisis_gate_hit",
@@ -419,13 +463,18 @@ async def _collect_sequence(
             max_rounds=config.COLLECT_MAX_ROUNDS,
         )
         state.session_context = await get_memory().snapshot(conn.session_id)
-        if state.session_context.history_summary is not None:
+        if state.session_context.history_summary is not None or state.session_context.recent_turns:
             conn.log(
                 "memory_restored",
                 trace_id=trace,
-                summary_len=len(state.session_context.history_summary),
+                summary_len=len(state.session_context.history_summary or ""),
                 moods=len(state.session_context.mood_recent),
+                turns=len(state.session_context.recent_turns),
             )
+            # ADR-001:重连重建 turns(采集上下文接上,不用重说);formulation
+            # /round_index 不持久=已知局限(黑板重画,采集从首轮计)
+            if not state.turns:
+                state.turns = list(state.session_context.recent_turns)
         conn.collect_state = state
         soothe = phrases.collect_soothe(cls.emotion_label, carried=carried)
         await conn.send_first_frame(
@@ -478,6 +527,9 @@ async def _settle_collect_event(
                     source="研判",
                     session_id=conn.session_id,
                 )
+            if summary:
+                # ADR-005:总结文本入热层轮次(回放末条=小栖最后对用户说的话)
+                await memory.append_turn(conn.session_id, "assistant", summary)
             conn.log(
                 "round_archived",
                 trace_id=trace,
@@ -493,7 +545,15 @@ async def _settle_collect_event(
         conn.collect_state = None
         conn.log("route_decided", trace_id=trace, route="crisis", via="escalate")
         await _crisis_sequence(conn)
-    # AskNext / EmpathChat:保留状态等待下一条输入(帧已由图内 emitter 发出)
+    elif isinstance(event, AskNext):
+        # ADR-005:assistant 问句入热层轮次(确认语+问句拼合,与发帧文本一致)
+        await get_memory().append_turn(
+            conn.session_id, "assistant", event.confirm + event.next_question
+        )
+    elif isinstance(event, EmpathChat):
+        # ADR-005:陪聊回应入热层轮次
+        await get_memory().append_turn(conn.session_id, "assistant", event.reply)
+    # 其余:Finish/Escalate 已在上方收口
 
 
 # ---- answer 直答(契约 §6.1:user_input → text_delta ×N → done,无黑板) ----

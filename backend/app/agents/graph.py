@@ -100,8 +100,9 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
         em.log("collection_round", round_index=0, sufficiency=cs.sufficiency, phase="draft")
         return {}
 
-    # 轮次:消费 turns[-1] 为本轮回答
-    answer = cs.turns[-1].text if cs.turns else ""
+    # 轮次:消费最近一条 user 轮为本轮回答(ADR-005:assistant 轮也入 turns,
+    # turns[-1] 可能是上一问——按 role 倒查,不能只取末条)
+    answer = next((t.text for t in reversed(cs.turns) if t.role == "user"), "")
     cs.round_index += 1
     pending = cs.pending_question
     cs.pending_question = None

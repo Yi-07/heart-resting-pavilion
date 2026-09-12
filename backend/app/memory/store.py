@@ -19,9 +19,12 @@ import redis.asyncio as aioredis
 
 from app import config
 from app import logger as app_logger
-from app.agents.state import SessionContext
+from app.agents.state import SessionContext, Turn
 
 _PREFIX = "hrp:v1"
+
+_RECENT_TURNS_CAP = 20
+"""热层 recent_turns 上限(ADR-005):最近 20 轮原话,30min TTL,隔天只剩摘要。"""
 
 logger = app_logger.logger.bind(service=app_logger.SERVICE, module="memory")
 
@@ -147,6 +150,11 @@ class Memory:
                 return SessionContext(
                     history_summary=data.get("history_summary"),
                     mood_recent=list(data.get("mood_recent", [])),
+                    recent_turns=[
+                        Turn(role=t["role"], text=t["text"])
+                        for t in data.get("recent_turns", [])
+                        if isinstance(t, dict) and t.get("role") in ("user", "assistant")
+                    ],
                 )
             warm = await self._redis.lrange(_warm_key(session_id), -1, -1)
             if warm:
@@ -155,6 +163,22 @@ class Memory:
         except Exception as exc:  # noqa: BLE001 — 记忆降级:读失败返回空档
             logger.warning("memory_degraded", layer="snapshot", reason=str(exc)[:120])
         return SessionContext()
+
+    async def append_turn(self, session_id: str, role: str, text: str) -> None:
+        """热层追加一轮原话(ADR-001/005:重连重建 turns + 回放帧数据源)。
+
+        user 轮=user_input 即追加;assistant 轮=图事件落定后追加(拼合全文)。
+        原话只活热层 30min(隐私线 §9.4);失败不杀回合。
+        """
+
+        try:
+            data = await self._read_hot(session_id)
+            turns = list(data.get("recent_turns", []))
+            turns.append({"role": role, "text": text})
+            data["recent_turns"] = turns[-_RECENT_TURNS_CAP:]
+            await self._write_hot(session_id, data)
+        except Exception as exc:  # noqa: BLE001 — 记忆降级:轮次存储失败不影响对话
+            logger.warning("memory_degraded", layer="hot_turn", reason=str(exc)[:120])
 
     async def save_round_summary(self, session_id: str, summary: str) -> None:
         """温层追加本回合摘要 + 热层 history_summary 刷新(回合末,backend-plan §3.3)。"""

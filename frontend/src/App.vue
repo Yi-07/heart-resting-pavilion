@@ -9,6 +9,7 @@ import { WSClient } from './ws/client'
 import type { S2CMsg } from './ws/messages'
 import { useRoundStore } from './state/round'
 import { chat } from './chat/messages'
+import { loadPersistedSession } from './ws/client'
 import { AudioQueue } from './audio/queue'
 import { MoodSelector } from './mood/selector'
 import { avatarSvg, expressionFor } from './l2d/placeholder'
@@ -34,6 +35,9 @@ const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
 
 const round = useRoundStore()
 const client = new WSClient(WS_URL)
+// ADR-005:刷新后从 localStorage 恢复身份 → 首条输入即带原 id,后端认领+回放
+const persistedSession = loadPersistedSession()
+if (persistedSession !== null) client.restoreSession(persistedSession)
 bindStation(() => client) // 补给站 REST 读 session_id(重连不变)
 const audio = new AudioQueue()
 const mood = new MoodSelector({ round, send: (m) => client.send(m) })
@@ -113,6 +117,8 @@ function brief(msg: S2CMsg): string {
       return `seq=${msg.seq} format=${msg.format}`
     case 'done':
       return `seq=${msg.seq}`
+    case 'replay':
+      return `mode=${msg.mode} turns=${msg.turns?.length ?? 0}`
     case 'error':
       return `code=${msg.code} ${msg.message}`
   }
@@ -199,6 +205,10 @@ onMounted(() => {
     chat.finalize()
     chat.beginBot('小栖刚才走神了,我们再试一次好吗?换句话说说也可以。')
     mood.hide()
+  })
+  track('replay', (m) => {
+    // ADR-005:重连回放(幕布/小结卡数据源;先于本回合 first_frame 到达)
+    chat.applyReplay(m.mode, m.turns ?? [], m.summary)
   })
 
   client
@@ -344,7 +354,7 @@ function toggleMic(): void {
       />
 
       <!-- Live2D 立绘(真模型就绪渐显;未就绪/失败显示 SVG 手绘兜底;⇄=轮换内置立绘) -->
-      <div ref="l2dStageEl" class="l2d-stage" data-testid="l2d-stage">
+      <div ref="l2dStageEl" class="l2d-stage" :class="{ 'chat-open': chat.drawerOpen }" data-testid="l2d-stage">
         <div class="char-svg" :style="{ opacity: l2dReady ? 0 : 1 }" v-html="avatar"></div>
         <canvas ref="l2dCanvasEl" class="l2d-canvas" :class="{ 'l2d-ready': l2dReady }"></canvas>
         <div class="l2d-name">
@@ -721,6 +731,11 @@ function toggleMic(): void {
   height: 440px;
   z-index: 12;
   filter: drop-shadow(0 18px 26px rgba(47, 58, 49, 0.35));
+  transition: transform 0.45s var(--ease);
+}
+/* 聊天窗打开 → 立绘左移让位(v7 mockup 同款,防窗体挡人) */
+.l2d-stage.chat-open {
+  transform: translateX(-185px);
 }
 .l2d-stage::after {
   content: '';

@@ -89,11 +89,15 @@
 - [ ] 误伤抽测(负样本)5 条普通焦虑句(如 `最近很焦虑睡不着`)→ hit=False、matched=[]
 - [ ] 每条命中落审计日志(WARN,matched 非空)
 
-## 5. 记忆与恢复
+## 5. 记忆与恢复(ADR-001/005)
 
-- [ ] 跨会话恢复:同 session_id 重连 → `memory_restored` 日志 + history_summary 恢复
+- [ ] 跨会话恢复:同 session_id 重连 → `memory_restored` 日志 + history_summary 恢复 + **采集上下文接续**(重连后不用重说已说内容)
+- [ ] **回放帧·bubbles**(30min 内重开,带原身份):首条输入后先收 `replay`(mode=bubbles,含最近轮次原话+摘要),再收本回合帧;前端幕布折叠式呈现(历史收横幅,展开降饱和气泡)
+- [ ] **回放帧·digest**(隔天重开):replay(mode=digest,无 turns)→ 小结卡片 + "原话已按隐私设定抹去"横幅
+- [ ] **新连接不推回放**:不带身份的新会话无 replay 帧
+- [ ] **assistant 轮次入记忆**:回放含小栖一侧(问句/回应/总结),非只有用户单边
 - [ ] Redis 宕机降级:杀 Redis 后对话不崩(降级路径,日志 `degraded`),重启后恢复
-- [ ] `POST /admin/clear_memory` 生效;失败时 503(治理不降级)
+- [ ] `POST /admin/clear_memory` 生效 + **浏览器存的身份一并清**(治理联动);失败时 503(治理不降级)
 
 ## 6. 工具(station/admin REST)
 

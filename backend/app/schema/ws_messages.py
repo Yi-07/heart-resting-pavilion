@@ -1,7 +1,7 @@
-"""8 种 WS 消息(ws-contract §2/§3/§4),判别字段 type。
+"""9 种 WS 消息(ws-contract §2/§3/§4),判别字段 type。
 
 seq:会话内全局递增,仅 draw/text_delta/audio_chunk/done 携带(§3.2);
-first_frame/error 不带不消耗。session_id 随 first_frame/done 带回(§1),
+first_frame/error/replay 不带不消耗。session_id 随 first_frame/done 带回(§1),
 C→S 侧重连时带原 id、首条可省(连接即建会话,由网关按连接补全)。
 """
 
@@ -71,18 +71,39 @@ class Done(BaseModel):
 
 
 class ErrorFrame(BaseModel):
-    """§3.6 错误帧;不带 seq 不消耗号"""
+    """§3.7 错误帧;不带 seq 不消耗号"""
 
     type: Literal["error"] = "error"
     code: ErrorCode
     message: str
 
 
+class ReplayTurn(BaseModel):
+    """§3.6 回放轮次:role 限 user/assistant,text=原话(仅 30min 内热层有)"""
+
+    role: Literal["user", "assistant"]
+    text: str
+
+
+class ReplayFrame(BaseModel):
+    """§3.6 重连回放(ADR-005);无 seq 不进回合计数,重连认领后主动推一次。
+
+    bubbles=热层 recent_turns 还在(30min 内),turns 携带原话+summary 可空;
+    digest=热层已过,只带 summary(必有);热温均无 → 不发帧。
+    """
+
+    type: Literal["replay"] = "replay"
+    mode: Literal["bubbles", "digest"]
+    turns: list[ReplayTurn] = Field(default_factory=list)
+    summary: str | None = None
+    session_id: str
+
+
 S2CMsg = Annotated[
-    FirstFrame | Draw | TextDelta | AudioChunk | Done | ErrorFrame,
+    FirstFrame | Draw | TextDelta | AudioChunk | Done | ErrorFrame | ReplayFrame,
     Field(discriminator="type"),
 ]
-"""S→C 消息联合(6 种),按 type 判别"""
+"""S→C 消息联合(7 种),按 type 判别"""
 
 
 # ---------- C→S ----------
