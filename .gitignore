@@ -2,7 +2,6 @@
 backup
 
 .claude/*
-!.claude/skills/
 !.claude/hooks/
 !.claude/settings.json
 .env
@@ -28,3 +27,6 @@ prototype/
 
 # prototypes 临时区(原型迭代/调研笔记/截图,后期统一清理,整体不入库)
 prototypes/
+
+# 测试语音素材(安全红线 §7:音频绝不落库;B2 本地自备,路径见 handoff §2)
+backend/tests/voices/

@@ -36,7 +36,7 @@
 | agents | 图编排+共享黑板 | CollectState 14 字段(§3,answer/collect 共用)·图出口=CollectEvent(§3.4)·确定性条件边分派;Agent 名单=spec §4 L5 |
 | rag | 检索三件套(混合知识库) | retrieve(query, k=None, *, library=CASE)·ingest(refs, *, library, reset=False)·RagLibrary{KNOWLEDGE, CASE};Ref={id, question, answer, score, category}(k=None→配置默认);两 Chroma 集合=hrp_kb_knowledge(科普知识库,answer 直答用)·hrp_kb_case(案例库,collect/station 用);Chroma+bge-m3·BM25+jieba·bge-reranker-v2-m3;深模块:两库/召回融合重排/分批/BM25 回建藏模块内,调用方只传 library;ingest 脚本与 Chroma collection 归本模块,数据对接走 docs/data-contract.md(换 embedding 模型=重跑 ingest,代码不动) |
 | llm | LLM 双源 | LLMProvider:chat(messages)→str · stream(messages)→Iterator[str] · chat_json(messages, schema)→T(Message={role, content});出错抛 LLMError,由调用方捕获后降级到话术库;DeepSeek/Ollama 同接口由 config 切换(§7) |
-| memory | 热/温/冷记忆+治理 | snapshot(session_id)→SessionContext · save_round_summary(session_id, summary) · record_mood(mood)(同日同源 upsert,最新胜);层介质与 TTL 单源=spec §4 L7(数值不复制) |
+| memory | 热/温/冷记忆+治理 | snapshot(session_id)→SessionContext · append_turn(session_id, role, text)(热层轮次原话,ADR-005) · save_round_summary(session_id, summary) · record_mood(mood)(同日同源 upsert,最新胜);层介质与 TTL 单源=spec §4 L7(数值不复制) |
 | voice | 语音引擎 | transcribe(audio: bytes)→str(ffmpeg 转码在内)·tts_stream(text, emotion_label)→Iterator[bytes];ASR(SenseVoice;ffmpeg 转码 webm/opus→wav16k 后进引擎,只取转写文本(情感识别结果丢弃),音频即弃)·TTS(CosyVoice 2;念=开场安抚/总结+邀请/危机;失败跳过音频,文字照常收尾)·fillers=预生成等待语音文件(与 TTS 同音色;切块直发 audio_chunk,零运行时合成) |
 | station | 补给站 REST+方案书存取 | 端点单源=ws-contract §1;懒生成素材 station:input(§3.3);SQLite reports 表(每会话只留最新一份) |
 | schema | 契约类型单源 | Pydantic 对齐 ws-contract(formulation+ws_messages);契约对齐测试抽 ws-contract §5.1 字段名与本端比对,防两端漂移(§11) |
@@ -83,7 +83,7 @@
 | turns | list[Turn](追加式) | [] | 网关(entry input 为 turns[0])→ 轮次节点(问答追加) |
 | session_context | SessionContext | 记忆层快照 | 网关(entry),回合内不刷新 |
 
-辅助类型:`Turn={role:"user"|"assistant", text:str}` · `DegradeReason="too_short"|"off_topic"|"negative"` · `PendingQuestion={text:str, target_field:FieldKey}` · `SessionContext={history_summary:str|None, mood_recent:list[MoodKey]}`(温层摘要+冷层心情,来源=memory/)
+辅助类型:`Turn={role:"user"|"assistant", text:str}` · `DegradeReason="too_short"|"off_topic"|"negative"` · `PendingQuestion={text:str, target_field:FieldKey}` · `SessionContext={history_summary:str|None, mood_recent:list[MoodKey], recent_turns:list[Turn]}`(温层摘要+冷层心情+热层轮次原话(ADR-001/005),来源=memory/)
 
 脱敏:state 含用户原文,只活连接内存;日志只记长度/哈希(§9);落盘唯一出口=回合结束 station:input(3.3)
 
@@ -178,7 +178,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 
 ## 8. WS 网关
 
-- 每连接:建 session_id;`user_input/mood_select` 入口;mode=audio → voice/asr 转写(文本即弃)后与文字同流
+- 每连接:建 session_id;`user_input/mood_select` 入口;输入单源文本(语音经 `/asr/transcribe` REST 转写预览、用户确认后按文本发送,ADR-004;网关无 audio 分支)
 - **发号**:所有 S→C 帧经网关发送函数,盖章即发送(seq 预增,首帧=1);仅 draw/text_delta/audio_chunk/done 消耗号,first_frame/error 不带不消耗;计数器=连接对象内存(会话内全局递增,契约 §3.2)
 - **两条来路**:网关直发(first_frame/危机序列/error/done);图内 emitter 注入(config 传递,不进 state)发 draw/text_delta/audio_chunk——Emitter 协议三方法:draw(formulation) · text(s) · audio(chunk)
 - 抢占:等待期=弃 state 直接 entry(安抚语用承接变体);分析中=cancel 图调用 + 旧 emitter 标记 dead(未发帧蒸发)→ entry;前端淡出停播(frontend-plan §6)
@@ -215,7 +215,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 1. **answer**:`user_input("什么是正念")` → text_delta 流式 → done;无 draw
 2. **collect**:`user_input("最近很焦虑睡不着")` → first_frame → 2 轮 draw 增量 → 精稿 → 分析总结+心灵补给站邀请语 → done(方案书由用户点击补给站触发,不在回合内);日志含 `crisis_gate_hit(hit:false)`、`route_decided(collect)`、`sufficiency_scored`
 3. **crisis**:`user_input("我不想活了")` → first_frame(crisis) → 热线内容;日志含 **crisis_gate_hit(hit:true, audit)** 审计
-4. **voice**:`user_input(mode=audio, webm/opus)` → 转写后与文字同流(链路同用例 2);安抚语与总结各出 audio_chunk ×N;分析中发新 user_input 抢占 → 未发帧蒸发 + 新 first_frame(承接安抚语);日志无音频无原文
+4. **voice**:`POST /asr/transcribe`(webm/opus base64 → 转写文本,前端回填确认后按文本发送,ADR-004;音频转写后即弃)+ 安抚语与总结各出 audio_chunk ×N;分析中发新 user_input 抢占 → 未发帧蒸发 + 新 first_frame(承接安抚语);日志无音频无原文
 
 ---
 

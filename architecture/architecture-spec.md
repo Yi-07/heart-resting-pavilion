@@ -76,7 +76,7 @@
 ### L2 · 接入与网关层
 
 - **职责**：一条可靠连接承载整个流水线；实时感由应用层实现
-- **数据契约**：**8 种消息**（JSON 文本帧）：S→C `first_frame / text_delta / draw / audio_chunk / done / error`；C→S `user_input / mood_select`
+- **数据契约**：**9 种消息**（JSON 文本帧）：S→C `first_frame / text_delta / draw / audio_chunk / done / replay / error`；C→S `user_input / mood_select`（消息格式单源=ws-contract §2）
 
 - `draw.seq` 递增：前端增量绘制 + **中断判定**（新请求 seq 更高 → 作废旧画面，开启新回合）
 
@@ -137,7 +137,7 @@
 
 | 层 | 内容 | 存储 | 生命周期 |
 |---|---|---|---|
-| 热 | 当前会话上下文 | Redis | TTL 30min |
+| 热 | 当前会话上下文:摘要 + 最近轮次原话(≤20 轮,供重连重建与回放,ADR-001/005) | Redis | TTL 30min(原话到期即弃=隐私边界,中长期只留摘要) |
 | 温 | 会话摘要（粗摘要不存原文）| Redis | TTL 7天 |
 | 冷 | 长期画像 + 情绪趋势（每日心情记录 `{date, mood_label, intensity, source: mood_select/研判}`）| SQLite | 无 TTL |
 | 外挂 | 心理知识问答对，供 RAG | Chroma | 与用户记忆分离 |
@@ -243,7 +243,7 @@
 | 后端 | FastAPI + LangGraph 1.x(确定性 StateGraph) + Chroma + SQLite + Redis |
 | 前端 | Vue3/Vite + TS + SVG 黑板（自研渲染器）+ Live2D |
 | 语音 | CosyVoice 2 + SenseVoice(FunASR)（本地；语音输入=录音→ASR→文字）|
-| 传输 | WebSocket 单连接（8 种消息）|
+| 传输 | WebSocket 单连接（9 种消息）|
 | 交付 | 浏览器起步 / Tauri 客户端收官 |
 
 ---

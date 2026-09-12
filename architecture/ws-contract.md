@@ -329,7 +329,7 @@ S→C  done
 | ERROR | 消息非法、后端异常、error 帧发出 |
 | FATAL | 进程级故障 |
 
-事件: `session_open` · `user_input_received` · `crisis_gate_hit` · `route_decided` · `first_frame_sent` · `collection_round` · `sufficiency_scored` · `degraded` · `analysis_start` · `analysis_end` · `draw_sent` · `done` · `error`;REST 侧: `asr_transcribed` · `asr_empty`(归属 `/asr/transcribe`,ADR-004)
+事件: `session_open` · `user_input_received` · `crisis_gate_hit` · `route_decided` · `first_frame_sent` · `collection_round` · `sufficiency_scored` · `degraded` · `analysis_start` · `analysis_end` · `draw_sent` · `replay_sent`(ADR-005) · `done` · `error`;REST 侧: `asr_transcribed` · `asr_empty`(归属 `/asr/transcribe`,ADR-004)
 
 ### 9.4 脱敏(硬约束)
 
@@ -349,11 +349,12 @@ S→C  done
 ## 10. 前后端各自实现清单(开工检查)
 
 **前端**
-1. WS 客户端(7+1 消息解析、seq 校验、断线重连)
+1. WS 客户端(9 种消息解析、seq 校验、断线重连)
 2. first_frame → 清黑板/重置/收起选择器
 3. draw → 增量渲染(新字段动画)
 4. mood_select 上报(含独立到达)
 5. error → 温和兜底
+6. replay → 幕布回放/小结卡(ADR-005;session_id 经 localStorage 持久化)
 
 **后端**
 1. WS 网关(session_id、消息路由、seq 管理)
@@ -361,3 +362,4 @@ S→C  done
 3. draw 下发(粗稿/逐轮/精稿)
 4. mood_select 处理(profile 更新 / 独立到达)
 5. error 帧 + 超时兜底
+6. replay 推送(重连认领后,ADR-005)+ `/asr/transcribe` 转写端点(ADR-004)

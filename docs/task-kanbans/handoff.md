@@ -3,6 +3,13 @@
 > **职能**:当前编码会话向下一个会话交接「项目现状 + 推理现场」;每次接力前由收尾窗口整篇重写(描述现状,不写流水账/日期)。开工读取顺序见 kanban-v1 头注。
 > **不复制原则**:架构/契约/方案/判据/命令已载于 `architecture/*`、`CLAUDE.md`、git log——本文只写「别处查不到的现场状态」并给出路径引用。无任何密钥类内容。
 
+## 0. 当前停点(下一窗口从这里接)
+
+- **已完成并 commit**:A1 词表扩充 / A2 E2E 归档 / A3 语音两步式(ADR-004)/ A4 回放与小结卡(ADR-001 落地+ADR-005)/ B1 验收清单 `docs/tests/acceptance-v1.md`(判据单源,双用例原则:三链路各配简单+复杂话术)。
+- **下一窗口=B2 完整三链路业务测试**,判据逐条挂 acceptance-v1;自动断言项走 `backend/tests/e2e/`(跑法=e2e_lib 头注),子 agent 黑盒执行回收 PASS/FAIL;交互项(心情点选/横幅/黑板视觉/回放幕布与小结卡)前端手测+截图。
+- **B2 环境前提**:Redis 已开(6379,本机刚才关过要先起)+ `cd backend && uv run hrp` + 一段真实语音 wav(见 §2 语音素材)。
+- **已知陷阱**:全量 pytest 会因真链路用例加载模型跑 40min+(内存紧时被系统杀)——按文件分批跑,或 `--deselect tests/test_voice.py --deselect tests/test_memory.py --deselect tests/test_retrieve.py` 避开;B2 跑前关掉常驻 hrp 服务释放内存。
+
 ## 1. 建议技能(下一会话按需调用)
 
 | 场景 | 技能 |
@@ -22,7 +29,11 @@
 - **RAG 模型本地化**:bge-m3 `backend/models/bge-m3/`(2.2G)+ reranker(2.1G),**gitignore 不入库;新克隆需重建**(下载脚本待补=看板 D1,下载命令已内联看板;本机走 hf-mirror `curl -sL`,huggingface_hub Xet 分片在本机报 FileMetadataError,底层 HTTP 通)。缺件不炸:answer 走降级直答(日志 `rag_warm_failed`/`degraded rag_failed`)。
 - **Chroma**=`backend/.rag_store/`:`hrp_kb_knowledge`(15 条科普库/answer 用)· `hrp_kb_case`(14944 条案例库/collect·station 用)。重建=`uv run python -m app.rag.ingest --reset`;**全量编码纯 CPU 易被 OOM 杀,限线程 `OMP_NUM_THREADS=8` 可稳**(本机 15.8G 内存)。检索已异步化(`rag.retrieve_async`,未就绪 2s 超时降级),不阻塞事件循环。
 - **内存压力**:系统内存不足时后端/后台进程会被系统结束(非代码问题,重启即恢复)——9880/8000 端口被占时先 `netstat -ano | grep 端口`+`taskkill //F //PID`。
-- **E2E 脚本现场**:已迁 `backend/tests/e2e/`(e2e_lib + 两轮共 10 脚本,ruff/mypy 干净);跑法=e2e_lib 头注(`uv run python tests/e2e/e2e2_a_gate_concept.py`,Windows 直接 python);e2e_b_asr 需命令行传真实语音 wav(样本不入库);日志路径=backend/tests/e2e 相对 backend/logs。`prototypes/tts-latency/` 仅剩 freeze 两文件(venv 重建锚,gitignore 不入库,**随 D1 迁 backend/scripts/ 入库**)。
+- **E2E 脚本现场**:已迁 `backend/tests/e2e/`(e2e_lib + 两轮共 9 脚本,ruff/mypy 干净);跑法=e2e_lib 头注(`uv run python tests/e2e/e2e2_a_gate_concept.py`,Windows 直接 python);日志路径=backend/tests/e2e 相对 backend/logs。`prototypes/replay-ui/`(ADR-005 UI 定稿原型)与 `prototypes/tts-latency/`(仅剩 freeze 两文件,venv 重建锚)均 gitignore 不入库,freeze **随 D1 迁 backend/scripts/ 入库**。
+- **语音测试素材(B2 用;ADR-004 后语音输入=REST 转写,不再走 WS)**:**已就位** `backend/tests/voices/`(collect_test.wav=采集话术段 4.0s / crisis_test.wav=危机短句段 2.3s,均 PCM16 单声道;gitignore 不入库存,红线 §7):
+  1. collect_test.wav → 断言转写与口播一致(`asr_transcribed` length>10)
+  2. crisis_test.wav → 断言转写含危机词(发送后照常命中 §1.3 全链)
+  用法=`POST /asr/transcribe`(body `{audio: <base64>}`);前端手测用浏览器麦克风口播即可(wav 仅自动化断言需要)。
 - **WS 测试脚本**:`websockets` 库建议传 `ping_interval=None`(长任务/冷启下 20s 默认 keepalive 会误断;e2e_lib 已带该参,自写脚本记得加);前端浏览器原生 WS 不受影响。
 - **Windows 坑**:仓库文本 CRLF(前端读 `architecture/*.md` 正则要 `\r?\n`+`s`);git-bash 管道下 Python print 中文 GBK 乱码(仅显示,断言在脚本内做);TestClient 的 WS 测试是同步函数不能 `await`。
 - **Live2D 素材**:`frontend/public/vendor/` 整体 gitignore(授权禁再分发);新克隆跑 `npm run l2d:fetch` 重建,缺失自动回退 CDN→SVG 手绘兜底。目录单源=`src/l2d/models.ts`。
