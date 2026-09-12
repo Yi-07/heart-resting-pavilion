@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import admin, config
 from app import logger as app_logger
 from app.logger import setup_logger
+from app.memory import get_memory
 from app.station import router as station_router
 from app.voice.routes import router as asr_router
 from app.ws_gateway import handle_connection
@@ -28,18 +29,23 @@ async def _warm_sidecar() -> None:
     懒导入:语音模块只在 warmup 路径进内存,网关/REST 启动零成本。"""
     from app.voice import tts
 
+    _logger.info("tts_sidecar_warm_begin · 正在拉起 TTS sidecar")
+    t0 = time.perf_counter()
     try:
         ok = await asyncio.to_thread(tts.ensure_sidecar)
     except Exception as exc:  # noqa: BLE001 — 拉起链路任何意外都不挡主进程
-        _logger.warning("tts_sidecar_warm_error", detail=str(exc)[:160])
+        _logger.warning("tts_sidecar_warm_error · TTS sidecar 拉起异常",
+                        detail=str(exc)[:160])
         return
+    elapsed = round(time.perf_counter() - t0, 1)
     if ok:
-        _logger.info("tts_sidecar_warm_ready", port=config.TTS_SIDECAR_PORT)
+        _logger.info(f"tts_sidecar_warm_ready · TTS sidecar 已就绪(port {config.TTS_SIDECAR_PORT},"
+                     f"{elapsed}s)")
     else:
         _logger.warning(
-            "tts_sidecar_warm_failed",
+            "tts_sidecar_warm_failed · TTS sidecar 未就绪",
             port=config.TTS_SIDECAR_PORT,
-            hint="TTS 将降级跳过;文字链路不受影响,详见上方 sidecar 日志",
+            elapsed_s=elapsed,
         )
 
 
@@ -48,17 +54,21 @@ async def _warm_rag() -> None:
     失败只 WARN:检索请求 2s 等不到就绪即降级直答,文字链路不受影响。"""
     from app.rag import warm
 
+    _logger.info("rag_warm_begin · 正在预热 RAG 检索库")
+    t0 = time.perf_counter()
     try:
         await asyncio.to_thread(warm)
     except Exception as exc:  # noqa: BLE001 — 预热失败不挡主进程
-        _logger.warning("rag_warm_failed", detail=str(exc)[:160])
+        _logger.warning("rag_warm_failed · RAG 预热失败",
+                        detail=str(exc)[:160])
         return
-    _logger.info("rag_warm_ready")
+    _logger.info(f"rag_warm_ready · RAG 检索库预热完成({time.perf_counter() - t0:.1f}s)")
 
 
 async def _loop_watchdog() -> None:
     """事件循环阻塞看门狗(ADR-003):lag>2s 记 WARN。RAG 冷启动静默断连的
     教训——同步调用堵 loop 时超时/降级机制全部失灵,唯一可靠信号是时钟漂移。"""
+    _logger.info("watchdog_on · 事件循环监控已启动")
     while True:
         t0 = time.perf_counter()
         await asyncio.sleep(1)
@@ -72,10 +82,16 @@ async def _loop_watchdog() -> None:
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    _logger.info("startup_begin · 心栖阁 backend 启动中")
     admin.load_and_apply()  # 持久配置读回应用;无配置/失败 WARN 走 env
+    if await get_memory().ping():
+        _logger.info("memory_ready · Redis 连接正常")
+    else:
+        _logger.warning("memory_ping_failed · Redis 连接失败")
     warm = asyncio.create_task(_warm_sidecar())
     rag_warm = asyncio.create_task(_warm_rag())
     watchdog = asyncio.create_task(_loop_watchdog())
+    _logger.info("startup_ready · 文字链路已就绪")
     yield
     warm.cancel()  # 没就绪就退了:不再等
     rag_warm.cancel()

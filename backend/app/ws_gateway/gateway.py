@@ -42,9 +42,9 @@ from app.agents import (
     Turn,
     stream_final,
 )
-from app.agents.state import CollectEvent
+from app.agents.state import CollectEvent, FinishCause
 from app.llm import LLMError, Message, get_provider
-from app.memory import get_memory
+from app.memory import Memory, get_memory
 from app.router import classifier, gate, phrases
 from app.router.classifier import Classification
 from app.schema import (
@@ -504,6 +504,38 @@ async def _collect_sequence(
     await _settle_collect_event(conn, trace, event)
 
 
+async def _archive_round(
+    memory: Memory, conn: Connection, state: CollectState,
+    summary: str, trace: int, cause: FinishCause,
+) -> None:
+    """Finish 归档三动作(shield 下执行,断连取消不打断;B2 发现⑤)。"""
+    await memory.save_round_summary(conn.session_id, summary)
+    await memory.save_station_input(
+        conn.session_id, state.formulation.model_dump_json(by_alias=True), summary
+    )
+    label = state.formulation.emotion.label
+    if label:
+        await memory.record_mood(
+            label,
+            intensity=state.formulation.emotion.intensity,
+            source="研判",
+            session_id=conn.session_id,
+        )
+    if summary:
+        # ADR-005:总结文本入热层轮次(回放末条=小栖最后对用户说的话)
+        await memory.append_turn(conn.session_id, "assistant", summary)
+    conn.log(
+        "round_archived",
+        trace_id=trace,
+        cause=cause,
+        summary_len=len(summary),
+    )
+    if summary:
+        # 总结语音异步流出(done 后到达,抢占即蒸发):不占 60s 处理窗口,
+        # 长总结不再触发 timeout 兜底;ws-contract §6.2 时序措辞已同步
+        asyncio.create_task(_speak_summary(conn, summary, trace))
+
+
 async def _settle_collect_event(
     conn: Connection, trace: int, event: CollectEvent
 ) -> None:
@@ -515,31 +547,14 @@ async def _settle_collect_event(
         if state is not None:
             memory = get_memory()
             summary = event.summary or ""
-            await memory.save_round_summary(conn.session_id, summary)
-            await memory.save_station_input(
-                conn.session_id, state.formulation.model_dump_json(by_alias=True), summary
-            )
-            label = state.formulation.emotion.label
-            if label:
-                await memory.record_mood(
-                    label,
-                    intensity=state.formulation.emotion.intensity,
-                    source="研判",
-                    session_id=conn.session_id,
+            try:
+                await asyncio.shield(
+                    _archive_round(memory, conn, state, summary, trace, event.cause)
                 )
-            if summary:
-                # ADR-005:总结文本入热层轮次(回放末条=小栖最后对用户说的话)
-                await memory.append_turn(conn.session_id, "assistant", summary)
-            conn.log(
-                "round_archived",
-                trace_id=trace,
-                cause=event.cause,
-                summary_len=len(summary),
-            )
-            if summary:
-                # 总结语音异步流出(done 后到达,抢占即蒸发):不占 60s 处理窗口,
-                # 长总结不再触发 timeout 兜底;ws-contract §6.2 时序措辞已同步
-                asyncio.create_task(_speak_summary(conn, summary, trace))
+            except asyncio.CancelledError:
+                # 断连取消不得打断归档(B2 发现⑤):shield 让写入继续,这里只落痕
+                conn.log("degraded", level="WARN", reason="finish_archival_interrupted")
+                raise
         await conn.send_done()
     elif isinstance(event, Escalate):
         conn.collect_state = None

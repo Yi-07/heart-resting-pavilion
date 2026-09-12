@@ -51,6 +51,7 @@ async def main() -> None:
         await c.wait_for(lambda m: m.get("type") == "text_delta", 60, "R1 首问")
 
         # R2: 增量 draw + 第2问
+        await asyncio.sleep(4.0)  # 轮间留白:R1 回合未收尾即发 R2 会踩中抢占弃态(设计内),与 b/c 对齐
         _t2, r2_draw = await collect_round(c, R2, "R2")
         r2_seq = r2_draw.get("seq")
         checks.append((isinstance(r2_seq, int) and r2_seq > r1_seq,

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from e2e_lib import WsClient, result, user_text
 
-LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
+LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
 
 
 def find_gate_log(session_id: str) -> str | None:

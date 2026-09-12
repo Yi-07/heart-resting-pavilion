@@ -12,9 +12,13 @@ import asyncio
 import base64
 import io
 import json
+import sys
 import time
+import urllib.error
+import urllib.request
 import wave
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import websockets
@@ -22,7 +26,12 @@ from typing_extensions import Self
 from websockets.asyncio.client import ClientConnection
 
 URI = "ws://127.0.0.1:8000/ws"
+BASE = "http://127.0.0.1:8000"
 T0 = time.monotonic()
+
+# Windows GBK 重定向兜底:帧文本可能含 emoji(如转写结果),防打印 UnicodeEncodeError
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 
 
 def now() -> float:
@@ -150,3 +159,68 @@ def user_text(text: str, session_id: str | None = None) -> dict[str, Any]:
 
 def result(name: str, ok: bool, detail: str) -> None:
     print(f"\n[{name}] {'PASS' if ok else 'FAIL'} — {detail}", flush=True)
+
+
+def epoch() -> float:
+    """time.time();作日志过滤的时间下界标记。"""
+    return time.time()
+
+
+def log_records(
+    event: str | None = None,
+    since_epoch: float | None = None,
+    session_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """扫最新 debug_*.log(loguru 单行 JSON),按 event/session_id/时间过滤,新→旧。
+
+    返回元素: {level, extra, ts, raw};截断行/非 JSON 行跳过。
+    """
+    log_dir = Path(__file__).resolve().parents[2] / "logs"
+    logs = sorted(log_dir.glob("debug_*.log"))
+    out: list[dict[str, Any]] = []
+    for path in reversed(logs):
+        for line in reversed(path.read_text(encoding="utf-8", errors="replace").splitlines()):
+            if event and event not in line:
+                continue
+            try:
+                rec = json.loads(line)["record"]
+            except Exception:  # noqa: BLE001, S112 — 半截/非 JSON 行跳过
+                continue
+            extra = rec.get("extra", {})
+            ev = extra.get("event", rec.get("message", ""))  # station/admin 路由事件名在 message 非 extra
+            if event and ev != event:
+                continue
+            if session_id and extra.get("session_id") != session_id:
+                continue
+            ts = rec.get("time", {}).get("timestamp", 0.0)
+            if since_epoch is not None and ts <= since_epoch:
+                continue
+            out.append({"level": rec.get("level", {}).get("name", ""),
+                        "extra": extra, "ts": ts, "raw": line})
+    return out
+
+
+def _http(method: str, path: str, payload: dict[str, Any] | None = None,
+          timeout: float = 60.0) -> tuple[int, dict[str, Any]]:
+    """REST 单发,返回 (status, body_json);HTTPError 也返回状态码与错误体。"""
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(
+        f"{BASE}{path}", data=data, method=method,
+        headers={"Content-Type": "application/json"} if data else {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"{}")
+        except Exception:  # noqa: BLE001 — 错误体非 JSON 时给空体
+            return e.code, {}
+
+
+def get_json(path: str, timeout: float = 60.0) -> tuple[int, dict[str, Any]]:
+    return _http("GET", path, timeout=timeout)
+
+
+def post_json(path: str, payload: dict[str, Any] | None = None,
+              timeout: float = 60.0) -> tuple[int, dict[str, Any]]:
+    return _http("POST", path, payload, timeout)

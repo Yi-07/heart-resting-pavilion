@@ -440,7 +440,7 @@ function toggleMic(): void {
   <!-- 协议帧控制台(演示验帧用) -->
   <button class="proto-toggle" type="button" @click="protoOpen = !protoOpen">协议帧 WS</button>
   <div class="proto glass" :class="{ open: protoOpen }">
-    <div class="p-h">WebSocket 帧流(对齐 ws-contract · 8 消息)</div>
+    <div class="p-h">WebSocket 帧流(对齐 ws-contract · 9 消息)</div>
     <div class="p-body" data-testid="frame-log">
       <div v-for="(f, i) in [...frames].reverse()" :key="frames.length - i" class="fr" :class="{ w: f.kind === 'error' }">
         <span class="fd">{{ f.kind }}</span>{{ f.brief }}

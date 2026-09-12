@@ -7,10 +7,14 @@
 
 from __future__ import annotations
 
+import io
 import os
 import re
+import struct
 import subprocess
 import tempfile
+import time
+import wave
 from functools import lru_cache
 
 from app import config
@@ -19,6 +23,10 @@ from app import logger as app_logger
 logger = app_logger.logger.bind(service=app_logger.SERVICE, module="asr")
 
 _TAG_RE = re.compile(r"<\|[^|]*\|>")
+
+_SILENCE_GATE = 100
+"""近静音门限(16bit PCM 平均绝对幅值,32768 满幅;≈-50dBFS)。只吃数字静音/纯底噪,
+防 SenseVoice 对静音段幻听出语气词(B2 §2 实测);正常小声说话远高于此,不误吃。"""
 
 
 class ASRError(RuntimeError):
@@ -29,7 +37,11 @@ class ASRError(RuntimeError):
 def _model():
     from funasr import AutoModel
 
-    return AutoModel(model=config.ASR_MODEL_ID, disable_update=True)
+    logger.info("asr_model_begin · 正在加载 SenseVoice 模型")
+    t0 = time.perf_counter()
+    model = AutoModel(model=config.ASR_MODEL_ID, disable_update=True)
+    logger.info(f"asr_model_ready · SenseVoice 模型已加载({time.perf_counter() - t0:.1f}s)")
+    return model
 
 
 def _to_wav16k(audio: bytes) -> bytes:
@@ -51,9 +63,28 @@ def _to_wav16k(audio: bytes) -> bytes:
     return proc.stdout
 
 
+def _mean_abs_amplitude(wav: bytes) -> float | None:
+    """wav PCM16 平均绝对幅值(0~32768);解析失败返 None(不拦截,走模型)。"""
+    try:
+        with wave.open(io.BytesIO(wav)) as w:
+            if w.getsampwidth() != 2:
+                return None
+            frames = w.readframes(w.getnframes())
+    except Exception:  # noqa: BLE001 — 非常规 wav 交模型处理
+        return None
+    n = len(frames) // 2
+    if n == 0:
+        return None
+    samples = struct.unpack(f"<{n}h", frames)
+    return sum(abs(s) for s in samples) / n
+
+
 def transcribe(audio: bytes) -> str:
     """音频字节 → 文本;空串=无语音内容。同步阻塞(网关用 to_thread 调)。"""
     wav = _to_wav16k(audio)
+    level = _mean_abs_amplitude(wav)
+    if level is not None and level < _SILENCE_GATE:
+        return ""  # 近静音直接判空:不进模型,防静音幻听(空串走 asr_empty 语义)
     try:
         result = _model().generate(input=wav, language="zh", use_itn=True, batch_size_s=60)
         raw = result[0]["text"]

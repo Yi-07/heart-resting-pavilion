@@ -13,7 +13,7 @@
 | 会话 | 连接即建 `session_id`(服务端生成,随 `first_frame`/`done` 带回)|
 | 生命周期 | 单连接承载多回合;断线重连用原 `session_id` 恢复上下文 |
 | 编码 | JSON,UTF-8,文本帧 |
-| 管理通道 | 记忆清除/趋势/模型配置走 HTTP REST(`POST /admin/clear_memory`·`GET /admin/trends`·`GET /admin/config`·`POST /admin/config`)，不进 WS；WS 仅对话 8 消息 |
+| 管理通道 | 记忆清除/趋势/模型配置走 HTTP REST(`POST /admin/clear_memory`·`GET /admin/trends`·`GET /admin/config`·`POST /admin/config`)，不进 WS；WS 仅对话 9 消息(§2 总览) |
 | 补给站通道 | 心灵补给站方案书走 HTTP REST:`POST /station/report/generate`(点击触发懒生成) · `GET /station/report/latest`(轮询,等待态"正在为你整理…")；不进 WS |
 | 语音转写通道 | 语音输入两步式(ADR-004):`POST /asr/transcribe`(base64 webm/opus → 转写文本)供前端回填文本框,用户确认后按文本输入发送;不进 WS |
 

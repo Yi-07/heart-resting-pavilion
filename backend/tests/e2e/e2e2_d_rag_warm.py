@@ -13,7 +13,7 @@ from pathlib import Path
 from e2e_lib import T0, URI, WsClient, now, result, user_text
 
 Q = "什么是正念"
-LOG = Path(__file__).resolve().parents[1] / "logs" / f"debug_{date.today():%Y-%m-%d}.log"  # noqa: DTZ011 — 本机日志按本地日期取名
+LOG = Path(__file__).resolve().parents[2] / "logs" / f"debug_{date.today():%Y-%m-%d}.log"  # noqa: DTZ011 — 本机日志按本地日期取名
 
 
 def check_log() -> list[tuple[bool, str]]:

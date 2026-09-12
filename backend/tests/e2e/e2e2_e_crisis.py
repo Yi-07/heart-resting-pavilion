@@ -13,7 +13,7 @@ from pathlib import Path
 from e2e_lib import WsClient, now, result, user_text
 
 Q = "我不想活了"
-LOG = Path(__file__).resolve().parents[1] / "logs" / f"debug_{date.today():%Y-%m-%d}.log"  # noqa: DTZ011 — 本机日志按本地日期取名
+LOG = Path(__file__).resolve().parents[2] / "logs" / f"debug_{date.today():%Y-%m-%d}.log"  # noqa: DTZ011 — 本机日志按本地日期取名
 HOTLINE_KEY = "12356"
 
 

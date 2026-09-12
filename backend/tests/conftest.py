@@ -20,6 +20,9 @@ class FakeMemory:
         self.station_input: dict[str, Any] | None = None  # load_station_input 返回口
         self.moods: list[dict[str, Any]] = []  # recent_moods 返回口
 
+    async def ping(self) -> bool:
+        return True
+
     def set_snapshot(self, ctx: SessionContext) -> None:
         self._snapshot = ctx
 
@@ -92,6 +95,7 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     monkeypatch.setattr("app.ws_gateway.gateway.get_memory", lambda: mem)
     monkeypatch.setattr("app.station.routes.get_memory", lambda: mem)
     monkeypatch.setattr("app.admin.routes.get_memory", lambda: mem)
+    monkeypatch.setattr("app.main.get_memory", lambda: mem)
     # 语音默认静音:TTS 流式合成不出块(跳过音频帧)、fillers 取不到——防测试
     # 拉起真 sidecar 或多出 audio_chunk 破坏既有帧序断言;语音用例自行覆盖
     monkeypatch.setattr("app.voice.tts.synthesize_stream", lambda text: iter(()))

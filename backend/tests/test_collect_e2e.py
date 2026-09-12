@@ -31,7 +31,13 @@ class _ScriptedProvider:
     async def chat_json(self, messages: Any, schema: type) -> Any:
         name = getattr(schema, "__name__", "")
         if name == "_ExtractOut":
-            return schema(value="提炼值", off_topic=False)
+            asked = ""
+            for m in messages:
+                content = getattr(m, "content", "") or ""
+                for line in content.splitlines():
+                    if line.startswith("所问字段:"):
+                        asked = line.split(":", 1)[1].strip()
+            return schema(fields={asked: "提炼值"}, off_topic=False)
         if name == "_ReviewOut":
             return schema(label="焦虑", intensity=0.8)
         if name == "_RiskOut":

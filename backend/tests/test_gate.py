@@ -69,9 +69,11 @@ def test_all_soft_terms_match_below_threshold():
 
 
 def test_new_real_expressions_hit():
-    # 看板 A1 抽钉:真实表述样本(全量覆盖见 test_all_core_terms_hit_individually)
+    # 看板 A1 抽钉:真实表述样本(全量覆盖见 test_all_core_terms_hit_individually);
+    # B2 增补:软埋消失族表述(A3-复杂实测脱网后补录)
     for text in ["站在天台上想跳楼", "手腕上有伤是割腕的", "觉得一了百了就轻松了",
-                 "我想离开这个世界", "没有我会更好吧", "吞药是不是就不疼了"]:
+                 "我想离开这个世界", "没有我会更好吧", "吞药是不是就不疼了",
+                 "要是我能从这个世界上消失就好了", "真想从这个世上消失一阵子"]:
         r = gate.check(text)
         assert r.hit is True, f"真实危机表述未命中: {text}"
 

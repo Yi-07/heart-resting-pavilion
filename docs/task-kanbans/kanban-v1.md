@@ -32,7 +32,7 @@
 ### B. 业务测试(新窗口执行)
 
 - [x] **B1 验收清单落地**:清单文档写 `docs/tests/acceptance-v1.md`(判据载体),看板只挂状态。指标口径=三链路流畅度(帧序完整/无冻结/首包时长,基线=ADR-002/003 E2E 实测)+ 危机词表抽测 20-30 条真实表达(样本从 `backend/logs/` 的 crisis_gate_hit 反推,**筛 `"hit": true` 且 matched 非空的行**)+ 环境前置节(内测访问形态/Redis/模型/l2d)。达成「应对 80%+ 应用场景」即可交付第一版。(落定:7 节——环境前置/三链路/语音/ADR-003 场景/词表抽测/记忆恢复/工具;抽测样本实测=日志 82 条 hit 中 80 条"不想活"+2 条"自杀"分布单一,改以 A1 词表 33 条构造变体句全覆盖+误伤负样本;**双用例原则**=三链路+门控场景各配简单+复杂两条话术防偶然,复杂变体含裁量规则——概念问句变体判内容轮不硬判挂、求助句被抢占=硬挂)
-- [ ] **B2 完整三链路业务测试**:answer/collect/crisis 全链实况(吸收原 B-6)。执行素材:`backend/tests/e2e/`(e2e_lib + 两轮 E2E 脚本,跑法见 e2e_lib 头注;`uv run python tests/e2e/e2e2_a_gate_concept.py`,Windows 直接 python 不经 pytest);本机需在跑 `uv run hrp`(lifespan 自动拉 sidecar+RAG 预热)。并纳入:station 方案书 REST 实测、Redis 宕机降级实测、跨会话 memory_restored、概念问句门控/求助句留场(ADR-003 场景)、词表抽测(依赖 A1)。判据挂 B1 的 acceptance-v1.md。
+- [x] **B2 完整三链路业务测试**:answer/collect/crisis 全链实况(吸收原 B-6)。执行素材:`backend/tests/e2e/`(e2e_lib + 两轮 E2E 脚本,跑法见 e2e_lib 头注;`uv run python tests/e2e/e2e2_a_gate_concept.py`,Windows 直接 python 不经 pytest);本机需在跑 `uv run hrp`(lifespan 自动拉 sidecar+RAG 预热)。并纳入:station 方案书 REST 实测、Redis 宕机降级实测、跨会话 memory_restored、概念问句门控/求助句留场(ADR-003 场景)、词表抽测(依赖 A1)。判据挂 B1 的 acceptance-v1.md。(落定:acceptance 全节实况过——既有 8 脚本回归 + 新写 7 个 e2e3 脚本[词表抽测 126/126·复杂双用例·门控变体·ASR 两步式·station/admin·记忆回放 bubbles/digest·clear_memory 治理·Redis 宕机降级]+ 浏览器交互两段[心情点选/黑板视觉/回放幕布/Live2D/console 零 error];**顺手修 7 项真发现**:危机词表补消失族 3 词·跨字段提取[单字段瓶颈根治,一条回答可填多字段]·挂起问题填到才清·AskNext/EmpathChat 补 final 收尾·Finish 归档 asyncio.shield·ASR 近静音判空·启动提示标志文字;acceptance §1.3/§5 判据措辞随实测同步;遗留待办见 §3[概念句"一直"误捕获·off_topic 观测日志·心情选择器 10s×LLM 慢 UX];交互盲区留手测:真麦克风口播/digest 小结卡前端呈现)
 
 ### C. code review
 
@@ -56,12 +56,13 @@
 ## 3. 待办池(不排程;内测反馈后再定优先级)
 
 - 记忆分层落地(ADR-001 `MemoryTiering` 已审定):热层改存 recent_turns 原始轮次+重连重建;涟漪=spec §4 L7(ADR 原文另引的 spec §9.4 编号在现行 spec 不存在,落地时按现行 spec 重新定位审计节)· state.py · memory/store.py · gateway.py · 测试。
-- 陪聊轮保留 pending_question:E2E 观察的 UX 缺口(求助句走陪聊后,下一条内容只进转录不做字段提取);高频出现再修。
+- 陪聊轮保留 pending_question:E2E 观察的 UX 缺口(求助句走陪聊后,下一条内容只进转录不做字段提取);高频出现再修。**B2 已修主链**(提取填到才清挂起;跨字段提取见 commit),off_topic 弃内容仍无观测日志(extract.py 零 logging,off_topic/value 不可分辨)——补观测属后续小项。
 - 阶段 2 四问 LLM 结构化分类器(用户 discourse-stack 方案):仅门控命中时调用,等 route_decided 日志积累偏差数据。
 - 路由准确率/回接率评估(需标注集;route_decided 日志已在积累)。
 - 「不想聊了」显式退出采集(需词表设计)。
 - 短答回接话术 LLM 润色(等恢复体验实况)。
 - LLM_TIMEOUT_S 单值预算拆分(慢流式下总结被兜底截断的偶发风险)。
+- B2 新增:概念句被 DISTRESS_SIGNALS"一直"误捕获进 collect(classifier.py:32),口语概念句到不了短答支线——等 route_decided 日志积累后与"阶段 2 分类器"一并调;心情选择器 10s 自动收起 × LLM 首 40s+ 延迟,首轮用户易错过(pill 可回开,前端 mood/selector.ts:7);前端帧面板「9 消息」文案已同步,契约 §1 与 §2 计数矛盾已修齐。
 
 ## 4. 接力规程
 

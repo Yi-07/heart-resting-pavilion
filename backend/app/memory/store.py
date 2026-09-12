@@ -53,6 +53,13 @@ class Memory:
         self._db_path = db_path
         self._init_db()
 
+    async def ping(self) -> bool:
+        """Redis 连通性检查(启动提示用);失败不抛,由调用方落降级提示。"""
+        try:
+            return bool(await self._redis.ping())
+        except Exception:  # noqa: BLE001 — 启动检查,连接失败返回 False 即可
+            return False
+
     # ---- 冷层:每日心情(同日同源 upsert,最新胜) ----
 
     def _init_db(self) -> None:

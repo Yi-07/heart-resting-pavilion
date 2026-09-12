@@ -42,7 +42,13 @@ class _ScriptedProvider:
     async def chat_json(self, messages: list[Message], schema: type):
         name = getattr(schema, "__name__", "")
         if name == "_ExtractOut":
-            return schema(**self.extract)  # type: ignore[return-value]
+            off_topic = bool(self.extract.get("off_topic", False))
+            custom = self.extract.get("fields")
+            if isinstance(custom, dict):  # 跨字段编程:直接按给定 dict 填
+                return schema(fields=dict(custom), off_topic=off_topic)
+            asked = self._asked_field(messages)
+            value = str(self.extract.get("value", "提炼后的短句"))
+            return schema(fields={} if off_topic else {asked: value}, off_topic=off_topic)
         if name == "_ReviewOut":
             return schema(**self.review)  # type: ignore[return-value]
         if name == "_RiskOut":
@@ -50,6 +56,16 @@ class _ScriptedProvider:
                 raise LLMError("复核断流")
             return schema(risky=self.risky)  # type: ignore[return-value]
         raise AssertionError(f"未预期 schema: {name}")
+
+    @staticmethod
+    def _asked_field(messages: list[Message]) -> str:
+        """从提取请求的 user 消息里取所问字段(单字段默认回填用)。"""
+        for m in messages:
+            if m.role == "user":
+                for line in m.content.splitlines():
+                    if line.startswith("所问字段:"):
+                        return line.split(":", 1)[1].strip()
+        return ""
 
 
 class _Recorder:
@@ -138,6 +154,26 @@ async def test_off_topic_degrades_to_chat_then_resumes(monkeypatch):
     cs.turns.append(Turn(role="user", text="还是说回我吧"))
     ev2 = await run_collect(cs, rec)
     assert isinstance(ev2, AskNext)  # 清降级位,恢复提问
+
+
+async def test_cross_field_extraction_fills_multiple(monkeypatch):
+    """跨字段提取:一条回答里包含多字段信息时一次填全(单字段瓶颈修复的钉测)。"""
+    provider = _ScriptedProvider(
+        extract={"fields": {"situation": "被当众批评", "thought": "我觉得我不行"}}
+    )
+    _patch_llm(monkeypatch, provider)
+    cs = _state()
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
+    await run_collect(cs, rec)  # entry → AskNext(situation)
+
+    cs.turns.append(Turn(role="user", text="被领导当众批评了,满脑子都是我不行"))
+    ev = await run_collect(cs, rec)
+    assert isinstance(ev, AskNext) and ev.target_field == "behavior"
+    assert rec.draws[-1].situation == "被当众批评"
+    assert rec.draws[-1].thought == "我觉得我不行"  # 跨字段一次入格
+    assert cs.pending_question is not None  # 所问 situation 已答→挂起清除后已换新问
+    assert ev.target_field == "behavior"  # 下一问跳过已填字段
 
 
 async def test_negative_answer_finishes_with_cause(monkeypatch):

@@ -3,6 +3,7 @@
 
 import type { MoodKey, MoodSelect } from '../ws/messages'
 import type { useRoundStore } from '../state/round'
+import { logger } from '../logger'
 
 export const MOOD_TIMEOUT_MS = 10_000
 
@@ -37,6 +38,8 @@ export class MoodSelector {
   show(): void {
     this.hideTimers()
     this.deps.round.moodVisible = true
+    // B2 排查:浮层为瞬态(10s 自动收起),现场区分「未触发」与「已收起」
+    logger.debug('mood', '浮层显示(10s 自动收起)')
     this.deps.round.moodElapsed = 0
     const startedAt = Date.now()
     this.ticker = window.setInterval(() => {
@@ -48,6 +51,7 @@ export class MoodSelector {
   hide(): void {
     this.hideTimers()
     this.deps.round.moodVisible = false
+    logger.debug('mood', '浮层收起')
   }
 
   /** 选中:上报 mood_select + 手点写情绪(锁住后续 draw 覆盖)+ 收起 */

@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from app import collect
 from app.agents import analysis
 from app.agents.emitter import ConnEmitter, stream_final
-from app.agents.extract import extract_field
+from app.agents.extract import extract_fields
 from app.agents.state import (
     AskNext,
     CollectEvent,
@@ -79,6 +79,27 @@ def _fill(cs: CollectState, field: FieldKey, value: str) -> None:
         setattr(cs.formulation, field, value)
 
 
+_NO_EXTRACT_FIELDS: tuple[FieldKey, ...] = ("intermediate_belief", "core_belief")
+"""信念字段永不进提取(spec 信念留白:后端不硬填,分析阶段也不产)。"""
+
+
+def _field_filled(cs: CollectState, field: FieldKey) -> bool:
+    value = getattr(cs.formulation, field)
+    if field == "emotion":
+        return value.label is not None
+    return value is not None
+
+
+def _open_fields(cs: CollectState, target_field: FieldKey) -> list[FieldKey]:
+    """本轮可提取字段:所问字段优先,其余按问序;信念字段排除(留白)。"""
+    fields = [f for f in collect.ASK_ORDER
+              if f not in _NO_EXTRACT_FIELDS and not _field_filled(cs, f)]
+    if target_field in fields:
+        fields.remove(target_field)
+        fields.insert(0, target_field)
+    return fields
+
+
 def _emitter(config: RunnableConfig) -> ConnEmitter:
     # 测试注入假 emitter(同协议),cast 不做运行时强校验
     return cast(ConnEmitter, config["configurable"]["emitter"])
@@ -105,7 +126,6 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
     answer = next((t.text for t in reversed(cs.turns) if t.role == "user"), "")
     cs.round_index += 1
     pending = cs.pending_question
-    cs.pending_question = None
 
     if pending is None:
         # 陪聊轮回答:不填格、无 draw;清降级位避免 off_topic 死循环
@@ -113,14 +133,19 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
         return {}
 
     reason = collect.detect(answer)
-    value: str | None = None
+    values: dict[FieldKey, str] = {}
     if reason is None:
-        value = await extract_field(pending.target_field, pending.text, answer)
-        if value is None:
+        values = await extract_fields(
+            pending.text, pending.target_field, answer, _open_fields(cs, pending.target_field)
+        )
+        if not values:
             reason = "off_topic"
 
-    if reason is None and value is not None:
-        _fill(cs, pending.target_field, value)
+    if reason is None:
+        for field, value in values.items():
+            _fill(cs, field, value)
+        if pending.target_field in values:
+            cs.pending_question = None  # 本题已答;未答则保留挂起,防下一条被吞
         cs.degrade_reason = None
         cs.sufficiency = collect.sufficiency(cs.formulation)
         await em.draw(cs.formulation)
@@ -128,7 +153,7 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
             "sufficiency_scored",
             round_index=cs.round_index,
             score=cs.sufficiency,
-            filled=pending.target_field,
+            filled=",".join(values),
         )
     else:
         cs.degrade_reason = reason
@@ -157,14 +182,14 @@ async def _ask(state: GraphState, config: RunnableConfig) -> dict:
         confirm = phrases.CONFIRM_BY_FIELD[field]
     cs.pending_question = PendingQuestion(text=question, target_field=field)
     cs.degrade_reason = None
-    await em.text(f"{confirm}{question}")
+    await em.text(f"{confirm}{question}", final=True)
     return {"event": AskNext(confirm=confirm, next_question=question, target_field=field)}
 
 
 async def _chat(state: GraphState, config: RunnableConfig) -> dict:
     em = _emitter(config)
     reply = phrases.EMPATH_CHAT_REPLY
-    await em.text(reply)
+    await em.text(reply, final=True)
     return {"event": EmpathChat(reply=reply)}
 
 
