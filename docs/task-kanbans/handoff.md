@@ -7,7 +7,7 @@
 
 - **已完成并 commit**:A1-A4 / B1 / B2 / C1 / **D1-a(本窗口)**。D1-a=全库文档摸查(子 agent 黑盒只读),18 项问题清单+.env.example 逐键核对落 `docs/reviews/d1a-survey.md`;人已审并据它拍板全部 D1 未决问题。
 - **D1 盘问裁定单源=kanban D1 行括注**(grill-with-docs 两轮)。要点:树 v3=根 4 入口[README/CONTRIBUTING/AGENTS/ARCHITECTURE]+CLAUDE.md 薄壳+docs/ 单根树[六件套 git mv docs/architecture/ 原名;docs/README.md 总索引二次跳转;guides/option.md;prds 加完结注;删 research/preview];工具落库=.claude/rules+skills 入库[mattpocock 全套 426K 镜像+emilkowalski;scene-walkthrough-TODO.md 留盘单独 ignore;MCP 三件[chrome-devtools/playwright/context7]走 CONTRIBUTING 部署指令,不建 .mcp.json;design-taste-frontend/i-have-adhd 标用户级自备不拷];P01=frontend-plan §2 重复段按「两 preview 互为参考互补/同组件两套并存/拿不准停下问人」合并一段;AGENTS.md 简洁原则=开发规范必落实[docs 存放/代码风格/日志审计边界等],细节指针内化按需加载。
-- **本窗口下一步**:笔2 vendor 批+tools.md 重写(草稿先呈人审)→ D1-b 逐份大纲(README→docs/README→CONTRIBUTING→AGENTS.md→ARCHITECTURE.md,每份大纲人审砍后再写正文)→ D1-d 脚本化+临时 clone 实测(freeze 蓝本入库+option.md 步骤 4 重写)。**D2 输入=d1a-survey.md**:台账类 P02/P03/P09/P10/P15,待裁 P07/P11/P12/P14/P17。
+- **本窗口下一步**:D1-d 脚本化+临时 clone 实测(freeze 蓝本入库+option.md 步骤 4 重写)→ D2 收尾(输入=d1a-survey P02/P03/P09/P10/P15 台账批 + d1b-pointer-survey R01/R03/R04+L05 + 弱职能声明上移)。
 - **环境**:Redis=Docker 容器 `hrp-redis`(6379;另有无关容器 `docker-redis-1` 勿动);后端 `cd backend && uv run hrp`;破坏性 e2e3_g 会 stop/start 该容器。
 - **已知陷阱**(沿用):全量 pytest 按 deselect 三真链路文件跑(test_voice/test_memory/test_retrieve);e2e 脚本串行(日志按时间窗断言);破坏性用例(g 与 `e2e3_f_replay.py --clear`)压轴;Windows GBK 下跑 e2e 若 UnicodeEncodeError,e2e_lib 已带 stdout UTF-8 兜底(仍崩就配 `PYTHONIOENCODING=utf-8`)。
 
@@ -45,4 +45,4 @@
 ## 5. 现状
 
 - 主线 1-9 + 冲刺 A(A1-A4)+ B(B1/B2)+ **C(C1)** 全落;测试盘=后端 pytest 110 + e2e 脚本 16 个 + 前端 69。
-- **当前=看板 §2 D1 进行中**(D1-a 摸查+盘问裁定已落;队列=笔2 工具落库→D1-b 逐份大纲→D1-d 实测);之后 D2 收尾即可推远程。
+- **当前=看板 §2 D1 进行中**(D1-a/D1-b 已落;队列=D1-d 实测→D2);之后 D2 收尾即可推远程。
