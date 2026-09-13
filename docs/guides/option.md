@@ -2,7 +2,7 @@
 
 > **图例**：〔✓〕= 本机已实测确认（工具在 PATH、版本查实、解析通过）；〔□〕= 计划，未实测——**人执行跑通即真**；跑不通 → 按 CLAUDE.md 护栏**停下问人**，不静默改。
 > **分工**：第 0-4 步 + 语音栈（步骤 5，语音阶段）= **人做**；接缝定义与编码开发 = **交给 Claude Code**（文末两段提示词）。
-> **依据**：依赖与资源以 `architecture/` 开发文档为标杆（frontend-plan / backend-plan / ws-contract / spec）；查证记录见 PROGRESS §六技术核查记录。
+> **依据**：依赖与资源以 `docs/architecture/` 开发文档为标杆（frontend-plan / backend-plan / ws-contract / spec）；查证记录见 PROGRESS §六技术核查记录。
 
 ## 进度总览（跑通一项勾一项）
 
@@ -247,4 +247,4 @@ uv pip install --python .venv/Scripts/python.exe --index-strategy unsafe-best-ma
 
 ---
 
-**边界**：本手册只列操作分工，不涉及实现代码；契约/数据流以架构文档为准。版本钉选与查证记录见 `architecture/ARCHITECTURE_PROGRESS.md` §六（技术核查记录）。人做完 0-4 即环境就绪，把提示词粘给 Claude Code 开工；语音栈（步骤 5）随语音阶段执行。
+**边界**：本手册只列操作分工，不涉及实现代码；契约/数据流以架构文档为准。版本钉选与查证记录见 `docs/architecture/ARCHITECTURE_PROGRESS.md` §六（技术核查记录）。人做完 0-4 即环境就绪，把提示词粘给 Claude Code 开工；语音栈（步骤 5）随语音阶段执行。

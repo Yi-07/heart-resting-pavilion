@@ -11,13 +11,13 @@
 
 | 文档 | 位置 | 性质 |
 |---|---|---|
-| 架构权威源 | `architecture/architecture-spec.md` | **只读**,改架构先讨论 |
-| 前后端契约 | `architecture/ws-contract.md` | **只读**,消息格式以此为准 |
-| 前端方案 | `architecture/frontend-plan.md` | 前端按此实现 |
-| 后端方案 | `architecture/backend-plan.md` | 后端按此实现 |
-| 前端 UI/布局参考 | `architecture/preview/l1-ui-mockup-v7.html`(布局)+ `l1-ui-taste.html`(组件范式,冲突停下问人,见 frontend-plan) | 默认实现;接口固定、视觉可替换 |
-| 决策历史/二期总表 | `architecture/ARCHITECTURE_PROGRESS.md` | 会话恢复锚点;"为什么"查此 |
-| 术语表 | `architecture/CONTEXT.md` | 写新文档/命名/拿不准术语/清扫避用词,以此为准 |
+| 架构权威源 | `docs/architecture/architecture-spec.md` | **只读**,改架构先讨论 |
+| 前后端契约 | `docs/architecture/ws-contract.md` | **只读**,消息格式以此为准 |
+| 前端方案 | `docs/architecture/frontend-plan.md` | 前端按此实现 |
+| 后端方案 | `docs/architecture/backend-plan.md` | 后端按此实现 |
+| 前端 UI/布局参考 | `docs/architecture/preview/l1-ui-mockup-v7.html`(布局)+ `l1-ui-taste.html`(组件范式,冲突停下问人,见 frontend-plan) | 默认实现;接口固定、视觉可替换 |
+| 决策历史/二期总表 | `docs/architecture/ARCHITECTURE_PROGRESS.md` | 会话恢复锚点;"为什么"查此 |
+| 术语表 | `docs/architecture/CONTEXT.md` | 写新文档/命名/拿不准术语/清扫避用词,以此为准 |
 | 决策记录(向前) | `docs/adr/NNN-标题.md` | 架构级决策定案时新建一篇;存量查 PROGRESS §五(只读) |
 | 业务验收清单 | `docs/tests/acceptance-v1.md` | 交付验收判据**单源**(双用例/词表抽测/回放等);§8 只留冒烟 |
 | 跨会话看板/交接 | `docs/task-kanbans/kanban-v1.md` | 多窗口接力执行清单(勾选状态单源,含工作方式§0 与接力规程§3)+ 同目录 `handoff.md` 现场快照;新会话开工必读,步骤状态以此为准 |
@@ -28,7 +28,7 @@
 
 | 路径 | 职责 | 能否改 |
 |---|---|---|
-| `architecture/` | 架构/契约/方案文档 | **只读**,改架构先讨论 |
+| `docs/architecture/` | 架构/契约/方案文档 | **只读**,改架构先讨论 |
 | `backend/` | 后端(FastAPI+LangGraph) | 新代码落点 |
 | `frontend/` | 前端(Vue3+Vite+TS) | 新代码落点 |
 | `backend/app/schema/` | Pydantic 模型 | 与 ws-contract 对齐,改契约先改 ws-contract |

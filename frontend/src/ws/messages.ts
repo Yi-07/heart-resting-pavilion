@@ -1,4 +1,4 @@
-// 9 种 WS 消息类型定义,严格对齐 architecture/ws-contract.md(类型单源)。
+// 9 种 WS 消息类型定义,严格对齐 docs/architecture/ws-contract.md(类型单源)。
 // 改契约先改 ws-contract,再同步本文件与 backend/app/schema/。
 
 /** 路由三值(契约 §5.2) */

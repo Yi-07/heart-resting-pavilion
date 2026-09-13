@@ -26,9 +26,6 @@ dataset/
 # 素材授权禁止再分发;抓取脚本 scripts/fetch-l2d.mjs 与接线 src/l2d/* 仍入库)
 frontend/public/vendor/
 
-# 设计原型/研究缓存(一次性,后续统一清理)
-prototype/
-
 # prototypes 临时区(原型迭代/调研笔记/截图,后期统一清理,整体不入库)
 prototypes/
 

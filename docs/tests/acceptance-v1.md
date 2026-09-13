@@ -2,7 +2,7 @@
 
 > **职能**:第一版交付的业务验收判据载体(看板 B1 产出,B2 依此执行);判据可 grep/可断言,不写主观感受。
 > **范围**:技术原型第一版,三链路(answer/collect/crisis)+ 语音 + 工具;达成「应对 80%+ 应用场景」即可交付。
-> **口径单源**:帧序/消息字段=`architecture/ws-contract.md`;路由/门控机制=`architecture/architecture-spec.md` + ADR-002/003;执行素材=`backend/tests/e2e/`(跑法见 e2e_lib 头注)。
+> **口径单源**:帧序/消息字段=`docs/architecture/ws-contract.md`;路由/门控机制=`docs/architecture/architecture-spec.md` + ADR-002/003;执行素材=`backend/tests/e2e/`(跑法见 e2e_lib 头注)。
 > **指标基线**:帧序完整/无冻结/首包时长以 ADR-002/003 E2E 实测为准,本文只定「过/挂」线。
 
 ## 0. 环境前置

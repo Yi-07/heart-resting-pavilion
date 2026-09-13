@@ -197,7 +197,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 | text_delta | emitter | 共情陪伴者话术(1~2 帧)· 知识直答/分析总结流式(攒批:~100ms 窗或 ~30 字,每批一帧)· 邀请语(话术库模板,总结末尾) | 对应文本流 |
 | audio_chunk | 网关+emitter | 网关:安抚语/危机话术/等待语音(voice/fillers 文件切块直发;分析开始即播,卡死 15s 播第二句);emitter:总结 TTS | CosyVoice 流式 / 预生成 wav(同音色) |
 | done | 网关 | 图调用终结且 emitter 排空 → 随后回合结束三动作(§3.3) | — |
-| error | 网关 | 非法/超时/异常 | code + message(契约 §3.6) |
+| error | 网关 | 非法/超时/异常 | code + message(契约 §3.7) |
 
 - 危机序列(网关,闸门任意命中):first_frame(crisis) → draw(stage_map) → text_delta(热线话术) → audio_chunk(平静语气,失败跳过) → done + WARN 审计(§6)
 - mood_select:独立到达=短安抚 text_delta + done;回合内=仅更新 profile 不回帧(契约 §4.2)

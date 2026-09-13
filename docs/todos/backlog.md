@@ -1,6 +1,6 @@
 # 遗留待办池 backlog
 
-> **职能**:不排程、不影响第一版交付的统一待办清单——C1 审查留档项 + 原 kanban §3 待办池 + 裁定残项。勾选=已完成并 commit。排程/执行步骤状态单源仍=kanban;二期范围不在此复制,单源=`architecture/ARCHITECTURE_PROGRESS.md` §四「二期范围总表」。kanban §3 自迁入起只留指针,防双单源。
+> **职能**:不排程、不影响第一版交付的统一待办清单——C1 审查留档项 + 原 kanban §3 待办池 + 裁定残项。勾选=已完成并 commit。排程/执行步骤状态单源仍=kanban;二期范围不在此复制,单源=`docs/architecture/ARCHITECTURE_PROGRESS.md` §四「二期范围总表」。kanban §3 自迁入起只留指针,防双单源。
 
 ## 1. C1 审查留档项(品味/加固类,按需认领)
 
