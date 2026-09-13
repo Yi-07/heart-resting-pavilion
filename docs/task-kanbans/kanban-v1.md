@@ -48,6 +48,8 @@
   - **验收标准**:文档分类规整(单根树+渐进式披露链成立);内容符合人的设计品味(逐份过人审精修);各配置安装脚本与散落环境配置(`.env.example` 等)收集完善;**按文档从零操作能正常部署并使用本项目**(临时目录 clone 实测全流程通过)。
 - [x] **D2 交付批核对(落定)**:销账 d1a[P02/P03/P09/P13]+d1b[R03/R04/L05+弱职能声明]——PROGRESS 头注日期删+§一压缩为定位指针+§二文档地图重写(补总索引/入口四件/设计基准/执行状态/审查快照行;README/CONTRIBUTING/人看架构/AGENT 副本四行状态失实清理;数据契约改「待队友样本回填」;研究记录行改已清理)+§四 research-v1 已清理脚注+§三尾注重复声明上移头注;backend-plan §9 数值复写压缩为指针(单源=ws-contract §9);spec/双 plan 头注补「不管面」声明;.env.example 补缺失 2 键[OLLAMA_MODEL/HRP_VERBOSE,对 config.py/main.py 读键全集逐键复核 16 键失效 0]。ADR 状态核对:5 篇(001 已接受/002-005 已定案)与 git 实况一致,文档未改。
 
+- [ ] **推远程后第一批(⚠ 显式提醒,勿漏;详情单源=`docs/todos/backlog.md` §4)**:①Redis compose 一次拉起(替换 option §2.1)②临时目录 clone 按 option.md 全流程实测 ③data-contract 等队友样本回填。主线下一步=配 git remote 并 push(地址问人)。
+
 ## 3. 待办池(已迁出,防双单源)
 
 待办内容单源已迁 **`docs/todos/backlog.md`**(C1 审查留档项 + 本节原条目 + 裁定残项统一管理;二期范围单源仍=ARCHITECTURE_PROGRESS §四「二期范围总表」)。本节不再维护条目。原条目核销记录:记忆分层已随 A4 完成;off_topic 观测日志已核销(B2 落 extract_empty 带 off_topic 位)。

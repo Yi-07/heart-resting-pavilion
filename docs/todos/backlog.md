@@ -58,6 +58,7 @@
 
 - [ ] Redis 一次拉起方案(docker-compose.yml:service hrp-redis/image redis:7-alpine/6379/restart unless-stopped;起草后人审,替换 option.md §2.1 裸 docker run)
 - [ ] 临时目录 clone 实测:按 docs/guides/option.md 全流程从零走一遍(版本锚定→后端→前端→模型下载→启动),验证命令可照抄;模型 4.3GB 下载需本机执行;发现文档失真即回修
+- [ ] data-contract 回填:等队友 50 条样本,按 §2 占位执行三判据回验(入口提示=`docs/architecture/data-contract.md` §2;文档地图状态行同步)
 
 ## 5. 二期
 
