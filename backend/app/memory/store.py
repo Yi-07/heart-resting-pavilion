@@ -179,7 +179,14 @@ class Memory:
         """
 
         try:
-            data = await self._read_hot(session_id)
+            raw = await self._redis.get(_hot_key(session_id))
+            if raw is not None:
+                data = json.loads(raw)
+            else:
+                # 热层过期冷启动(F3,与 H1 同族):温层最新摘要播种进新热层键——
+                # 否则键里只有 turns,快照走热层路径丢 history_summary,跨天续话上下文断裂
+                warm = await self._redis.lrange(_warm_key(session_id), -1, -1)
+                data = {"history_summary": cast(str | None, warm[0]) if warm else None}
             turns = list(data.get("recent_turns", []))
             turns.append({"role": role, "text": text})
             data["recent_turns"] = turns[-_RECENT_TURNS_CAP:]
@@ -234,6 +241,9 @@ class Memory:
                 {
                     "history_summary": data.get("history_summary"),
                     "mood_recent": moods[-config.MOOD_RECENT_CAP :],
+                    # 整键覆写必须带全热层其余字段(H1):丢 recent_turns 会清空
+                    # 回放/重建数据源(ADR-001/005),第二回合起形同虚设
+                    "recent_turns": data.get("recent_turns", []),
                 },
             )
         except Exception as exc:  # noqa: BLE001 — 记忆降级:热层失败不影响冷层已写
@@ -246,6 +256,7 @@ class Memory:
             {
                 "history_summary": history_summary,
                 "mood_recent": data.get("mood_recent", []),
+                "recent_turns": data.get("recent_turns", []),  # H1:覆写须带全热层
             },
         )
 

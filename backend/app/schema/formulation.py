@@ -26,6 +26,12 @@ class Formulation(BaseModel):
     intermediate_belief: str | None = None
     core_belief: str | None = None
 
+    def is_filled(self, key: str) -> bool:
+        """字段已填判定单源(D10):emotion 看 label,其余看 None——三处重复判定收拢此处。"""
+        if key == "emotion":
+            return self.emotion.label is not None
+        return getattr(self, key) is not None
+
 
 class EmotionWheelDatum(BaseModel):
     label: str

@@ -70,6 +70,7 @@ class ConnEmitter:
         self._conn = conn
         self._template = template
         self.dead = False
+        self._audio_task: asyncio.Task[None] | None = None
 
     def mark_dead(self) -> None:
         self.dead = True
@@ -89,7 +90,16 @@ class ConnEmitter:
         await self._conn.send_text(s, final=final)
 
     def audio(self, chunk: bytes) -> None:
-        """TTS 直发(wav 字节):同步门面,内部调度异步发帧;dead 或空块蒸发。"""
+        """TTS 直发(wav 字节):同步门面,内部调度异步发帧;dead 或空块蒸发。
+        持 task 引用(D3):防 GC 吞异常;发送前复检 dead,抢占后旧帧不落新回合。"""
         if self.dead or not chunk:
             return
-        asyncio.create_task(self._conn.send_audio(chunk))
+        self._audio_task = asyncio.create_task(self._send_audio(chunk))
+
+    async def _send_audio(self, chunk: bytes) -> None:
+        if self.dead:
+            return
+        try:
+            await self._conn.send_audio(chunk)
+        except Exception:  # noqa: BLE001 — 音频缺席无副作用(WS 断开等)
+            self.log("degraded", level="WARN", reason="audio_send_failed")

@@ -45,15 +45,27 @@ export async function loadCatalog(): Promise<ModelEntry[]> {
   return catalog
 }
 
+function readSavedSelection(): string | null {
+  try {
+    return localStorage.getItem(SELECTED_KEY)
+  } catch {
+    return null // 隐私模式/禁存储降级(D8):与 ws/client.ts 同款约定,不炸装载
+  }
+}
+
 export function loadSelection(list: ModelEntry[]): ModelEntry {
-  const saved = localStorage.getItem(SELECTED_KEY)
+  const saved = readSavedSelection()
   const found = list.find((m) => m.id === saved)
   if (found !== undefined) return found
   return list.find((m) => m.default === true) ?? list[0] ?? DEFAULT_ENTRY
 }
 
 export function persistSelection(id: string): void {
-  localStorage.setItem(SELECTED_KEY, id)
+  try {
+    localStorage.setItem(SELECTED_KEY, id)
+  } catch {
+    logger.warn('l2d', 'localStorage 不可用(隐私模式?),模型选择不持久化')
+  }
 }
 
 /** 轮换下一尊(到尾回卷;目录单条=自转) */

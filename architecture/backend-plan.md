@@ -33,13 +33,15 @@
 | logger | 日志与审计 | 双输出+危机审计(§9) |
 | router | 闸门+分类+话术 | gate.check(text)→GateResult{hit, matched: list[str], severity: float}(hit=severity≥阈值,阈值=配置;matched 供审计;词典+打分=实现细节,落地入 docstring) · classifier→{route,label,conf} · phrases=预设话术库(安抚/承接/邀请/危机,场景×情绪组织,不经 LLM);隔离约束=spec §4 L3 |
 | collect | 采集三件 | 预置问题库(按空缺字段组织)/充分度(sufficiency(f)→float,权重表=实现细节落地入 docstring)/三降级检测;管状态不管话术=spec §4 L4 |
-| agents | 图编排+共享黑板 | CollectState 14 字段(§3,answer/collect 共用)·图出口=CollectEvent(§3.4)·确定性条件边分派;Agent 名单=spec §4 L5 |
+| agents | 图编排+共享黑板 | CollectState 17 字段(§3,answer/collect 共用)·图出口=CollectEvent(§3.4)·确定性条件边分派;Agent 名单=spec §4 L5 |
 | rag | 检索三件套(混合知识库) | retrieve(query, k=None, *, library=CASE)·ingest(refs, *, library, reset=False)·RagLibrary{KNOWLEDGE, CASE};Ref={id, question, answer, score, category}(k=None→配置默认);两 Chroma 集合=hrp_kb_knowledge(科普知识库,answer 直答用)·hrp_kb_case(案例库,collect/station 用);Chroma+bge-m3·BM25+jieba·bge-reranker-v2-m3;深模块:两库/召回融合重排/分批/BM25 回建藏模块内,调用方只传 library;ingest 脚本与 Chroma collection 归本模块,数据对接走 docs/data-contract.md(换 embedding 模型=重跑 ingest,代码不动) |
 | llm | LLM 双源 | LLMProvider:chat(messages)→str · stream(messages)→Iterator[str] · chat_json(messages, schema)→T(Message={role, content});出错抛 LLMError,由调用方捕获后降级到话术库;DeepSeek/Ollama 同接口由 config 切换(§7) |
 | memory | 热/温/冷记忆+治理 | snapshot(session_id)→SessionContext · append_turn(session_id, role, text)(热层轮次原话,ADR-005) · save_round_summary(session_id, summary) · record_mood(mood)(同日同源 upsert,最新胜);层介质与 TTL 单源=spec §4 L7(数值不复制) |
 | voice | 语音引擎 | transcribe(audio: bytes)→str(ffmpeg 转码在内)·tts_stream(text, emotion_label)→Iterator[bytes];ASR(SenseVoice;ffmpeg 转码 webm/opus→wav16k 后进引擎,只取转写文本(情感识别结果丢弃),音频即弃)·TTS(CosyVoice 2;念=开场安抚/总结+邀请/危机;失败跳过音频,文字照常收尾)·fillers=预生成等待语音文件(与 TTS 同音色;切块直发 audio_chunk,零运行时合成) |
 | station | 补给站 REST+方案书存取 | 端点单源=ws-contract §1;懒生成素材 station:input(§3.3);SQLite reports 表(每会话只留最新一份) |
 | schema | 契约类型单源 | Pydantic 对齐 ws-contract(formulation+ws_messages);契约对齐测试抽 ws-contract §5.1 字段名与本端比对,防两端漂移(§11) |
+
+> **鉴权决策(原型期,显式裁定)**:station/admin REST **不鉴权是有意取舍**——依赖默认绑定 127.0.0.1 + CORS 白名单;局域网/公网暴露前必须加会话信物(D1 部署文档护栏,验收按此作答)。
 
 ---
 
@@ -52,7 +54,7 @@
 - 销毁触发点(任一即弃,不抢救):done 发出 · 新 user_input 抢占 · 超时 · 危机命中 · 断线/进程重启
 - 相位不落 state:下一步动作由条件边纯函数 `where_next(state)` 从 route/degrade_reason/sufficiency/round_index 算出,出口事件见 §3.4,分派图见 §5
 
-### 3.2 CollectState 字段(14)
+### 3.2 CollectState 字段(17)
 
 **A · 身份与路由(网关写入,图内只读)**
 
@@ -73,7 +75,7 @@
 | sufficiency | float | 0.0 | 充分度打分(每次填格后重算,§4) |
 | degrade_reason | DegradeReason\|None | None | 降级检测;None=未降级,布尔派生 |
 | pending_question | PendingQuestion\|None | None | 共情陪伴者发问时写,下条回答消费(回答填哪格由它定) |
-| max_rounds | int | 配置注入(默认 4) | 网关(entry) |
+| max_rounds | int | 配置注入(上限 3,spec §4 L4) | 网关(entry) |
 | escalated | bool | False | risk 复核命中写 True → 调用即止,网关转危机序列+审计 |
 
 **C · 上下文(网关写 entry;图内只读/追加 turns)**
@@ -91,10 +93,12 @@
 
 ```
 entry 调用:粗稿 draw(emotion=快速研判标签)→ 确认+第 1 问
+每轮:softscan 软预筛+新增命中 LLM 复核(spec §4 L5「每轮预筛/命中复核」;
+  risk_reviewed_terms 去重,同一软词整会话只复核一次)
 轮次调用:填 formulation → draw 增量 → 充分度重算 → where_next
   → 继续问:确认+第 i 问(陪聊轮不填格、无 draw)
   → 终结:充分度 ≥0.7 ｜ round_index ≥ max_rounds ｜ 降级收尾
-终结调用:risk 复核(命中→escalated=True 即止)→ emotion_review 合入 → 精稿 draw → 总结+邀请语 → done
+终结调用:risk 增量复核(命中→escalated=True 即止)→ emotion_review 合入 → 精稿 draw → 总结+邀请语 → done
 回合结束(网关三动作):温层写本回合摘要 → Redis 写 station:input{formulation,summary}(TTL 7 天)→ 弃 state
 ```
 

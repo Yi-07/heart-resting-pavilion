@@ -23,6 +23,8 @@ router = APIRouter(prefix="/asr", tags=["asr"])
 
 _MAX_AUDIO_BYTES = 1 * 1024 * 1024
 """base64 解码后字节护栏:15s webm/opus 实际 ~45KB,护栏防滥用而非业务限制(ADR-004)。"""
+_MAX_AUDIO_B64 = (_MAX_AUDIO_BYTES + 2) // 3 * 4
+"""base64 串长护栏(解码前先查,D7):防大包先整体收进内存+解码完才被拒。"""
 
 
 class TranscribeRequest(BaseModel):
@@ -41,6 +43,8 @@ class TranscribeResponse(BaseModel):
 async def transcribe(req: TranscribeRequest) -> TranscribeResponse:
     from app.voice import asr  # 函数内导入:模型懒加载,不拖慢启动(同 gateway 旧模式)
 
+    if len(req.audio) > _MAX_AUDIO_B64:
+        raise HTTPException(status_code=413, detail="语音超过单段长度上限")
     try:
         audio = base64.b64decode(req.audio, validate=True)
     except Exception as exc:

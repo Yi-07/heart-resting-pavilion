@@ -10,7 +10,7 @@ export type TemplateId = 'beck_formulation' | 'emotion_wheel' | 'stage_map'
 /** 心情六档(契约 §4.2) */
 export type MoodKey = '难过' | '低落' | '平静' | '还好' | '开心' | '很好'
 
-/** error 帧 code(契约 §3.6) */
+/** error 帧 code(契约 §3.7) */
 export type ErrorCode = 'invalid_message' | 'timeout' | 'server_error'
 
 // ---------- 数据对象(契约 §5.1) ----------

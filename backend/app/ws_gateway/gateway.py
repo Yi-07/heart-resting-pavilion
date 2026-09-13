@@ -192,7 +192,14 @@ async def handle_connection(ws: WebSocket) -> None:
     conn.log("session_open")
     try:
         while True:
-            raw = await ws.receive_text()
+            try:
+                raw = await ws.receive_text()
+            except WebSocketDisconnect:
+                raise
+            except Exception as exc:  # noqa: BLE001 — 非文本帧(二进制)等非法消息:不崩连接(契约 §8.1)
+                conn.log("error", level="ERROR", code="invalid_message", detail=type(exc).__name__)
+                await conn.send_error("invalid_message", "不支持的消息类型,请发 JSON 文本")
+                continue
             await _on_message(conn, raw)
     except WebSocketDisconnect:
         if conn.current is not None and not conn.current.done():
@@ -211,7 +218,11 @@ async def _on_message(conn: Connection, raw: str) -> None:
         return
 
     if isinstance(msg, MoodSelect):
-        await _on_mood_select(conn, msg)
+        try:
+            await _on_mood_select(conn, msg)
+        except Exception as exc:  # noqa: BLE001 — 错误集中处理(§5.5):记忆/回复路径异常不杀连接
+            conn.log("error", level="ERROR", code="server_error", detail=type(exc).__name__)
+            await conn.send_error("server_error", "心情上报处理失败,对话不受影响")
         return
 
     # user_input:抢占当前处理(分析中 cancel + 弃 state + 旧 emitter 标 dead
@@ -250,15 +261,16 @@ async def _push_replay(conn: Connection) -> None:
 
 
 async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
-    trace = conn.next_trace()
     # 冷层情绪趋势(spec §7:上报→L7;同日同源最新胜)+ 热层 mood_recent
     await get_memory().record_mood(
         msg.mood, source="mood_select", session_id=conn.session_id
     )
     if conn.collect_state is not None:
-        # 回合内到达:仅更新 profile,不回帧,采集照常(契约 §4.2)
-        conn.log("mood_select_received", trace_id=trace, mood=msg.mood, in_round=True)
+        # 回合内到达:仅更新 profile,不回帧不推进 trace(契约 §4.2)——
+        # trace 递增仅限真回合(D4),否则回合计数虚增、未播完语音被蒸发
+        conn.log("mood_select_received", mood=msg.mood, in_round=True)
         return
+    trace = conn.next_trace()
     conn.log("mood_select_received", trace_id=trace, mood=msg.mood)
     await conn.send_text(phrases.MOOD_ACK[msg.mood], final=True)
     await conn.send_done()
@@ -353,6 +365,7 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
         else:
             if conn.collect_state is not None:
                 conn.collect_state.pending_ask_count = 0  # 回正题:追问计数清零
+                conn.collect_state.suspended = False  # 恢复采集:挂起复位(ADR-003 决策1,H8)
             conn.log(
                 "route_decided",
                 trace_id=trace,

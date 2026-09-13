@@ -5,7 +5,8 @@ F1 bubbles(30min 内重开,带原身份):collect 两轮后断开 → 同 session
    (first_frame + memory_restored,采集上下文接续)。
 F2 新连接不推回放:不带身份的新会话,整个连接无 replay 帧。
 F3 digest(模拟隔天):collect 走到 Finish(温层有摘要)→ 手动把热层 key TTL 压到 1s
-   → 重连 → replay(mode=digest,无 turns,summary 非空)+ memory_restored(turns=0)。
+   → 重连 → replay(mode=digest,无 turns,summary 非空)+ memory_restored
+   (turns≥1 且 summary>0:新轮次与播种的温层摘要共存,F3 修复后语义)。
 F4 clear_memory 治理(--clear 独立入口):POST /admin/clear_memory 200(ok)→
    重连旧会话无回放。清空全部会话记忆/心情/方案书,故拆为独立入口,全场最后单独跑。
 跑法:backend 在跑 `uv run hrp`,然后 `uv run python tests/e2e/e2e3_f_replay.py`。
@@ -156,8 +157,12 @@ async def reconnect_digest(sid: str) -> list[tuple[bool, str]]:
         recs = log_records(event="memory_restored", session_id=sid, since_epoch=marker)
         if recs:
             ex = recs[0]["extra"]
-            checks.append((int(ex.get("turns") or 0) == 0 and int(ex.get("summary_len") or 0) > 0,
-                           f"memory_restored turns=0 summary_len={ex.get('summary_len')}"))
+            t_n = int(ex.get("turns") or 0)
+            s_len = int(ex.get("summary_len") or 0)
+            # F3 修复后语义:append_turn 冷启动从温层播种 history_summary,
+            # 新轮次(turns≥1)与跨天摘要(summary_len>0)共存
+            checks.append((t_n >= 1 and s_len > 0,
+                           f"memory_restored turns={t_n} summary_len={s_len}(期望 turns≥1 且 summary>0)"))
         else:
             checks.append((False, "digest memory_restored 日志未找到"))
     return checks

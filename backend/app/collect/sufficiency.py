@@ -18,14 +18,10 @@ WEIGHTS: dict[str, float] = {
 
 
 def sufficiency(f: Formulation) -> float:
-    """已采字段(非 null)权重之和;emotion 以 label 是否为空计。"""
+    """已采字段(非 null)权重之和;填格判定单源=Formulation.is_filled。"""
     filled = 0.0
     for key, weight in WEIGHTS.items():
-        value = getattr(f, key)
-        if key == "emotion":
-            if value.label is not None:
-                filled += weight
-        elif value is not None:
+        if f.is_filled(key):
             filled += weight
     return round(filled, 4)
 

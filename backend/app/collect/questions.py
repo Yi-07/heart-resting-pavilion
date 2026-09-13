@@ -46,11 +46,7 @@ ASK_ORDER: tuple[FieldKey, ...] = (
 def next_field(cs: CollectState) -> FieldKey | None:
     """按问序找第一个空缺字段;全满返回 None(由充分度/轮数收尾)。"""
     for field in ASK_ORDER:
-        value = getattr(cs.formulation, field)
-        if field == "emotion":
-            if value.label is None:
-                return field
-        elif value is None:
+        if not cs.formulation.is_filled(field):
             return field
     return None
 

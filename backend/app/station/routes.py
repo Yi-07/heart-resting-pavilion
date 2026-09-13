@@ -43,7 +43,7 @@ def _age_s(updated_at: str) -> float:
 @router.post(
     "/report/generate", response_model=StationReportResponse, response_model_exclude_none=True
 )
-async def generate(session_id: str = Query(min_length=1)) -> StationReportResponse:
+async def generate(session_id: str = Query(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")) -> StationReportResponse:
     material = await get_memory().load_station_input(session_id)
     if material is None:
         raise HTTPException(
@@ -68,7 +68,7 @@ async def generate(session_id: str = Query(min_length=1)) -> StationReportRespon
 @router.get(
     "/report/latest", response_model=StationReportResponse, response_model_exclude_none=True
 )
-async def latest(session_id: str = Query(min_length=1)) -> StationReportResponse:
+async def latest(session_id: str = Query(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")) -> StationReportResponse:
     row = get_reports().get(session_id)
     if row is None:
         raise HTTPException(status_code=404, detail="本会话还没有生成过方案书。")
@@ -81,7 +81,8 @@ async def _generate(session_id: str, material: dict[str, Any]) -> None:
     try:
         formulation = Formulation.model_validate_json(str(material["formulation"]))
     except Exception as exc:  # noqa: BLE001 — 素材损坏不炸任务:降级模板
-        logger.warning("degraded", layer="station_material", reason=str(exc)[:120])
+        # H4:只记类型——pydantic 报文含 input_value(用户原文片段),落日志破脱敏红线
+        logger.warning("degraded", layer="station_material", reason=type(exc).__name__)
         formulation = Formulation()
     summary = str(material.get("summary") or "")
     md = await planner.generate_report(formulation, summary)

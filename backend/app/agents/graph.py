@@ -5,9 +5,10 @@
 相位不落 state——去向由 where_next 纯函数从 escalate/degrade/sufficiency/
 round_index 算出。emitter 经 config 注入,不进 state。
 
-节点:prepare(entry 粗稿 / 轮次填格+打分+降级)→ cond(where_next)
+节点:prepare(entry 粗稿 / 轮次填格+打分+降级)→ softscan → cond(where_next)
   ask(确认+下一问,预置问题库) / chat(共情陪聊,off_topic) / risk+analysis
-risk:软预筛(gate.SOFT_TERMS 过全部 user 轮)→ 命中才 LLM 复核(唯一验收点);
+softscan:每轮软预筛(gate.SOFT_TERMS 过全部 user 轮,spec §4 L5)→ 新增命中
+  (risk_reviewed_terms 去重)才 LLM 复核;risk=终结路径增量复核(同一去重)。
   复核失败不升级(WARN 记录,硬闸门已每条过)。情绪强度环比上升检测二期。
 analysis:emotion 复核(两级标签第二级)→ 精稿 draw → RAG 引用 → 流式总结
   → 邀请语(phrases,不走 LLM);LLM 失败话术兜底,精稿照发。
@@ -84,10 +85,7 @@ _NO_EXTRACT_FIELDS: tuple[FieldKey, ...] = ("intermediate_belief", "core_belief"
 
 
 def _field_filled(cs: CollectState, field: FieldKey) -> bool:
-    value = getattr(cs.formulation, field)
-    if field == "emotion":
-        return value.label is not None
-    return value is not None
+    return cs.formulation.is_filled(field)
 
 
 def _open_fields(cs: CollectState, target_field: FieldKey) -> list[FieldKey]:
@@ -204,35 +202,60 @@ _RISK_SYSTEM = (
 )
 
 
-async def _risk(state: GraphState, config: RunnableConfig) -> dict:
-    cs = state["cs"]
-    em = _emitter(config)
+def _soft_matched(cs: CollectState) -> set[str]:
+    """软预筛(纯规则):SOFT_TERMS 子串过全部 user 轮(spec §4 L5 每轮)。"""
     user_texts = [t.text for t in cs.turns if t.role == "user"]
-    matched = [term for term in gate.SOFT_TERMS if any(term in t for t in user_texts)]
-    if not matched:
-        return {}
+    return {term for term in gate.SOFT_TERMS if any(term in t for t in user_texts)}
+
+
+async def _soft_review(cs: CollectState, em: ConnEmitter, new_terms: set[str]) -> None:
+    """软信号 LLM 复核(唯一升级验收点):risky → escalated 置位,由条件边统一
+    走 escalate_end 出 Escalate 事件;复核失败不升级(WARN 留痕,硬闸门已每条过)。"""
+    user_texts = [t.text for t in cs.turns if t.role == "user"]
     recent = "\n".join(user_texts[-6:])
-    risky = False
     try:
         out = await get_provider().chat_json(
             [Message("system", _RISK_SYSTEM), Message("user", recent)], _RiskOut
         )
-        risky = out.risky
     except LLMError:
-        # 复核失败不升级:硬闸门已每条过,软信号缺确认按陪聊收尾(WARN 留痕)
-        em.log("risk_review_failed", level="WARN", matched=matched)
-        return {}
-    if risky:
+        em.log("risk_review_failed", level="WARN", matched=sorted(new_terms))
+        return
+    if out.risky:
         cs.escalated = True
         em.log(
             "crisis_gate_hit",
             level="WARN",
             hit=True,
-            matched=matched,
+            matched=sorted(new_terms),
             to_hotline=True,
             via="risk_review",
         )
-        return {"event": Escalate()}
+
+
+async def _softscan(state: GraphState, config: RunnableConfig) -> dict:
+    """每轮软预筛+命中复核(spec §4 L5):新增命中才复核;risk_reviewed_terms
+    去重——同一软词整会话只复核一次,新表述出现再复核(成本有界)。"""
+    cs = state["cs"]
+    em = _emitter(config)
+    matched = _soft_matched(cs)
+    new = matched - cs.risk_reviewed_terms
+    if not new:
+        return {}
+    cs.risk_reviewed_terms |= matched
+    await _soft_review(cs, em, new)
+    return {}
+
+
+async def _risk(state: GraphState, config: RunnableConfig) -> dict:
+    """终结路径软复核:只补 softscan 未覆盖的新增命中(已复核零 LLM 成本)。"""
+    cs = state["cs"]
+    em = _emitter(config)
+    matched = _soft_matched(cs)
+    new = matched - cs.risk_reviewed_terms
+    if not new:
+        return {}
+    cs.risk_reviewed_terms |= matched
+    await _soft_review(cs, em, new)
     return {}
 
 
@@ -301,21 +324,23 @@ async def _escalate_end(state: GraphState, config: RunnableConfig) -> dict:
 def _build():
     graph = StateGraph(GraphState)
     graph.add_node("prepare", _prepare)
+    graph.add_node("softscan", _softscan)
     graph.add_node("ask", _ask)
     graph.add_node("chat", _chat)
     graph.add_node("risk", _risk)
     graph.add_node("analysis", _analysis)
     graph.add_node("escalate_end", _escalate_end)
     graph.add_edge(START, "prepare")
+    graph.add_edge("prepare", "softscan")
     graph.add_conditional_edges(
-        "prepare",
+        "softscan",
         lambda s: where_next(s["cs"]),
         {"ask": "ask", "chat": "chat", "finish": "risk", "escalate": "escalate_end"},
     )
     graph.add_conditional_edges(
         "risk",
-        lambda s: "end" if isinstance(s.get("event"), Escalate) else "proceed",
-        {"end": END, "proceed": "analysis"},
+        lambda s: "end" if s["cs"].escalated else "proceed",
+        {"end": "escalate_end", "proceed": "analysis"},
     )
     graph.add_edge("ask", END)
     graph.add_edge("chat", END)

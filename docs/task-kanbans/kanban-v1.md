@@ -19,7 +19,7 @@
 
 步骤1-9(契约类型→WS 网关→answer→collect→黑板→记忆→Live2D→语音→工具)+ 排后·全量语料接入(bge-m3,14944 条)全部完成。逐项实现/验证口径单源=**git log 的详细 commit message**(git show <hash>);决策背景查 `ARCHITECTURE_PROGRESS.md`(注意:它是决策台账,无逐项 commit 指针,且文档地图待 D2 刷新)。构建顺序单源仍为 CLAUDE.md §8。
 
-## 2. 第一版交付冲刺
+## 2. 第一版交付待办
 
 ### A. 遗留问题完善
 
@@ -36,33 +36,22 @@
 
 ### C. code review
 
-- [ ] **C1 全库代码审查**(子 agent 分片并行,kanban §0):三个现成 skill(/simplify·/security-review·mattpocock code-review)均为 diff 型不适配全库——**借 mattpocock 两轴方法学自定义**:
-  - Standards 轴=CLAUDE.md §5 代码风格/§7 日志安全红线 + backend-plan §2 深模块原则 + Fowler smell 基线(该 skill SKILL.md 内置 12 项);
-  - Spec 轴=实现是否符合 ADR-002/003 与架构文档原意(缺失/偏差/scope creep);
-  - 独立安全轴=危机判定/脱敏/密钥/注入面(危机与脱敏相关改动逐条过);
-  - 切片建议:voice+gateway / agents+collect / rag+memory / station+admin / frontend,各片一个子 agent 回收结论,主会话汇总分轴呈现。
+- [x] **C1 全库代码审查**(落定:两轴+独立安全轴 5 片子 agent 并行;64 发现=硬违例 8+裁量 43+待核 13;**修复=硬违例 8[H1-H8]+裁量 11[D1-D11]+验证期顺手修 3[F3 digest 断链/planner as exc/engine TYPE_CHECKING]**+测试脚本 2[e2e_a_collect 自适应编排/e2e3_f F3 新语义]+backend-plan 鉴权决策等文档涟漪;审查快照与逐条销账=`docs/reviews/c1-review.md`;留档/待裁项=`docs/todos/backlog.md`;验证=三件套+前端+e2e 实况全绿,详见 git show)
 
 ### D. 交付文档(部署配置并入此处)
 
-- [ ] **D1 新克隆环境一键就绪 + README/CONTRIBUTING**:全部模型/素材配置脚本化并实测一次(临时目录 clone 验证),再落 README:
-  - **仓库文档大规模分类整理**(人裁定并入:防推远程时文档污染)——全库文档盘点去留/归位;`prototypes/` 区制品处置,含 freeze 两文件 venv 重建锚迁 `backend/scripts/`(或等价落位)并入库
-  - RAG 两模型:`uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3`(失败/超时切镜像 `HF_ENDPOINT=https://hf-mirror.com`);**缓存落点显式设 `HF_HOME=D:\hf_cache`**(hf 默认进 C 盘 `.cache\huggingface\hub`,GB 级且中文用户名有 sentencepiece 历史坑)或 `--local-dir` 直落 `backend/models/`
-  - CosyVoice venv 重建脚本(重):GPU torch 蓝本安装(`prototypes/tts-latency/freeze_gpu_blueprint.txt`,setuptools<81 坑)+ CosyVoice2 权重(5.3GB,`models/voices/` gitignored)
-  - SenseVoice:首用自动从 ModelScope 拉(~900MB),文档写清 `MODELSCOPE_CACHE` 落盘位
-  - Live2D 素材:`npm run l2d:fetch`(已收录 package.json,README 补可见性);CLAUDE.md §4 命令块同步
-  - 环境前提:Redis 6379、`HF_HOME`/`MODELSCOPE_CACHE` 系统变量、`.env` 从 example 复制
-- [ ] **D2 交付批核对**:ADR 状态、PROGRESS 归档与文档地图刷新(现文档地图已过时:ADR 实有 3 篇仍写"首篇待首个编码期决策",头注日期停在旧值)。
+- [ ] **D1 交付前文档体系 + 新克隆一键就绪**(人裁定:开新窗口执行;分四相位,摸查结论/每份文档大纲与正文均停下待人审查):
+  - **D1-a 全库文档摸查(子 agent 黑盒,只读)**:全库 .md 盘三面——时效性(陈述 vs 代码/git 实况:路径/命令/数值/ADR 数/近期大改是否反映)、互联性(交叉引用断链/节号漂移/单源指针断裂成环)、遗漏;**含 `backend/.env.example`:逐项对 config.py 实际读取的环境变量核时效性(失效键/改名键)与缺失性(代码读了但 example 没写的键,含注释说明是否跟齐)**;产出=现况文档树+问题清单(硬伤排序,逐条附证据)。**排查结束停下待人审查,不直接改。**(摸查范围/时机由新窗口与人裁量)
+  - **D1-b 文档体系定稿(人主导)**:单根 `docs/` 树状递归分类;渐进式披露链=**README.md**(队友入口·文档指南·各文档跳转指针,简单)→ **CONTRIBUTING.md**(团队开发约束·①②③跳转指针,简单)→ **①AGENTS.md**(编码 agent 共享·开发指南·开发文档跳转指针,简单;与 CLAUDE.md 关系待裁)→ **②ARCHITECTURE.md**(项目架构图[信息]·功能模块职责,详细)→ **③其他开发文档**(详细)。文档编写需要的模块待裁确认（上面文档后面的括号中只给出部分期望）。**逐份流程:大纲→人审砍多余→正文→人审精修→交付。**
+  - **未决问题(开工先裁,可请人手动调用 `/grill-with-docs` 盘问)**:① AGENTS.md 与 CLAUDE.md 单源分工;② architecture/ 五件套(spec/ws-contract/双 plan/CONTEXT/PROGRESS)迁 docs/ 新树还是原地+指针(引用面=CLAUDE.md 边界表+代码注释);③ 新 ARCHITECTURE.md 与 architecture-spec.md 分工(防双单源:地图+指针 or 自含);④ 文档语言;⑤ prototypes/ 制品是否入摸查与处置标准(含 freeze 两文件迁 backend/scripts/);⑥ D2 与摸查输出的分工线。目标:D1-D2 完成后队友+其 coding agent 可直接协作开发。
+  - **D1-c 写作规范(两套)**:人看文档=`.claude/rules/doc-style-human.md`(技术文档工程师铁律:30 字红线/禁词表/主动语态/自检;大纲先行流程内嵌「输出格式」节),与 doc-standards 十判据叠加(十判据管删留/单源,新规范管句法文风);agent 看文档=mattpocock writing-for-agents skill 方法学。
+  - **D1-d 一键就绪(原内容)**:全部模型/素材配置脚本化并实测一次(临时目录 clone 验证)——RAG 两模型 `uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3`(失败/超时切镜像 `HF_ENDPOINT=https://hf-mirror.com`;**`HF_HOME=D:\hf_cache` 显式设**,hf 默认进 C 盘且中文用户名有 sentencepiece 历史坑,或 `--local-dir` 直落 `backend/models/`)· CosyVoice venv 重建脚本(GPU torch 蓝本 `prototypes/tts-latency/freeze_gpu_blueprint.txt`+setuptools<81 坑+权重 5.3GB `models/voices/` gitignored)· SenseVoice 首用 ModelScope 拉 ~900MB(文档写清 `MODELSCOPE_CACHE` 落盘位)· Live2D `npm run l2d:fetch`(README 补可见性;CLAUDE.md §4 命令块同步)· 环境前提(Redis 6379/`HF_HOME`/`MODELSCOPE_CACHE` 系统变量/`.env` 从 example 复制)。
+  - **验收标准**:文档分类规整(单根树+渐进式披露链成立);内容符合人的设计品味(逐份过人审精修);各配置安装脚本与散落环境配置(`.env.example` 等)收集完善;**按文档从零操作能正常部署并使用本项目**(临时目录 clone 实测全流程通过)。
+- [ ] **D2 交付批核对**(输入=D1-a 摸查问题清单):ADR 状态、PROGRESS 归档与文档地图刷新(现文档地图已过时:ADR 实有 5 篇仍写"首篇待首个编码期决策",头注日期停在旧值)。
 
-## 3. 待办池(不排程;内测反馈后再定优先级)
+## 3. 待办池(已迁出,防双单源)
 
-- 记忆分层落地(ADR-001 `MemoryTiering` 已审定):热层改存 recent_turns 原始轮次+重连重建;涟漪=spec §4 L7(ADR 原文另引的 spec §9.4 编号在现行 spec 不存在,落地时按现行 spec 重新定位审计节)· state.py · memory/store.py · gateway.py · 测试。
-- 陪聊轮保留 pending_question:E2E 观察的 UX 缺口(求助句走陪聊后,下一条内容只进转录不做字段提取);高频出现再修。**B2 已修主链**(提取填到才清挂起;跨字段提取见 commit),off_topic 弃内容仍无观测日志(extract.py 零 logging,off_topic/value 不可分辨)——补观测属后续小项。
-- 阶段 2 四问 LLM 结构化分类器(用户 discourse-stack 方案):仅门控命中时调用,等 route_decided 日志积累偏差数据。
-- 路由准确率/回接率评估(需标注集;route_decided 日志已在积累)。
-- 「不想聊了」显式退出采集(需词表设计)。
-- 短答回接话术 LLM 润色(等恢复体验实况)。
-- LLM_TIMEOUT_S 单值预算拆分(慢流式下总结被兜底截断的偶发风险)。
-- B2 新增:概念句被 DISTRESS_SIGNALS"一直"误捕获进 collect(classifier.py:32),口语概念句到不了短答支线——等 route_decided 日志积累后与"阶段 2 分类器"一并调;心情选择器 10s 自动收起 × LLM 首 40s+ 延迟,首轮用户易错过(pill 可回开,前端 mood/selector.ts:7);前端帧面板「9 消息」文案已同步,契约 §1 与 §2 计数矛盾已修齐。
+待办内容单源已迁 **`docs/todos/backlog.md`**(C1 审查留档项 + 本节原条目 + 裁定残项统一管理;二期范围单源仍=ARCHITECTURE_PROGRESS §四「二期范围总表」)。本节不再维护条目。原条目核销记录:记忆分层已随 A4 完成;off_topic 观测日志已核销(B2 落 extract_empty 带 off_topic 位)。
 
 ## 4. 接力规程
 

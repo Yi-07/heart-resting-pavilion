@@ -86,13 +86,18 @@ def _query(f: Formulation, summary: str) -> str:
     return joined or "情绪调节"
 
 
-def _retrieve_refs(query: str) -> list[str]:
+async def _retrieve_refs(query: str) -> list[str]:
+    """请求侧统一 retrieve_async(ADR-003 决策2:同步 retrieve 直堵事件循环,禁)。"""
     try:
-        from app.rag import get_engine  # 重依赖,函数内懒加载(既定模式)
+        from app.rag import RagNotReady, retrieve_async  # 重依赖,函数内懒加载(既定模式)
 
-        return [f"- 问:{r.question}\n  答:{r.answer}" for r in get_engine().retrieve(query)]
+        refs = await retrieve_async(query)
+        return [f"- 问:{r.question}\n  答:{r.answer}" for r in refs]
+    except RagNotReady:
+        logger.warning("degraded", layer="planner_rag", reason="rag_not_ready")
+        return []
     except Exception as exc:  # noqa: BLE001 — RAG 失败降级:refs 空走通用建议
-        logger.warning("degraded", layer="planner_rag", reason=str(exc)[:120])
+        logger.warning("degraded", layer="planner_rag", reason=type(exc).__name__)
         return []
 
 
@@ -134,7 +139,7 @@ def _fallback(f: Formulation, summary: str) -> str:
 async def generate_report(f: Formulation, summary: str) -> str:
     """产方案书 md;任何失败路径都落降级模板,永不抛(调用方=后台任务)。"""
 
-    refs = _retrieve_refs(_query(f, summary))
+    refs = await _retrieve_refs(_query(f, summary))
     try:
         provider = get_provider()
         md = await asyncio.wait_for(provider.chat(_messages(f, summary, refs)), PLANNER_TIMEOUT_S)
@@ -144,9 +149,10 @@ async def generate_report(f: Formulation, summary: str) -> str:
             return _with_disclaimer(md)
         logger.warning("degraded", layer="planner_llm", reason="empty_output")
     except LLMError as exc:
-        logger.warning("degraded", layer="planner_llm", reason=str(exc)[:120])
+        logger.warning("degraded", layer="planner_llm", reason=type(exc).__name__)
     except asyncio.TimeoutError:
         logger.warning("degraded", layer="planner_llm", reason=f"timeout>{PLANNER_TIMEOUT_S:.0f}s")
     except Exception as exc:  # noqa: BLE001 — 后台任务兜底:保证 latest 终态 ready
-        logger.warning("degraded", layer="planner", reason=str(exc)[:120])
+        # H4:只记类型不记报文——异常串(如 pydantic ValidationError)可能夹带用户原文
+        logger.warning("degraded", layer="planner", reason=type(exc).__name__)
     return _fallback(f, summary)

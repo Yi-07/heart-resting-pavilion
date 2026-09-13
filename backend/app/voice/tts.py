@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -29,6 +30,9 @@ _spawned: subprocess.Popen[bytes] | None = None
 
 _stopping = False
 """关停旗标:shutdown 后 warmup 线程不可取消(to_thread),靠旗标阻止其拉起孤儿进程"""
+
+_spawn_lock = threading.Lock()
+"""拉起互斥(D2):warmup 与首次合成的并发窗口防双 spawn——句柄被覆盖会漏杀孤儿进程"""
 
 
 def _base() -> str:
@@ -106,22 +110,28 @@ def ensure_sidecar(timeout_s: float | None = None) -> bool:
         # 进程在但模型加载中 → 落到下方等待循环
 
     if _spawned is None or _spawned.poll() is not None:
-        if _stopping:
-            return False
-        python = Path(config.TTS_SIDECAR_PYTHON)
-        if not python.exists():
-            logger.warning("tts_sidecar_missing_python", path=str(python))
-            return False
-        script = Path(__file__).parent / "tts_sidecar.py"
-        creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-        _spawned = subprocess.Popen(
-            [str(python), str(script)],
-            cwd=str(script.parent),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creationflags,
-        )
-        logger.info("tts_sidecar_spawned", port=config.TTS_SIDECAR_PORT)
+        with _spawn_lock:
+            if _spawned is not None and _spawned.poll() is None:
+                pass  # 双检(D2):并发窗口内另一方已拉起,直接落到下方等 ready
+            elif _stopping:
+                return False
+            else:
+                python = Path(config.TTS_SIDECAR_PYTHON)
+                if not python.exists():
+                    logger.warning("tts_sidecar_missing_python", path=str(python))
+                    return False
+                script = Path(__file__).parent / "tts_sidecar.py"
+                creationflags = (
+                    subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                )
+                _spawned = subprocess.Popen(
+                    [str(python), str(script)],
+                    cwd=str(script.parent),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=creationflags,
+                )
+                logger.info("tts_sidecar_spawned", port=config.TTS_SIDECAR_PORT)
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if _stopping:

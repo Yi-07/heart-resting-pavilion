@@ -15,21 +15,24 @@
 - 重排器加载失败 → 按 RRF 序直接截断返回(降级路径,记 WARN,不致命)
 - BM25 索引按库在 ingest 时失效、首次检索从对应 Chroma 回建
 - 换 embedding 模型 = 重跑 ingest,代码不动(docs/data-contract.md §5)
-懒加载:模型/索引首次使用才进内存(网关启动零成本);Chroma 持久化 .rag_store/。
+懒加载:重库(chroma/jieba/numpy/bm25/sentence-transformers)与模型/索引首次使用才
+import/进内存——模块顶部零重依赖(§5.6,启动零成本);Chroma 持久化 .rag_store/。
 """
 
-from pathlib import Path
+from __future__ import annotations
 
-import chromadb
-import jieba
-import numpy as np
-from chromadb.errors import NotFoundError
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 from loguru import logger
-from rank_bm25 import BM25Okapi
-from sentence_transformers import CrossEncoder, SentenceTransformer
 
 from app import config
 from app.rag.corpus import RagLibrary, Ref
+
+if TYPE_CHECKING:
+    import chromadb
+    from rank_bm25 import BM25Okapi
+    from sentence_transformers import CrossEncoder, SentenceTransformer
 
 _COLLECTIONS: dict[RagLibrary, str] = {
     RagLibrary.KNOWLEDGE: "hrp_kb_knowledge",
@@ -71,6 +74,8 @@ class RagEngine:
     # ---- 懒初始化 ----
 
     def _ensure_store(self, library: RagLibrary) -> chromadb.Collection:
+        import chromadb  # 重库函数内懒加载(§5.6);类型标注走 TYPE_CHECKING
+
         if self._client is None:
             self._client = chromadb.PersistentClient(path=str(self._store_path))
         return self._client.get_or_create_collection(
@@ -78,11 +83,15 @@ class RagEngine:
         )
 
     def _ensure_embedder(self) -> SentenceTransformer:
+        from sentence_transformers import SentenceTransformer
+
         if self._embedder is None:
             self._embedder = SentenceTransformer(_EMBED_MODEL)
         return self._embedder
 
     def _ensure_reranker(self) -> CrossEncoder | None:
+        from sentence_transformers import CrossEncoder
+
         if self._reranker is None and not self._reranker_failed:
             try:
                 self._reranker = CrossEncoder(_RERANK_MODEL, max_length=512)
@@ -92,6 +101,9 @@ class RagEngine:
         return self._reranker
 
     def _ensure_bm25(self, library: RagLibrary) -> BM25Okapi:
+        import jieba
+        from rank_bm25 import BM25Okapi
+
         if library not in self._bm25:
             collection = self._ensure_store(library)
             got = collection.get(include=["documents", "metadatas"])
@@ -113,6 +125,9 @@ class RagEngine:
 
     def ingest(self, refs: list[Ref], *, library: RagLibrary, reset: bool = False) -> int:
         """语料按库灌入(upsert 按 id 幂等);reset 清空该库重建。返回该库入库条数。"""
+        import numpy as np
+        from chromadb.errors import NotFoundError
+
         collection = self._ensure_store(library)
         if reset and self._client is not None:
             self._client.delete_collection(_COLLECTIONS[library])
@@ -143,6 +158,9 @@ class RagEngine:
 
     def retrieve(self, query: str, k: int | None = None, *, library: RagLibrary = RagLibrary.CASE) -> list[Ref]:
         """混合检索 + 重排,返回带分 Ref(k=None → config.RAG_TOP_K);library 指定查哪一库。"""
+        import jieba
+        import numpy as np
+
         top_k = k if k is not None else config.RAG_TOP_K
         collection = self._ensure_store(library)
         if collection.count() == 0:

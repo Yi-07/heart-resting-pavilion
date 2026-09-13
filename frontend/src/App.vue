@@ -222,9 +222,13 @@ onMounted(() => {
       logger.error('app', `连接失败: ${String(err)}`)
     })
   client.onReconnecting = () => {
+    // H6:wsStatus 不得只认首连——断线即置 closed(输入门控双向),
+    // 否则首连败→重连成功后输入框永久禁用;掉线后直发抛未捕获 WSError
+    wsStatus.value = 'closed'
     wsReconnecting.value = true
   }
   client.onReconnected = () => {
+    wsStatus.value = 'open'
     wsReconnecting.value = false
   }
 
@@ -435,7 +439,6 @@ function toggleMic(): void {
       <div class="cb-sub">我们一直在 · 别一个人扛</div>
     </div>
   </div>
-  <div v-if="round.crisis" class="audit-tag" data-testid="audit-tag">WARN · crisis_gate_hit · 已转热线引导</div>
 
   <!-- 协议帧控制台(演示验帧用) -->
   <button class="proto-toggle" type="button" @click="protoOpen = !protoOpen">协议帧 WS</button>
@@ -1090,30 +1093,6 @@ function toggleMic(): void {
 .cb-sub {
   font-size: 11.5px;
   color: #8a5a42;
-}
-.audit-tag {
-  position: fixed;
-  top: 118px;
-  right: 20px;
-  z-index: 70;
-  font-size: 10px;
-  font-family: ui-monospace, monospace;
-  color: #a2563b;
-  background: rgba(255, 248, 244, 0.92);
-  border: 1px solid rgba(213, 138, 99, 0.4);
-  padding: 6px 10px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.audit-tag::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #d58a63;
-  animation: pulse 1.6s infinite;
 }
 
 /* ── 协议帧控制台 ── */

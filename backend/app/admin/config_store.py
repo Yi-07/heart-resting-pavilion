@@ -77,10 +77,17 @@ class ConfigStore:
                 """
             )
 
-    def save(self, cfg: StoredLLMConfig) -> None:
-        """最新胜单行;api_key 有值则加密存储(密钥缺失抛 ConfigKeyError,整体不落)。"""
+    def _existing_key_enc(self) -> str | None:
+        """读现库存量密文(D5):api_key 缺省保留旧值,POST 不带 key 不清库内密钥。"""
+        with sqlite3.connect(self._db_path) as conn:
+            row = conn.execute("SELECT api_key_enc FROM llm_config WHERE id = 1").fetchone()
+        return str(row[0]) if row is not None and row[0] else None
 
-        enc = _encrypt(cfg.api_key) if cfg.api_key else None
+    def save(self, cfg: StoredLLMConfig) -> None:
+        """最新胜单行;api_key 有值则加密存储,缺省保留旧值(与 apply_llm_config
+        「None 字段不动」同语义;密钥缺失抛 ConfigKeyError,整体不落)。"""
+
+        enc = _encrypt(cfg.api_key) if cfg.api_key else self._existing_key_enc()
         with sqlite3.connect(self._db_path) as conn:
             conn.execute(
                 """

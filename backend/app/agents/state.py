@@ -1,4 +1,4 @@
-"""CollectState 14 字段 + 图出口事件(backend-plan §3.2/§3.4)。
+"""CollectState 17 字段 + 图出口事件(backend-plan §3.2/§3.4)。
 
 State 挂 WS 连接对象,图节点只读写、不持有;相位不落 state(下一步动作由
 where_next 纯函数从字段算出)。脱敏:state 含用户原文,只活连接内存,
@@ -69,6 +69,8 @@ class CollectState:
     pending_ask_count: int = 0
     """采集内连续追问计数(ADR-003 短答升级):answer 命中且非纯概念时累加,
     满 2 或显式要求回答即允许短答;回采集后清零。"""
+    risk_reviewed_terms: set[str] = field(default_factory=set)
+    """软信号已复核词集(H7:softscan/risk 命中复核去重,spec §4 L5);只活连接内存。"""
 
 
 # ---- 图出口事件(§3.4;网关按事件收尾,不读 state 内部) ----

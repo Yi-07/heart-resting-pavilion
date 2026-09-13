@@ -1,7 +1,9 @@
-"""用例 A·collect 全流程回归(entry + 3 轮采集 → 精稿 → 总结 → done → 总结音频异步流出)。
+"""用例 A·collect 全流程回归(entry + 采集轮 → 精稿 → 总结 → done → 总结音频异步流出)。
 
-充分度路径(emotion 0.2 → situation 0.4 → thought 0.6 → behavior 0.75 ≥ 0.7 停采):
-  R1(entry,粗稿+问情境) → R2(情境) → R3(想法) → R4(行为) → 停采 finish
+自适应编排(LLM 跨字段提取,一轮可能填满四字段提前停采,也可能走满 max_rounds
+收口):每轮增量 draw 后按"已填字段数 / 下一帧类型(问题文本或精稿 draw)"判定
+走向,不假设固定第几轮停采。充分度路径参考:emotion .2 → situation .4 →
+thought .6 → behavior .75 ≥ 0.7 停采;max_rounds=3 兜底。
 断言:
   1. first_frame(route=collect, mood_select=true) → 粗稿 draw
   2. 每轮增量 draw,seq 单调递增
@@ -23,6 +25,20 @@ R1 = "最近这一个月我压力特别大，晚上翻来覆去到两三点都�
 R2 = "上周开始领导天天临时加需求，我加班到十点才回家，躺在床上脑子里还在过工作的事，越想越睡不着。"
 R3 = "脑子里老是在想，我要是连这点事都扛不住，工作早晚保不住，心里又急又怕。"
 R4 = "我一般就是硬撑着把活干完，晚上刷手机拖到很晚才睡，谁也没告诉。"
+TAIL = (R2, R3, R4)
+
+
+def filled_main(draw_msg: dict) -> int:
+    """draw.data 非信念四字段已填数(emotion 看 label);停采判定用。"""
+    data = draw_msg.get("data", {})
+    n = 0
+    for key in ("situation", "thought", "behavior"):
+        if data.get(key) is not None:
+            n += 1
+    emotion = data.get("emotion")
+    if isinstance(emotion, dict) and emotion.get("label") is not None:
+        n += 1
+    return n
 
 
 async def wait_draw(c: WsClient, timeout: float, label: str):
@@ -61,26 +77,39 @@ async def main() -> None:
         got = await wait_text(c, 90, "第1问")
         checks.append((got is not None, "第1问 text_delta" if got else "第1问未到达"))
 
-        # ---- R2/R3:增量 draw + 问题 ----
-        for i, text in enumerate((R2, R3), start=2):
+        # ---- R2-R4:增量 draw → 问题或停采(自适应编排) ----
+        refine: tuple[float, dict] | None = None  # 精稿 draw;停采路径可能提前拿到
+        for i, text in enumerate(TAIL, start=2):
             await asyncio.sleep(4)  # 避免触发抢占重开
             await c.send(user_text(text))
             got = await wait_draw(c, 90, f"R{i} 增量 draw")
             checks.append((got is not None, f"R{i} 增量 draw" if got else f"R{i} draw 未到达"))
-            if got:
+            if got is None:
+                return
+            draws.append(got[1])
+            if filled_main(got[1]) >= 4:
+                checks.append((True, f"R{i} 一轮填满四字段,服务端停采(自适应编排)"))
+                break
+            # 未填满:下一帧要么是下一问文本,要么直接停采出精稿 draw(max_rounds)
+            got = await c.wait_for(
+                lambda m: m.get("type") in ("draw", "text_delta"), 90, f"R{i} 问题或精稿")
+            if got is None:
+                checks.append((False, f"R{i} 后既无下一问也无精稿 draw"))
+                return
+            if got[1].get("type") == "draw":
+                refine = got
                 draws.append(got[1])
-            got = await wait_text(c, 90, f"第{i}问")
-            checks.append((got is not None, f"第{i}问 text_delta" if got else f"第{i}问未到达"))
+                checks.append((True, f"R{i} 后直接停采(max_rounds/充分度)"))
+                break
+            checks.append((True, f"第{i}问 text_delta 到达"))
 
-        # ---- R4:增量 draw → 停采分析(等待语音 filler 可能出现)→ 精稿 draw ----
-        await asyncio.sleep(4)
-        await c.send(user_text(R4))
-        got = await wait_draw(c, 90, "R4 增量 draw")
-        checks.append((got is not None, "R4 增量 draw" if got else "R4 draw 未到达"))
-
-        got = await wait_draw(c, 120, "精稿 draw")
-        checks.append((got is not None, "精稿 draw(停采分析后)" if got else "精稿 draw 未到达"))
-        if got:
+        # ---- 停采分析(等待语音 filler 可能出现)→ 精稿 draw ----
+        if refine is None:
+            got = await wait_draw(c, 120, "精稿 draw")
+            checks.append((got is not None, "精稿 draw(停采分析后)" if got else "精稿 draw 未到达"))
+            if got is None:
+                return
+            refine = got
             draws.append(got[1])
 
         # ---- 总结 text(final=true) → done ≤2s ----
