@@ -59,26 +59,21 @@ node scripts/fetch-l2d.mjs        # Live2D 素材本地化(幂等;产出 public/
 
 ### 4.1 RAG 检索模型与灌库
 
+代码按本地路径读模型(`backend/app/config.py`:`RAG_EMBED_MODEL`/`RAG_RERANK_MODEL` = `backend/models/<模型名>`),不走 HF hub。下载必须用 `--local-dir` 落位,落到 HF 缓存无效:
+
 ```bash
 cd backend
-uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3    # 共约 4.3GB
-uv run python -m app.rag.ingest                            # 语料 → Chroma
-# 语料结构变更后重灌:加 --reset
+uv run hf download BAAI/bge-m3 --local-dir models/bge-m3
+uv run hf download BAAI/bge-reranker-v2-m3 --local-dir models/bge-reranker-v2-m3
 ```
 
-下载失败/超时 → 切镜像:
+共约 4.3GB,`backend/models/` 已 gitignore 不入库。下载失败/超时/报 Xet 元数据错 → 挂镜像重试(命令同上,前面加 `HF_ENDPOINT=https://hf-mirror.com `)。
+
+灌库(命令按需选用):向量库 `.rag_store/` 是运行时产物,不入 git——**clone 后首次必跑一次**;已灌过的环境重跑无害但费时(全量重新 embed),勿重复执行;语料 jsonl(`backend/data/`)变更后才需重跑,结构变更加 `--reset` 清空两库重建:
 
 ```bash
-HF_ENDPOINT=https://hf-mirror.com uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3
+uv run python -m app.rag.ingest
 ```
-
-缓存默认落 `C:\Users\<用户名>\.cache\huggingface\hub`。挪盘:设系统环境变量 `HF_HOME`(如 `D:\hf_cache`),重开终端验证:
-
-```bash
-uv run python -c "from huggingface_hub import constants; print(constants.HF_HUB_CACHE)"
-```
-
-输出以所设路径开头即成。中文用户名曾有 sentencepiece 坑,推荐系统级 `HF_HOME`。
 
 ### 4.2 ASR · SenseVoice
 
@@ -107,7 +102,8 @@ uv pip install --python .venv/Scripts/python.exe --index-strategy unsafe-best-ma
 | 8000/9880 残留进程 | `taskkill //F /PID <pid>`(后端与 sidecar 都要清) |
 | node 版本不对 | 系统环境变量 PATH 删旧 Node 条目,重开终端 |
 | 脚本中文乱码 | 配 `PYTHONIOENCODING=utf-8` |
-| 模型路径找不到 | `HF_HOME`/`MODELSCOPE_CACHE` 须系统级生效,重开终端再验 |
+| RAG 模型路径找不到 | `backend/models/bge-m3`、`backend/models/bge-reranker-v2-m3` 两目录须有模型文件;重跑 §4.1 下载命令(带 `--local-dir`) |
+| SenseVoice 权重找不到 | `MODELSCOPE_CACHE` 须系统级生效,重开终端再验 |
 | CosyVoice 构建崩 | 查 `build-constraints.txt` 在位;详见 `freeze_gpu_blueprint.txt` 头注 |
 
 ## 6. 项目启动
