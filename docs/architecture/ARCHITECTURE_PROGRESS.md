@@ -1,46 +1,45 @@
 # 心栖阁 · 架构进度记录
 
 > **用途**:会话压缩/恢复时的上下文锚点。恢复时先读本文件 + `architecture-spec.md`。
-> 最新更新:2026-08-27
+> **不管面**:现行架构/参数/契约/技术栈以 spec 与 ws-contract 为准(单源),本文件只留进度与历史。
 
 ---
 
 ## 一、项目定位
 
-面向轻中度情绪困扰人群的情感陪伴 + 心理知识科普工具(明确不提供医疗诊断)。
-- **产品形态**:引导式对话,不是回答机器——不等用户一次给完整答案,按节奏分多轮梳理
-- **当前阶段**:**技术原型**(第一版软件粗设计,链路通即可、细节可假)
-- **目标**:中国大学生计算机设计大赛(AI 算法创新 · AI+软件)+ 求职作品集
+定位单源 = spec §1;目标与产品形态亦在彼处。**当前阶段:技术原型**(第一版软件链路全通,文档体系=根 4 入口+docs/ 树)。
 
 ---
 
 ## 二、文档地图
 
-> 触发器制(一行一型:何时才需要这份文档);状态列=文件存在性核验。核心文档的指针与性质以 docs/README.md 为准,本表管全量与状态。
+> 触发器制(一行一型:何时才需要这份文档);状态列=文件存在性核验。单份职能与链接索引 = `docs/README.md`(单源),本表管全量与状态。
 
 | 文档型 | 触发器 | 状态 |
 |---|---|---|
 | CLAUDE.md(薄壳)+ AGENTS.md | 用 coding agent | ✓ |
+| 文档总索引(docs/README.md) | 找文档 | ✓ |
+| 入口四件(README/CONTRIBUTING/ARCHITECTURE.md) | 队友入口/协作/架构地图 | ✓ |
 | spec(HLD,`architecture-spec`) | 架构想清楚 | ✓ |
 | 实施方案(LLD,frontend/backend-plan) | 对应端开工 | ✓ |
 | 接口契约(`ws-contract`) | 两端分离协作 | ✓ |
 | 术语表(`CONTEXT.md`) | 命名分歧出现 | ✓ |
+| 设计基准(docs/guides/deep-module.md) | 新模块开工 | ✓ |
 | 环境/操作手册(`docs/guides/option.md`) | 有人要跑起来 | ✓ |
 | 进度/恢复台账(PROGRESS) | agent 跨会话工作 | ✓ |
 | 答辩溯源(`docs/references.md`) | 评审场景 | ✓ |
 | 决策记录(`docs/adr/NNN-标题.md`) | 架构级决策发生 | ✓ 实有 5 篇(001-005) |
 | 业务验收清单(`docs/tests/acceptance-v1.md`) | 交付冲刺验收(B1 产出) | ✓ |
-| 数据契约(`docs/architecture/data-contract.md`) | 数据生产者≠消费者 | ⚠ 移交代码会话 |
-| README | 编码完成后建立,按职能维护 | △ 编码后 |
-| CONTRIBUTING | 团队协作规则成型(README 协作内容拆出) | △ 编码后 |
-| 人看架构文档 | 交付演示 | △ 交付前批 |
-| AGENT.md 副本 | 交付要求含 Agent.md | △ 交付前批 |
-| 研究记录(`docs/research/` 下 *-research-*.md) | 专题调研发生 | ✓ |
+| 数据契约(`docs/architecture/data-contract.md`) | 数据生产者≠消费者 | ⚠ 待队友样本回填 |
+| 执行状态(kanban+handoff / backlog) | agent 跨会话 | ✓ |
+| 审查快照(docs/reviews/) | 审查/摸查发生 | ✓ 3 份 |
+| 研究记录(docs/research/ 下 *-research-*.md) | 专题调研发生 | 已清理(3465b01/995eeae),触发再建 |
 | UI 参考(`docs/architecture/preview/l1-ui-mockup-v7.html`) | 前端 UI 实现 | ✓ |
 | 备忘录(`docs/Inspiration.md`) | 随手记 | ✓ 人看 |
 | 任务排期(`docs/todos/tasks-arrangement.md`) | 里程碑/阶段排期 | ✓ 人看 |
+| PRD(docs/prds/) | 多干系人需求 | ✓ 已完结 1 篇 |
 
-> 域外型,触发才建:LICENSE/SECURITY=开源或公开产品期 · CHANGELOG=对外发版(git tag 即内部替代)· runbook=多环境部署 · tutorial=产品有外部学习者 · PRD=多干系人需求谈判 · 正式 RFC=团队扩大需评审流程 · CONTRIBUTING=README 协作节挤压。
+> 域外型,触发才建:LICENSE/SECURITY=开源或公开产品期 · CHANGELOG=对外发版(git tag 即内部替代)· runbook=多环境部署 · tutorial=产品有外部学习者 · 正式 RFC=团队扩大需评审流程。
 > 旧版方案归档=`backup/Architecture-historys.zip`(勿作实现依据)。
 
 ---
@@ -51,14 +50,13 @@
 
 **模板模型**:一个会话一个模板,粗稿/精稿**同一张图逐步深化**(表层→深层),数据填充;测试模板 3 个;"心理状态→模板"映射表后期维护。
 
-> 现行架构/参数/契约/技术栈以 spec 与 ws-contract 为准(单源),本文件只留进度与历史。
 > 交付冲刺期 ADR(编号即 docs/adr/ 文件,现行规则原文以此为准):ADR-001 记忆分层(热层轮次原话)· ADR-002 TTS 分句流式+sidecar 进程统一 · ADR-003 采集态路由门控+RAG 预热 · ADR-004 语音输入两步式(输入单源文本)· ADR-005 对话回放与小结卡片(replay 帧+身份持久化)。
 
 ---
 
 ## 四、二期范围总表
 
-> 改二期只改本表,防双维护;spec §10 引用本表。
+> 改二期只改本表,防双维护;spec §10 引用本表。「research-v1 Qx/§4 C7」引用 = 历史研究档已清理(commit 3465b01/995eeae),依据沉淀在 §五 台账与 spec,条目原文不再可查。
 
 | 分类 | 二期项 | 依据 | 状态 |
 |---|---|---|---|

@@ -6,7 +6,8 @@
 ## 0. 当前停点(下一窗口从这里接)
 
 - **已完成并 commit**:A1-A4 / B1 / B2 / C1 / **D1(本窗口,a/b/c 全落,d 部分落)**。文档体系=根 4 入口(README/CONTRIBUTING/AGENTS/ARCHITECTURE)+CLAUDE.md 薄壳(@AGENTS.md)+docs/ 单根树;工具落库(.claude/rules+skills,mattpocock 全套+emilkowalski);option.md 重写为七模块就绪手册(模型 --local-dir 落位 backend/models/);freeze 两蓝本入 backend/scripts/。逐批 commit 见 git log(cba6fa3 树迁移/f1e3186 工具/323a16a 六入口/db7ed53+8b3bb52+7ad801d 手册与蓝本)。
-- **当前=看板 §2 D2 交付批核对(进行中)**:输入=d1a-survey 挂账[P02/P03/P09]+d1b-pointer-survey 挂账[R03/R04/L05+弱职能声明];主战场=ARCHITECTURE_PROGRESS.md(头注日期删/§一压缩/§二文档地图重写/§四 research-v1 脚注)+backend-plan §9 数值复写压缩。
+- **当前=看板全清,待推远程**:D2 已落定(kanban D2 行括注=销账明细)。git remote 未配,推前问人仓库地址。
+- **推远程后遗留(不阻塞)**:backlog §4 两项(Redis compose 拉起/临时 clone 实测);data-contract 待队友 50 条样本回填。
 - **D1-d 剩余两项(人裁定推远程后再做,backlog §4)**:①Redis compose 一次拉起(替换 option §2.1)②临时目录 clone 按 option.md 全流程实测。
 - **D2 之后**:推远程(git remote 未配,推时问人仓库地址)。
 
@@ -45,4 +46,4 @@
 ## 5. 现状
 
 - 主线 1-9 + 冲刺 A/B/C + **D1(a/b/c 落,d 剩两项在 backlog)** 全落;测试盘=后端 pytest 110 + e2e 脚本 16 个 + 前端 69。
-- **当前=D2 进行中**;完成后推远程(远程仓库未配,推前问人)。
+- **当前=看板全清待推远程**;推远程后遗留=backlog §4 两项+data-contract 回填。

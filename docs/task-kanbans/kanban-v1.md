@@ -46,7 +46,7 @@
   - **D1-c 写作规范(两套)**:人看文档=`.claude/rules/doc-style-human.md`(技术文档工程师铁律:30 字红线/禁词表/主动语态/自检;大纲先行流程内嵌「输出格式」节),与 doc-standards 十判据叠加(十判据管删留/单源,新规范管句法文风);agent 看文档=mattpocock writing-for-agents skill 方法学。
   - **D1-d 一键就绪(部分落定,剩余迁 backlog §4)**:option.md 按人裁定重写完成(七模块定序:版本锚定/后端/前端/模型下载/故障排查/项目启动/接力提示词;全量安装单路径,撤分档与可选概念,commit 8b3bb52/7ad801d);模型落位修正=hf download 带 --local-dir 直落 backend/models/(config.py 本地路径,裸命令落 HF 缓存无效);灌库命令按需注明(.rag_store 运行时产物不入 git,clone 首次必跑);freeze 两蓝本入 backend/scripts/(加用途头注);README 收敛为单指针(人手改)。**剩余两项人裁定后置**:Redis compose 拉起+临时 clone 实测 → backlog §4,推远程后再做。
   - **验收标准**:文档分类规整(单根树+渐进式披露链成立);内容符合人的设计品味(逐份过人审精修);各配置安装脚本与散落环境配置(`.env.example` 等)收集完善;**按文档从零操作能正常部署并使用本项目**(临时目录 clone 实测全流程通过)。
-- [~] **D2 交付批核对(进行中)**:输入=d1a-survey 挂账[P02/P03/P09]+d1b-pointer-survey 挂账[R03/R04/L05+弱职能声明上移];P07/P10/P11/P12/P14/P15/P17 已随 D1-b 各批销账。范围=ADR 状态核对、PROGRESS 头注/§一/§二文档地图/§四脚注刷新、backend-plan §9 数值复写压缩。
+- [x] **D2 交付批核对(落定)**:销账 d1a[P02/P03/P09/P13]+d1b[R03/R04/L05+弱职能声明]——PROGRESS 头注日期删+§一压缩为定位指针+§二文档地图重写(补总索引/入口四件/设计基准/执行状态/审查快照行;README/CONTRIBUTING/人看架构/AGENT 副本四行状态失实清理;数据契约改「待队友样本回填」;研究记录行改已清理)+§四 research-v1 已清理脚注+§三尾注重复声明上移头注;backend-plan §9 数值复写压缩为指针(单源=ws-contract §9);spec/双 plan 头注补「不管面」声明;.env.example 补缺失 2 键[OLLAMA_MODEL/HRP_VERBOSE,对 config.py/main.py 读键全集逐键复核 16 键失效 0]。ADR 状态核对:5 篇(001 已接受/002-005 已定案)与 git 实况一致,文档未改。
 
 ## 3. 待办池(已迁出,防双单源)
 

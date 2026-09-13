@@ -1,6 +1,7 @@
 # 后端实施方案 · 技术原型
 
 > **权威源**:`architecture-spec.md`(架构)· `ws-contract.md`(契约)
+> **不管面**:机制/参数=spec,消息格式=ws-contract,本文件不复制;日志红线单源=ws-contract §9。
 > **目标**:技术原型后端——跑通三路路由全链路(危机闸门 / 分类器 / 多轮采集 / Agent / 记忆 / 语音),日志与审计齐备。
 
 ---
@@ -206,9 +207,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 
 ## 9. 日志(双输出,对齐 ws-contract §9)
 
-- **控制台**:loguru 彩色可读(时间/级别/`模块:行号`/短消息),INFO 默认,`--verbose`→DEBUG
-- **文件**:`logs/debug_{date}.log`,轮转 10MB / 保留 30 天
-- **审计**:危机命中必落(WARN);用户文本只记长度/哈希;音频/凭证绝不落
+双输出(loguru 控制台彩色 INFO + 文件 DEBUG)与脱敏/审计硬约束单源 = ws-contract §9;本节不复制参数(轮转/保留数值)与红线细则。
 
 ---
 
