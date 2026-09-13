@@ -54,6 +54,11 @@
 - [ ] 心情选择器 10s 自动收起 × LLM 首 40s+ 延迟,首轮易错过(pill 可回开,`frontend/mood/selector.ts`)
 - [ ] 手测盲区:真麦克风口播 / digest 小结卡前端呈现
 
-## 4. 二期
+## 4. D1-d 后置项(人裁定:推远程后再做)
+
+- [ ] Redis 一次拉起方案(docker-compose.yml:service hrp-redis/image redis:7-alpine/6379/restart unless-stopped;起草后人审,替换 option.md §2.1 裸 docker run)
+- [ ] 临时目录 clone 实测:按 docs/guides/option.md 全流程从零走一遍(版本锚定→后端→前端→模型下载→启动),验证命令可照抄;模型 4.3GB 下载需本机执行;发现文档失真即回修
+
+## 5. 二期
 
 不复制——单源=`ARCHITECTURE_PROGRESS.md` §四「二期范围总表」(spec §10 引用;含多模态节奏协同/WebRTC/知识图谱/语义记忆/模板库扩充/ASR 强化/多人并发/Tauri 打包等)。

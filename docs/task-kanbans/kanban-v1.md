@@ -40,12 +40,13 @@
 
 ### D. 交付文档(部署配置并入此处)
 
+- [x] **D1-a 全库文档摸查**:18 项问题清单+.env 逐键核对,报告=`docs/reviews/d1a-survey.md`(人已审,据其拍板 D1 全部未决问题)。
   - [x] **D1-b 文档体系定稿(人主导)**:单根 `docs/` 树状递归分类;渐进式披露链=根 4 入口(README→CONTRIBUTING→AGENTS.md→ARCHITECTURE.md)+CLAUDE.md 薄壳+docs 树。**逐份流程:大纲→人审砍多余→正文→人审精修→交付。**(落定 2026-09-13:六入口+deep-module.md 全落,commit cba6fa3/323a16a——CLAUDE.md 薄壳[@AGENTS.md];docs/README.md 总索引二次跳转+入树规则;重复/指针搜查=d1b-pointer-survey.md[9R+11L],批A 修 R05-R09+断链 L01-L04/L10/L11,AGENTS.md 按「减少进上下文」重排 8 节[指针表并入 docs/README 单源];挂 D2=R01/R03/R04+L05 状态行+弱职能声明)
   - **未决问题(开工先裁,可请人手动调用 `/grill-with-docs` 盘问)**:① AGENTS.md 与 CLAUDE.md 单源分工;② docs/architecture/ 五件套(spec/ws-contract/双 plan/CONTEXT/PROGRESS)迁 docs/ 新树还是原地+指针(引用面=CLAUDE.md 边界表+代码注释);③ 新 ARCHITECTURE.md 与 architecture-spec.md 分工(防双单源:地图+指针 or 自含);④ 文档语言;⑤ prototypes/ 制品是否入摸查与处置标准(含 freeze 两文件迁 backend/scripts/);⑥ D2 与摸查输出的分工线。目标:D1-D2 完成后队友+其 coding agent 可直接协作开发。(已裁 2026-09-13 grill-with-docs 盘问:①AGENTS.md 单源+CLAUDE.md 薄壳[@AGENTS.md+Claude 专属节];②六件套 git mv docs/architecture/ 原名+preview/;③ARCHITECTURE.md=地图+指针,spec 仍权威;④中文;⑤prototypes 不入摸查,freeze 蓝本随 D1-d 入库;⑥摸查只出清单/结构类 D1-b~d 修/台账类归 D2。追加裁定:README 承项目说明;根 4 入口+docs/README.md 总索引二次跳转;工具落库=.claude/rules+skills 入库[mattpocock 全套+emilkowalski;scene-walkthrough-TODO 留盘单独 ignore;MCP 三件走 CONTRIBUTING 部署指令不建 .mcp.json;design-taste-frontend/i-have-adhd 标用户级自备不拷];P01 重复段按「两 preview 互为参考互补/同组件两套并存/拿不准停下问人」合并一段;AGENTS.md 简洁原则=开发规范必落实[docs 存放规则/核心代码风格/日志审计边界等],细节指针内化按需加载,拿不准问人)
   - **D1-c 写作规范(两套)**:人看文档=`.claude/rules/doc-style-human.md`(技术文档工程师铁律:30 字红线/禁词表/主动语态/自检;大纲先行流程内嵌「输出格式」节),与 doc-standards 十判据叠加(十判据管删留/单源,新规范管句法文风);agent 看文档=mattpocock writing-for-agents skill 方法学。
-  - **D1-d 一键就绪(原内容)**:全部模型/素材配置脚本化并实测一次(临时目录 clone 验证)——RAG 两模型 `uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3`(失败/超时切镜像 `HF_ENDPOINT=https://hf-mirror.com`;**`HF_HOME=D:\hf_cache` 显式设**,hf 默认进 C 盘且中文用户名有 sentencepiece 历史坑,或 `--local-dir` 直落 `backend/models/`)· CosyVoice venv 重建脚本(GPU torch 蓝本 `prototypes/tts-latency/freeze_gpu_blueprint.txt`+setuptools<81 坑+权重 5.3GB `models/voices/` gitignored)· SenseVoice 首用 ModelScope 拉 ~900MB(文档写清 `MODELSCOPE_CACHE` 落盘位)· Live2D `npm run l2d:fetch`(README 补可见性;AGENTS.md §3 命令块同步)· 环境前提(Redis 6379/`HF_HOME`/`MODELSCOPE_CACHE` 系统变量/`.env` 从 example 复制)。
+  - **D1-d 一键就绪(部分落定,剩余迁 backlog §4)**:option.md 按人裁定重写完成(七模块定序:版本锚定/后端/前端/模型下载/故障排查/项目启动/接力提示词;全量安装单路径,撤分档与可选概念,commit 8b3bb52/7ad801d);模型落位修正=hf download 带 --local-dir 直落 backend/models/(config.py 本地路径,裸命令落 HF 缓存无效);灌库命令按需注明(.rag_store 运行时产物不入 git,clone 首次必跑);freeze 两蓝本入 backend/scripts/(加用途头注);README 收敛为单指针(人手改)。**剩余两项人裁定后置**:Redis compose 拉起+临时 clone 实测 → backlog §4,推远程后再做。
   - **验收标准**:文档分类规整(单根树+渐进式披露链成立);内容符合人的设计品味(逐份过人审精修);各配置安装脚本与散落环境配置(`.env.example` 等)收集完善;**按文档从零操作能正常部署并使用本项目**(临时目录 clone 实测全流程通过)。
-- [ ] **D2 交付批核对**(输入=D1-a 摸查问题清单):ADR 状态、PROGRESS 归档与文档地图刷新(现文档地图已过时:ADR 实有 5 篇仍写"首篇待首个编码期决策",头注日期停在旧值)。
+- [~] **D2 交付批核对(进行中)**:输入=d1a-survey 挂账[P02/P03/P09]+d1b-pointer-survey 挂账[R03/R04/L05+弱职能声明上移];P07/P10/P11/P12/P14/P15/P17 已随 D1-b 各批销账。范围=ADR 状态核对、PROGRESS 头注/§一/§二文档地图/§四脚注刷新、backend-plan §9 数值复写压缩。
 
 ## 3. 待办池(已迁出,防双单源)
 
