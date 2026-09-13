@@ -4,6 +4,10 @@ backup
 .claude/*
 !.claude/hooks/
 !.claude/settings.json
+!.claude/rules/
+!.claude/skills/
+# 个人过程残片(后期使用,不入库;压过上面的 !.claude/skills/)
+.claude/skills/scene-walkthrough-TODO.md
 .env
 .playwright-mcp/
 .firecrawl
