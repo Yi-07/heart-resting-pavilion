@@ -1,6 +1,6 @@
 # 环境搭建操作手册（开工第一步）
 
-> **图例**：〔✓〕= 本机已实测确认（工具在 PATH、版本查实、解析通过）；〔□〕= 计划，未实测——**人执行跑通即真**；跑不通 → 按 CLAUDE.md 护栏**停下问人**，不静默改。
+> **图例**：〔✓〕= 本机已实测确认（工具在 PATH、版本查实、解析通过）；〔□〕= 计划，未实测——**人执行跑通即真**；跑不通 → 按 AGENTS.md 护栏**停下问人**，不静默改。
 > **分工**：第 0-4 步 + 语音栈（步骤 5，语音阶段）= **人做**；接缝定义与编码开发 = **交给 Claude Code**（文末两段提示词）。
 > **依据**：依赖与资源以 `docs/architecture/` 开发文档为标杆（frontend-plan / backend-plan / ws-contract / spec）；查证记录见 PROGRESS §六技术核查记录。
 
@@ -223,8 +223,8 @@ uv pip install --python .venv/Scripts/python.exe --index-strategy unsafe-best-ma
 ### 会话二 · 编码开发(已完结;步骤1~4 落库,后续走会话三接力)
 
 ```
-你在心栖阁仓库工作,环境与设计均已就绪。按 CLAUDE.md 开发:构建顺序照 §8,每步完成跑对应验收
-用例,停下汇报→人确认→commit→继续;护栏照 CLAUDE.md(命令失败/依赖装不上/契约冲突/需改架构
+你在心栖阁仓库工作,环境与设计均已就绪。按 AGENTS.md 开发:构建顺序照 §7,每步完成跑对应验收
+用例,停下汇报→人确认→commit→继续;护栏照 AGENTS.md(命令失败/依赖装不上/契约冲突/需改架构
 →停下问人,不静默改)。
 ```
 
@@ -233,10 +233,10 @@ uv pip install --python .venv/Scripts/python.exe --index-strategy unsafe-best-ma
 上下文吃紧或一个步骤收尾后,旧窗口按看板 §3 收尾(kanban 勾选+handoff 重写+commit),再开新窗口粘贴:
 
 ```
-你在心栖阁仓库工作,接续跨会话开发。开工顺序:CLAUDE.md → docs/task-kanbans/kanban-v1.md
+你在心栖阁仓库工作,接续跨会话开发。开工顺序:AGENTS.md(CLAUDE.md 薄壳)→ docs/task-kanbans/kanban-v1.md
 → docs/task-kanbans/handoff.md;按看板§0工作方式执行(高噪音步骤派子agent黑盒只收结论,
-主会话只做决策/编码/commit),继续看板当前未完成步骤;每步完成跑 CLAUDE.md §8 对应用例,
-停下汇报→人确认→commit(看板勾选+handoff 同步)→继续;护栏照 CLAUDE.md(命令失败/依赖
+主会话只做决策/编码/commit),继续看板当前未完成步骤;每步完成跑 AGENTS.md §7 对应用例,
+停下汇报→人确认→commit(看板勾选+handoff 同步)→继续;护栏照 AGENTS.md(命令失败/依赖
 装不上/契约冲突/需改架构→停下问人,不静默改)。
 ```
 

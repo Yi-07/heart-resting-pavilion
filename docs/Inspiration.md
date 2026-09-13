@@ -1,6 +1,6 @@
 # 灵感记录 · Inspiration
 
-记录"有意思但不实现 / 暂缓"的想法。与正式方案(architecture-spec-v2.md)分离。创建:2026-08-11。
+记录"有意思但不实现 / 暂缓"的想法。与正式方案(architecture-spec.md)分离。创建:2026-08-11。
 
 ## 1. DrawProtocol primitive 级 —— 暂不实现
 

@@ -1,8 +1,8 @@
 # 心栖阁 · 跨会话执行看板 kanban-v1
 
 > **职能**:多对话窗口接力的共享执行清单——步骤执行状态单源;勾选=已完成并 commit。
-> **优先级**:新会话开工必读顺序 = CLAUDE.md → 本文 → 同目录 `handoff.md`;步骤状态与本文冲突时以本文为准(优于任何会话记忆)。
-> **单源边界**:构建顺序/命令/构建验收判据单源 = CLAUDE.md §4/§8,业务测试判据单源 = `docs/tests/acceptance-v1.md`(B1 产出),本文只记执行状态与分派,不复制判据;完成一步的前提=跑过对应用例并停下汇报获人确认。
+> **优先级**:新会话开工必读顺序 = CLAUDE.md(=AGENTS.md)→ 本文 → 同目录 `handoff.md`;步骤状态与本文冲突时以本文为准(优于任何会话记忆)。
+> **单源边界**:构建顺序/命令/构建验收判据单源 = AGENTS.md §3/§7,业务测试判据单源 = `docs/tests/acceptance-v1.md`(B1 产出),本文只记执行状态与分派,不复制判据;完成一步的前提=跑过对应用例并停下汇报获人确认。
 
 ## 0. 工作方式(本看板的执行模式)
 
@@ -17,7 +17,7 @@
 
 ## 1. 主线构建(全部完成)
 
-步骤1-9(契约类型→WS 网关→answer→collect→黑板→记忆→Live2D→语音→工具)+ 排后·全量语料接入(bge-m3,14944 条)全部完成。逐项实现/验证口径单源=**git log 的详细 commit message**(git show <hash>);决策背景查 `ARCHITECTURE_PROGRESS.md`(注意:它是决策台账,无逐项 commit 指针,且文档地图待 D2 刷新)。构建顺序单源仍为 CLAUDE.md §8。
+步骤1-9(契约类型→WS 网关→answer→collect→黑板→记忆→Live2D→语音→工具)+ 排后·全量语料接入(bge-m3,14944 条)全部完成。逐项实现/验证口径单源=**git log 的详细 commit message**(git show <hash>);决策背景查 `ARCHITECTURE_PROGRESS.md`(注意:它是决策台账,无逐项 commit 指针,且文档地图待 D2 刷新)。构建顺序单源仍为 AGENTS.md §7。
 
 ## 2. 第一版交付待办
 
@@ -45,7 +45,7 @@
   - **D1-b 文档体系定稿(人主导)**:单根 `docs/` 树状递归分类;渐进式披露链=**README.md**(队友入口·文档指南·各文档跳转指针,简单)→ **CONTRIBUTING.md**(团队开发约束·①②③跳转指针,简单)→ **①AGENTS.md**(编码 agent 共享·开发指南·开发文档跳转指针,简单;与 CLAUDE.md 关系待裁)→ **②ARCHITECTURE.md**(项目架构图[信息]·功能模块职责,详细)→ **③其他开发文档**(详细)。文档编写需要的模块待裁确认（上面文档后面的括号中只给出部分期望）。**逐份流程:大纲→人审砍多余→正文→人审精修→交付。**
   - **未决问题(开工先裁,可请人手动调用 `/grill-with-docs` 盘问)**:① AGENTS.md 与 CLAUDE.md 单源分工;② docs/architecture/ 五件套(spec/ws-contract/双 plan/CONTEXT/PROGRESS)迁 docs/ 新树还是原地+指针(引用面=CLAUDE.md 边界表+代码注释);③ 新 ARCHITECTURE.md 与 architecture-spec.md 分工(防双单源:地图+指针 or 自含);④ 文档语言;⑤ prototypes/ 制品是否入摸查与处置标准(含 freeze 两文件迁 backend/scripts/);⑥ D2 与摸查输出的分工线。目标:D1-D2 完成后队友+其 coding agent 可直接协作开发。(已裁 2026-09-13 grill-with-docs 盘问:①AGENTS.md 单源+CLAUDE.md 薄壳[@AGENTS.md+Claude 专属节];②六件套 git mv docs/architecture/ 原名+preview/;③ARCHITECTURE.md=地图+指针,spec 仍权威;④中文;⑤prototypes 不入摸查,freeze 蓝本随 D1-d 入库;⑥摸查只出清单/结构类 D1-b~d 修/台账类归 D2。追加裁定:README 承项目说明;根 4 入口+docs/README.md 总索引二次跳转;工具落库=.claude/rules+skills 入库[mattpocock 全套+emilkowalski;scene-walkthrough-TODO 留盘单独 ignore;MCP 三件走 CONTRIBUTING 部署指令不建 .mcp.json;design-taste-frontend/i-have-adhd 标用户级自备不拷];P01 重复段按「两 preview 互为参考互补/同组件两套并存/拿不准停下问人」合并一段;AGENTS.md 简洁原则=开发规范必落实[docs 存放规则/核心代码风格/日志审计边界等],细节指针内化按需加载,拿不准问人)
   - **D1-c 写作规范(两套)**:人看文档=`.claude/rules/doc-style-human.md`(技术文档工程师铁律:30 字红线/禁词表/主动语态/自检;大纲先行流程内嵌「输出格式」节),与 doc-standards 十判据叠加(十判据管删留/单源,新规范管句法文风);agent 看文档=mattpocock writing-for-agents skill 方法学。
-  - **D1-d 一键就绪(原内容)**:全部模型/素材配置脚本化并实测一次(临时目录 clone 验证)——RAG 两模型 `uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3`(失败/超时切镜像 `HF_ENDPOINT=https://hf-mirror.com`;**`HF_HOME=D:\hf_cache` 显式设**,hf 默认进 C 盘且中文用户名有 sentencepiece 历史坑,或 `--local-dir` 直落 `backend/models/`)· CosyVoice venv 重建脚本(GPU torch 蓝本 `prototypes/tts-latency/freeze_gpu_blueprint.txt`+setuptools<81 坑+权重 5.3GB `models/voices/` gitignored)· SenseVoice 首用 ModelScope 拉 ~900MB(文档写清 `MODELSCOPE_CACHE` 落盘位)· Live2D `npm run l2d:fetch`(README 补可见性;CLAUDE.md §4 命令块同步)· 环境前提(Redis 6379/`HF_HOME`/`MODELSCOPE_CACHE` 系统变量/`.env` 从 example 复制)。
+  - **D1-d 一键就绪(原内容)**:全部模型/素材配置脚本化并实测一次(临时目录 clone 验证)——RAG 两模型 `uv run hf download BAAI/bge-m3 BAAI/bge-reranker-v2-m3`(失败/超时切镜像 `HF_ENDPOINT=https://hf-mirror.com`;**`HF_HOME=D:\hf_cache` 显式设**,hf 默认进 C 盘且中文用户名有 sentencepiece 历史坑,或 `--local-dir` 直落 `backend/models/`)· CosyVoice venv 重建脚本(GPU torch 蓝本 `prototypes/tts-latency/freeze_gpu_blueprint.txt`+setuptools<81 坑+权重 5.3GB `models/voices/` gitignored)· SenseVoice 首用 ModelScope 拉 ~900MB(文档写清 `MODELSCOPE_CACHE` 落盘位)· Live2D `npm run l2d:fetch`(README 补可见性;AGENTS.md §3 命令块同步)· 环境前提(Redis 6379/`HF_HOME`/`MODELSCOPE_CACHE` 系统变量/`.env` 从 example 复制)。
   - **验收标准**:文档分类规整(单根树+渐进式披露链成立);内容符合人的设计品味(逐份过人审精修);各配置安装脚本与散落环境配置(`.env.example` 等)收集完善;**按文档从零操作能正常部署并使用本项目**(临时目录 clone 实测全流程通过)。
 - [ ] **D2 交付批核对**(输入=D1-a 摸查问题清单):ADR 状态、PROGRESS 归档与文档地图刷新(现文档地图已过时:ADR 实有 5 篇仍写"首篇待首个编码期决策",头注日期停在旧值)。
 
@@ -56,5 +56,5 @@
 ## 4. 接力规程
 
 1. 收尾窗口(达成交接点):更新本文勾选与 §2 → 重写 `handoff.md` 为最新现状 → 一并 commit → 告知人可开新窗。
-2. 新窗口开工:读 CLAUDE.md → 本文 → handoff.md → 按本文 §0 工作方式继续当前步骤。
-3. 任何窗口发现本文与代码实况不符:以代码+git 为准,当场修正本文(文档 bug 处理同 CLAUDE.md 冲突解决)。
+2. 新窗口开工:读 CLAUDE.md(=AGENTS.md)→ 本文 → handoff.md → 按本文 §0 工作方式继续当前步骤。
+3. 任何窗口发现本文与代码实况不符:以代码+git 为准,当场修正本文(文档 bug 处理同 AGENTS.md 冲突解决)。

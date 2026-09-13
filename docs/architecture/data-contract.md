@@ -20,13 +20,13 @@
 | answer | string | ✓ | 回答文本,进生成上下文 |
 | category | string \| null | | 可选,评估分组用 |
 
-入库要求(无论队友格式为何):能映射到上表四字段 · id 唯一稳定 · UTF-8。语料格式与 embedding 无关:换模型由我方重跑 ingest,不影响交付。种子语料起草流程与文件路径单源=docs/option.md,格式同本表。
+入库要求(无论队友格式为何):能映射到上表四字段 · id 唯一稳定 · UTF-8。语料格式与 embedding 无关:换模型由我方重跑 ingest,不影响交付。种子语料起草流程与文件路径单源=docs/guides/option.md,格式同本表。
 
 [待回填] 队友实际格式说明与字段映射——格式说明与 50 条样本到手后填;若与建议格式一致,映射记"零"。
 
 ## 3. 测试用例字段
 
-jsonl,一行一条:`{"id": string, "query": string, "expect_ref_id": string}`——query 检索应命中 expect_ref_id 指向的语料条目。链路级用例不在此另定,复用 CLAUDE.md §8。
+jsonl,一行一条:`{"id": string, "query": string, "expect_ref_id": string}`——query 检索应命中 expect_ref_id 指向的语料条目。链路级用例不在此另定,复用 docs/tests/acceptance-v1.md §1 简单用例。
 
 ## 4. 样本回验(全量灌库之前,必经)
 
@@ -34,7 +34,7 @@ jsonl,一行一条:`{"id": string, "query": string, "expect_ref_id": string}`—
 
 1. ingest 零报错,id 无重复
 2. 样本内 question 检索 top-3 命中自身或同 category 的比例 ≥80%
-3. CLAUDE.md §8 answer 用例跑通,不因语料格式崩
+3. acceptance-v1 §1.1 answer 简单用例跑通,不因语料格式崩
 
 由我方执行(机器在本仓库),时机卡在队友全量产出之前。
 

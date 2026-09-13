@@ -1,6 +1,6 @@
 # PRD · RAG 全量语料接入 + bge-m3 换模型
 
-> 产品需求文档。描述「把队友全量心理咨询案例语料接入 RAG + 把 embedding 从 bge-small-zh-v1.5 换成 bge-m3」的需求、方案、测试口径。契约与字段定义单源=`docs/data-contract.md`;本 PRD 只写本新增对现有管线的**改动面**。
+> 产品需求文档。描述「把队友全量心理咨询案例语料接入 RAG + 把 embedding 从 bge-small-zh-v1.5 换成 bge-m3」的需求、方案、测试口径。契约与字段定义单源=`docs/architecture/data-contract.md`;本 PRD 只写本新增对现有管线的**改动面**。
 >
 > **完结注**:本 PRD 已执行完结;后续演进见 commit `f8ee2f0`(混合知识库分流)与 `5dfeea6`(RAG warm-up)。
 
