@@ -1,6 +1,6 @@
 # 心栖阁
 
-> **职能**:队友入口——项目是什么、怎么跑起来、去哪深入。环境细节=docs/guides/option.md · 协作=CONTRIBUTING.md · agent 规范=AGENTS.md · 架构=ARCHITECTURE.md · 文档索引=docs/README.md
+> **职能**:项目入口——项目是什么、怎么跑起来、去哪深入。环境细节=[docs/guides/option.md](docs/guides/option.md) · 协作=[CONTRIBUTING.md](CONTRIBUTING.md) · agent 规范=[AGENTS.md](AGENTS.md) · 架构=[ARCHITECTURE.md](ARCHITECTURE.md) · 文档索引=[docs/README.md](docs/README.md)
 
 ## 项目定位
 
@@ -26,13 +26,8 @@
 | 前端 | Vue3 + Vite + TypeScript |
 | 存储 | Redis(热/温层)· Chroma(知识库)· SQLite(冷层) |
 
-## 快速上手
+## 环境构建
 
-前提:Redis 在跑;`backend/.env.example` 复制出 `backend/.env` 并填密钥。
+从零到可用统一走 [docs/guides/option.md](docs/guides/option.md):前置检查 → Redis → 后端依赖与 .env → 前端 → 可选增强(RAG 知识库/Live2D 素材/语音栈)→ 启动与冒烟。
 
-```bash
-cd backend && uv sync && uv run hrp
-cd frontend && npm install && npm run dev
-```
-
-环境全步骤(模型下载/语音栈/sidecar)=docs/guides/option.md;日常开发命令=AGENTS.md §3。
+不做可选增强 = 文字三链路(crisis/answer/collect)可用,RAG 知识检索/语音/立绘缺省降级。日常开发命令=[AGENTS.md](AGENTS.md) §3。
