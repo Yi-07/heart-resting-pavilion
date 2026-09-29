@@ -6,6 +6,7 @@ set -euo pipefail
 
 input=$(cat)
 file=$(echo "$input" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+file="${file//\\//}"  # Windows 反斜杠路径归一为正斜杠:排除域匹配与反馈文件名显示都依赖
 
 [[ "$file" == *.md ]] || exit 0
 case "$file" in
@@ -14,7 +15,7 @@ esac
 [[ -f "$file" ]] || exit 0
 
 # 提取本次写入内容:Edit→new_string;Write→content
-content=$(echo "$input" | python -c "
+content=$(echo "$input" | PYTHONUTF8=1 python -c "
 import json,sys
 d=json.load(sys.stdin)
 t=d.get('tool_input',{})
@@ -22,7 +23,7 @@ sys.stdout.write(t.get('new_string') or t.get('content') or '')
 " 2>/dev/null)
 [[ -z "$content" ]] && exit 0
 
-CONTEXT="$(cd "$(dirname "$0")/../.." && pwd)/architecture/CONTEXT.md"
+CONTEXT="$(cd "$(dirname "$0")/../.." && pwd)/docs/architecture/CONTEXT.md"
 [[ -f "$CONTEXT" ]] || exit 0
 
 # 提取避用列:抓"避用:"行,去破折号注释与括号注,按 / 分词
@@ -41,7 +42,7 @@ while IFS= read -r w; do
 done <<< "$words"
 
 if [[ -n "$hits" ]]; then
-  echo "CONTEXT.md 避用词被引入(改用正词,查 architecture/CONTEXT.md):" >&2
+  echo "CONTEXT.md 避用词被引入(改用正词,查 docs/architecture/CONTEXT.md):" >&2
   echo "$hits" >&2
   exit 2
 fi

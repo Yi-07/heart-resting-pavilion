@@ -167,7 +167,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 
 ```python
 # llm/provider.py —— OpenAI 兼容统一入口
-# DeepSeek: base_url=https://api.deepseek.com, model=deepseek-v4-flash
+# DeepSeek: base_url=https://api.deepseek.com, model=deepseek-flash
 # Ollama:   base_url=http://localhost:11434/v1, model=qwen3:8b(示例)
 # 由 config.py 切换;R3 配置 UI 后续接管
 ```
