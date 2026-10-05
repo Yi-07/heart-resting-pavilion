@@ -1,7 +1,7 @@
 # CosyVoice sidecar 独立 venv 的 pip freeze 全量清单(本机 GPU torch 实测环境导出)。
-# 用途:重建 sidecar venv 时的版本蓝本——按 docs/guides/option.md §6.1 流程装完后,
+# 用途:重建 sidecar venv 时的版本蓝本——按 docs/guides/option.md「TTS · CosyVoice 2」节流程装完后,
 #   与本清单核对关键包(torch/numpy/fastapi/onnxruntime)版本;不整文件 pip install -r。
-# 坑位说明:requirements 原始钉版+setuptools<81 构建约束+--index-strategy,见 option.md §6.1。
+# 坑位说明:requirements 原始钉版+setuptools<81 构建约束+--index-strategy,见 option.md「TTS · CosyVoice 2」节。
 absl-py==2.5.0
 aiofiles==23.2.1
 aiohappyeyeballs==2.7.1
