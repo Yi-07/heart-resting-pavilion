@@ -50,12 +50,12 @@
 
 ## 3. 文档冲突批(赢家已按 CLAUDE.md 冲突规则裁定,执行待点头)
 
-- [ ] 契约 §3.4 示例 mp3 → 实况 wav(实况赢;待核 format 字段消费面)
-- [ ] 契约 §9.1 `--verbose`:契约删或实现补(需裁)
-- [ ] backend-plan §2 tts 接口 `emotion_label`:方案删或实现补(需裁)
-- [ ] 契约 §9.3 事件名清单补全 6 个实况事件
+- [x] 契约 §3.4 示例 mp3 → 实况 wav(实况赢;待核 format 字段消费面——已核,前端仅日志取 format 不判内容,改例无害)。同批补 final 语义注记(实况每帧 final=true,前端不依赖该位)
+- [x] 契约 §9.1 `--verbose`:契约侧改实况——环境变量 `HRP_VERBOSE=1` → DEBUG(main.py setup_logger 实况)
+- [x] backend-plan §2 tts 接口 `emotion_label`:方案侧删(实况 zero-shot 固定音色,链路无 emotion 传参;情感标签属接口预留,见 spec L6)
 - [ ] replay「上次聊到 HH:MM」:ADR-005 §4 文案 vs 契约 §3.6 无时间字段,二选一(需裁)
-- [ ] station latest 404/generate 409 语义补进契约 §1
+- [x] station latest 404/generate 409 语义补进契约 §1
+- [x] 契约 §9.3 事件名清单补全——已执行(实况事件全量入列并声明与代码同步维护);原挂账「6 个」实为十余个
 - [ ] `round.ts:70-77` idle 收 text_delta 注释改「合法(mood_select 独立到达)」;`engine.py:56-59` docstring 并发措辞更新;`graph.py:255` refs 补元素类型;`config.py:131` AUDIO_INPUT_MAX_S 死常量删/注明
 
 ## 4. 留档不修(品味/低收益项)

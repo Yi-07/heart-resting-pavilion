@@ -1,4 +1,4 @@
-"""语料对象与加载(docs/data-contract.md §2:jsonl → 四字段)。"""
+"""语料对象与加载(docs/architecture/data-contract.md「语料 schema 与两库语义」:jsonl → 四字段)。"""
 
 import json
 from enum import Enum

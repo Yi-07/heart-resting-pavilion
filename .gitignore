@@ -29,5 +29,16 @@ frontend/public/vendor/
 # prototypes 临时区(原型迭代/调研笔记/截图,后期统一清理,整体不入库)
 prototypes/
 
+# 图表生产环境(uv venv+工具链,docs/diagrams/ 只收图表产物本体)
+docs/diagrams/workspace/
+
+# workspace 工作区(长任务过程产物,整体不入库;workspace1 为硬件实测区)
+workspace/
+workspace1/
+workspace2/
+temps/
+logs/
+workspaces/
+
 # 测试语音素材(安全红线 §7:音频绝不落库;B2 本地自备,路径见 handoff §2)
 backend/tests/voices/

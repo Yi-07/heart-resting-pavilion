@@ -1,4 +1,4 @@
-"""ingest 脚本:语料 jsonl → Chroma 混合知识库(docs/data-contract.md §5 机器归本项目)。
+"""ingest 脚本:语料 jsonl → Chroma 混合知识库(docs/architecture/data-contract.md「变更流程」机器归本项目)。
 
 用法(backend/ 下):
     uv run python -m app.rag.ingest                    # 重灌 case(全量)+ knowledge(种子) 两库
@@ -7,7 +7,7 @@
     uv run python -m app.rag.ingest --library knowledge # 只灌 knowledge 库
     uv run python -m app.rag.ingest 新案例.jsonl        # 用自定义 case 语料(覆盖 config.RAG_CORPUS_PATH)
 换模型(bge-small→bge-m3)后维度 512→1024,必须 --reset;全量语料单批超 chroma 上限,
-ingest 内已分批 upsert(engine._UPSERT_BATCH)。样本回验三判据见 docs/data-contract.md §4。
+ingest 内已分批 upsert(engine._UPSERT_BATCH)。检索质量验证见 docs/architecture/data-contract.md「入库与验证」。
 """
 
 import argparse

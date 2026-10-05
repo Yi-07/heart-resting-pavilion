@@ -1,9 +1,9 @@
-"""e2e3 用例 A·危机词表抽测(acceptance-v1 §4;A1 词表 33 条逐条真实句式)。
+"""e2e3 用例 A·危机词表抽测(acceptance-v1 §4;词表实况 26 核心+10 软逐条真实句式,以 gate.py 词表为准)。
 
-23 核心词变体 → 全部 hit=True:severity=1.0、WARN、matched 含词、to_hotline=True;
+26 核心词变体 → 全部 hit=True:severity=1.0、WARN、matched 含词、to_hotline=True;
 10 软词变体 → 单独不触发 crisis(hit=False,INFO,matched 含该词);
 医疗正用不误伤 + 5 条普通焦虑负样本(hit=False,matched=[])。
-命中行审计不含原文(红线 CLAUDE.md §7)。
+命中行审计不含原文(红线,AGENTS.md「安全红线」节)。
 跑法:backend 在跑 `uv run hrp`,然后 `uv run python tests/e2e/e2e3_a_wordlist.py`。
 """
 

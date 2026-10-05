@@ -26,7 +26,7 @@
 | `docs/task-kanbans/kanban-v1.md` | 跨会话执行看板(状态单源) | 活(带伤) | 勾选状态与 git log 一致(A1-C1 全 [x]);D2 括注半过时,见 P10 |
 | `docs/task-kanbans/handoff.md` | 交接现场快照 | 活(带伤) | 描述至 C1 完成,与 698b394 一致;行 30 字节损坏,见 P08 |
 | `docs/todos/backlog.md` | 遗留待办池单源 | 活 | C1 留档+看板迁入项在册;指向的文件:行抽查实存 |
-| `docs/reviews/c1-review.md` | C1 审查快照与销账 | 活 | §3 文档冲突批 7 项待执行(本文 §2 末对照) |
+| `docs/tests/reviews/c1-review.md` | C1 审查快照与销账 | 活 | §3 文档冲突批 7 项待执行(本文 §2 末对照) |
 | `docs/option.md` | 环境搭建操作手册(人做 0-5) | 活(带伤) | 进度勾选 0-4;步骤 4 模型陈述过时(P05)、路径失实(P06)、会话一断链(P07)、步骤 5 语音栈未勾而语音已落地 |
 | `docs/data-contract.md` | 队友数据集对接契约 | 活 | §2「[待回填] 队友实际格式」占位仍在=未回填,待队友 50 条样本;PROGRESS:33 状态一致 |
 | `docs/tasks-arrangement.md` | 里程碑/阶段排期(人看) | 活(带伤) | 第一阶段 08-23 已过无状态标注,见 P11 |

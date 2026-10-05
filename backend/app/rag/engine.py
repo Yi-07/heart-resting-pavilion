@@ -14,7 +14,7 @@
 - 查询侧 embedding 不拼指令前缀(bge-m3 为无前缀训练);文档侧同样不拼
 - 重排器加载失败 → 按 RRF 序直接截断返回(降级路径,记 WARN,不致命)
 - BM25 索引按库在 ingest 时失效、首次检索从对应 Chroma 回建
-- 换 embedding 模型 = 重跑 ingest,代码不动(docs/data-contract.md §5)
+- 换 embedding 模型 = 重跑 ingest,代码不动(docs/architecture/data-contract.md「入库与验证」)
 懒加载:重库(chroma/jieba/numpy/bm25/sentence-transformers)与模型/索引首次使用才
 import/进内存——模块顶部零重依赖(§5.6,启动零成本);Chroma 持久化 .rag_store/。
 """

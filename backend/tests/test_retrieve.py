@@ -1,6 +1,6 @@
 """retrieve 接缝钉测试(backend-plan §11):种子语料命中(id/question 稳定返回)、k 截断、双库隔离。
 
-真模型真 Chroma(bge-m3 + bge-reranker-v2-m3 本地 backend/models/,docs/data-contract.md §4 回验判据 2);
+真模型真 Chroma(bge-m3 + bge-reranker-v2-m3 本地 backend/models/,docs/architecture/data-contract.md「入库与验证」);
 session 级 fixture 只灌一次库。测试用独立种子夹具(rag_retrieve_test_seeds.jsonl,科普库),
 与生产案例语料分离;另以合成 case Ref 验证案例库独立 + 两库隔离路由。
 """
