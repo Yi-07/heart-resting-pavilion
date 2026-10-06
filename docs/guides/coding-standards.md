@@ -55,7 +55,7 @@
 
 ## Gotchas
 
-- `--reload` 热重载开发必须配 `TTS_SIDECAR_KILL_ON_EXIT=0`，否则改一行代码陪杀 sidecar，模型重载分钟级。
+- `--reload` 热重载开发必须配 `TTS_SIDECAR_KILL_ON_EXIT=0`：热重载重启后端进程时，退出钩子会连同杀掉 TTS sidecar；sidecar 一停，CosyVoice 模型要重新加载（分钟级）。设 0 后退出不杀 sidecar，模型常驻。
 - sidecar 版本握手：协议单源在 `sidecar_protocol.py`，`SIDECAR_VERSION` 不匹配时拒绝复用，拒绝静默沿用旧进程。
 - 模型缓存路径（HF_HOME/MODELSCOPE_CACHE）必须指向 ASCII 路径，中文用户名会让 sentencepiece 打不开文件。
 - Windows 下 Python 脚本的 stdin/stdout 显式 UTF-8（GBK 陷阱）：e2e 脚本头 reconfigure，脚本内中文输出防 UnicodeEncodeError。
