@@ -40,5 +40,8 @@ temps/
 logs/
 workspaces/
 
+# 个人开发工作产物
+docs/task-kanbans/yxw/
+
 # 测试语音素材(安全红线 §7:音频绝不落库;B2 本地自备,路径见 handoff §2)
 backend/tests/voices/
