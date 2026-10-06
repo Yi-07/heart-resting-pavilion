@@ -1,6 +1,7 @@
 # 第一版验收清单 acceptance-v1
 
 > **职能**:第一版交付的业务验收判据载体(看板 B1 建立,B2 依此执行);判据可 grep/可断言,不写主观感受。
+> **何时改**:ws-contract 帧序、spec 与 ADR 机制、backend-plan 模块接口变化时,本文对应判据同批改写。
 > **范围**:技术原型第一版,三链路(answer/collect/crisis)+ 语音 + 工具;达成「应对 80%+ 应用场景」即可交付。
 > **判据依据**:帧序/消息字段见 `docs/architecture/ws-contract.md`;路由/门控机制见 `docs/architecture/architecture-spec.md` 与 ADR-002/003;执行素材见 `backend/tests/e2e/`(跑法见 e2e_lib 头注)。
 > **指标基线**:帧序完整/无冻结/首包时长以 ADR-002/003 E2E 实测为准,本文只定「过/挂」线。

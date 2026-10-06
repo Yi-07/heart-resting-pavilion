@@ -2,7 +2,7 @@
 
 > 产品需求文档。描述「把队友全量心理咨询案例语料接入 RAG + 把 embedding 从 bge-small-zh-v1.5 换成 bge-m3」的需求、方案、测试判据。契约与字段定义唯一记录处见 [data-contract.md](../architecture/data-contract.md)；本 PRD 只写本新增对现有管线的**改动面**。
 >
-> **完结注**：本 PRD 已执行完结；后续演进见 git log（混合知识库分流与 RAG warm-up）。
+> **完结注**：本 PRD 已执行完结；后续演进见 git log（混合知识库分流与 RAG warm-up）。语料文件后经改名，现行清单见 [data-contract.md](../architecture/data-contract.md) §1（`rag_corpus.jsonl` 现名 `rag_case_corpus.jsonl`）。
 
 ## Problem Statement
 

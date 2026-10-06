@@ -83,7 +83,7 @@
 
 | 字段 | 类型 | 初始值 | 写入者 |
 |---|---|---|---|
-| turns | list[Turn](追加式) | [] | 网关（entry input 为 turns[0]）→ 轮次节点（问答追加） |
+| turns | `list[Turn]`（追加式） | [] | 网关（entry input 为 turns[0]）→ 轮次节点（问答追加） |
 | session_context | SessionContext | 记忆层快照 | 网关（entry），回合内不刷新 |
 
 辅助类型：`Turn={role:"user"|"assistant", text:str}` · `DegradeReason="too_short"|"off_topic"|"negative"` · `PendingQuestion={text:str, target_field:FieldKey}` · `SessionContext={history_summary:str|None, mood_recent:list[MoodKey], recent_turns:list[Turn]}`（温层摘要+冷层心情+热层轮次原话（ADR-001/005），来源为 memory/）

@@ -1,6 +1,5 @@
 # CONTRIBUTING
 
-> **写给谁**：人类队友。agent 队友的规范单源是 [AGENTS.md](AGENTS.md)（[CLAUDE.md](CLAUDE.md) 是其入口薄壳），本文不重复叙述。
 > **写什么**：从拿到仓库到改动合入 main，每一步做什么、按什么规范。
 > **何时读**：第一次上手通读一遍；某一步不确定时回查对应节。
 > 复杂任务（需求说不清、跨多模块、动契约）另有一条可选流程，见[「复杂任务的开发流程」](#5-复杂任务的开发流程可选)。
@@ -15,7 +14,7 @@
 
 每次改动聚焦单一主题。文档与代码同一提交批次改完。
 
-与 agent 协作的节奏：多步任务先记入看板再开工，当轮小修做完补记一笔；它每完成一步停下汇报，你确认后 commit。看板按人名、任务名两级文件夹组织，细则见 [docs/task-kanbans/yxw/dev-v1/kanban-v1.md](docs/task-kanbans/yxw/dev-v1/kanban-v1.md)「工作方式」节。
+多步任务的看板组织与交接规程见 [docs/README.md](docs/README.md)「执行状态」节。
 
 ## 3. 改动后验证
 
@@ -84,16 +83,13 @@ grilling 需求清晰化 → prototype 原型验证 → PRD 写作 → 架构对
 
 ## 7. 任务与状态
 
-- 执行状态（任务看板）：[docs/task-kanbans/yxw/dev-v1/kanban-v1.md](docs/task-kanbans/yxw/dev-v1/kanban-v1.md)，勾选即已完成并 commit。
+- 执行状态（任务看板）：[docs/task-kanbans/](docs/task-kanbans/)，组织与交接规程见 [docs/README.md](docs/README.md)「执行状态」节。
 - 任务待办池：[docs/todos/backlog.md](docs/todos/backlog.md)。
-- 会话间交接：交接快照与看板同文件夹同名配对（如 [dev-v1/handoff.md](docs/task-kanbans/yxw/dev-v1/handoff.md)），按 kanban 交接规程整篇重写。
-- agent 的派发与汇报纪律：见 [kanban-v1.md](docs/task-kanbans/yxw/dev-v1/kanban-v1.md)「工作方式」节。
 
 ## 8. 工程纪律
 
 - 验证不过不允许提交。
 - 每次改动要聚焦单一主题。
-- 文档与代码不得分离提交。
 - 严格监控 agent 的操作，不得轻易信任批准直接入库。注意保留人工检查点：验证自己跑、改动自己看、提交自己确认。
 
 安全红线（脱敏、危机审计、判定边界）细则单源见 [AGENTS.md](AGENTS.md)「安全红线」节，本文不重复叙述。

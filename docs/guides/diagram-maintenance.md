@@ -14,9 +14,9 @@ docs/diagrams/ 下每张图两个文件成对：`<名称>.html`（交互源，�
 
 ## 怎么更新
 
-1. 改 HTML 源（diagram-design skill 产物，节点边预算与样式判据以 skill 为准）。
+1. 改 HTML 源（diagram-design skill 产物，节点边预算与样式判据以 skill 为准，skill 在 `.claude/skills/diagram-design/`）。
 2. 跑导出：在 `docs/diagrams/workspace/` 下 `uv run python export_svgs.py`，成对刷新 SVG。
-3. 自检：`uv run python <skill 目录>/scripts/self_check.py <文件>`，两份都过再交付。
+3. 自检：`uv run python .claude/skills/diagram-design/scripts/self_check.py <文件>`，两份都过再交付。
 4. 视觉验证：浏览器打开改后 HTML，核对连线不穿节点、标签不压线、节点无重叠。
 
 ## 改动面速查

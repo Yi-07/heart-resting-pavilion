@@ -13,7 +13,7 @@
 
 ## 图表（docs/diagrams/）
 
-收录架构图表，diagram-design skill 生成，HTML 源与 SVG 导出成对入库（生产环境 workspace/ 不入库）。
+收录架构图表，diagram-design skill 生成（`.claude/skills/diagram-design/`），HTML 源与 SVG 导出成对入库（生产环境 workspace/ 不入库）。
 
 - [architecture-overview](diagrams/architecture-overview.html)：架构总览（组件与数据流走向），被 [ARCHITECTURE.md](../ARCHITECTURE.md) 引用。
 - [session-lifecycle](diagrams/session-lifecycle.html)：一次会话生命周期时序。
@@ -23,7 +23,8 @@
 
 收录架构决策记录。命名 `NNN-slug.md`，三位顺序编号接续现有最大号。
 
-- 何时写：三条全占才写一篇——决策落地后难以调头；事后会追问当初为什么这么定；方案之间存在真实取舍。占不满的，记入 [ARCHITECTURE_PROGRESS.md](architecture/ARCHITECTURE_PROGRESS.md) 决策台账。
+- 何时写：三条全占才写一篇——决策实施后难以调头；事后会追问当初为什么这么定；方案之间存在真实取舍。占不满的，记入 [ARCHITECTURE_PROGRESS.md](architecture/ARCHITECTURE_PROGRESS.md) 决策台账。
+- 决策被取代或修订时，改对应 ADR 的状态行并回写受影响的权威文档，同一提交批次。
 - 各篇一句话索引在根目录 [ARCHITECTURE.md](../ARCHITECTURE.md)，本文不重复。
 
 ## 指南与规范（docs/guides/）
@@ -41,15 +42,15 @@
 收录验收判据与审查留档。
 
 - [acceptance-v1.md](tests/acceptance-v1.md)：第一版交付验收判据，话术与判据以此为准。
-- reviews/：代码审查与文档摸查的留档，一次审查留一份（如 [reviews/c1-review.md](tests/reviews/c1-review.md)）。
+- reviews/：代码审查与文档摸查的留档，一次审查留一份（如 [reviews/c1-review.md](tests/reviews/c1-review.md)）。审查档随任务销账，任务完结即清理，结论归 git log。
 - 命名：验收判据用 `acceptance-v<版本号>.md`；审查留档用任务号加类型。
 
 ## 执行状态（docs/task-kanbans/ · docs/todos/）
 
 收录任务执行现场：做到哪一步、还欠什么。
 
-- task-kanbans/：跨会话执行看板与会话交接快照，按人名、任务名两级文件夹组织，每任务一份看板与一份交接快照，同名配对。现行任务：[yxw/dev-v1/kanban-v1.md](task-kanbans/yxw/dev-v1/kanban-v1.md)。
-- todos/：待办与问题存放点，常驻文件用职能名（[backlog.md](todos/backlog.md)、[tasks-arrangement.md](todos/tasks-arrangement.md)），一次性记录用日期前缀（[20260917-questions.md](todos/20260917-questions.md)）。
+- task-kanbans/：跨会话执行看板与会话交接快照，按人名、任务名两级文件夹组织，每条任务线一份看板与一份交接快照，同名配对，线与线不共用。现有任务线看目录内各级文件夹。
+- todos/：待办与问题存放点，常驻文件用职能名（[backlog.md](todos/backlog.md)、[tasks-arrangement.md](todos/tasks-arrangement.md)），一次性记录用日期前缀（[20260917-questions.md](todos/20260917-questions.md)）。一次性记录事件完结即归档或删除，结论归 git。
 
 ## 需求（docs/prds/）
 
