@@ -59,7 +59,7 @@
 
 - [ ] Redis compose 启动方案（docker-compose.yml：service hrp-redis、image redis:7-alpine、端口 6379、restart unless-stopped；起草后人审，替换 option.md「Redis」节裸 docker run）
 - [ ] 临时目录 clone 实测：按 docs/guides/option.md 全流程从零走一遍（环境构建前自查、后端、前端、模型下载、启动），验证命令可照抄；模型 4.3GB 下载需本机执行；发现文档失真即回修
-- [ ] data-contract 回填（科普库接线）：案例库已接入（14944 条）；科普库 1022 条已交付**未接线**——config 灌库源仍指 `rag_knowledge_corpus.jsonl`（15 条种子），接线动作（config 改指 `knowledge_generated.jsonl` + 重灌 knowledge 库 + 新文件入 git）待执行；现行种子与检索钉测夹具 `rag_retrieve_test_seeds.jsonl` 内容相同，归并方式随灌库一并定。契约侧已按实况改写（[data-contract.md](../architecture/data-contract.md) §1 两行分列+接线警示）
+- [x] data-contract 回填（科普库接线）：config 灌库源已指 `rag_knowledge_corpus.jsonl`（1022 条科普语料），knowledge 库已 `--reset` 重灌并过钉测+全量 pytest；种子归并定为整库退役（钉测夹具 `rag_retrieve_test_seeds.jsonl` 留作测试专用）。案例库语料改名 `rag_case_corpus.jsonl`（内容逐字节不变，case 库免重灌）。契约 §1 已并回两行。
 
 ## 5. 二期
 

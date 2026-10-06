@@ -42,11 +42,11 @@ CLASSIFIER_LLM_MIN_CONF = 0.6
 
 # ---- RAG ----
 
-RAG_CORPUS_PATH = os.path.join(_BACKEND_DIR, "data", "rag_corpus.jsonl")
+RAG_CORPUS_PATH = os.path.join(_BACKEND_DIR, "data", "rag_case_corpus.jsonl")
 """案例库语料 jsonl(question=来访者问题,answer=治疗思路)"""
 
 RAG_KNOWLEDGE_CORPUS_PATH = os.path.join(_BACKEND_DIR, "data", "rag_knowledge_corpus.jsonl")
-"""科普知识库语料 jsonl(question=知识问,answer=科普答;当前=15 条种子垫底)"""
+"""科普知识库语料 jsonl(question=知识问,answer=科普答;1022 条队友交付)"""
 
 RAG_STORE_PATH = os.path.join(_BACKEND_DIR, ".rag_store")
 """Chroma 持久化目录(运行时产物,不入 git;内分 hrp_kb_knowledge / hrp_kb_case 两集合)"""

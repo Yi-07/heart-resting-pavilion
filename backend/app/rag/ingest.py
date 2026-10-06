@@ -1,7 +1,7 @@
 """ingest 脚本:语料 jsonl → Chroma 混合知识库(docs/architecture/data-contract.md「变更流程」机器归本项目)。
 
 用法(backend/ 下):
-    uv run python -m app.rag.ingest                    # 重灌 case(全量)+ knowledge(种子) 两库
+    uv run python -m app.rag.ingest                    # 重灌 case(全量)+ knowledge 两库
     uv run python -m app.rag.ingest --reset            # 清空两库重建(--reset 必须,换模型/维度时)
     uv run python -m app.rag.ingest --library case     # 只灌 case 库
     uv run python -m app.rag.ingest --library knowledge # 只灌 knowledge 库

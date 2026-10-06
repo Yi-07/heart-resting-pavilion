@@ -6,14 +6,11 @@
 
 | 资产 | 位置 | 条数 | 来源 | 角色 |
 |---|---|---|---|---|
-| 案例库语料 | `backend/data/rag_corpus.jsonl` | 14944 | 队友交付（`dataset/all_base.md` 经翻译层压平，一次性脚本已删） | ingest 灌 `hrp_kb_case`，collect/station 用 |
-| 科普知识库语料（已交付，未接线） | `backend/data/knowledge_generated.jsonl` | 1022 | 队友交付 | 待接线：config 灌库源改指本文件并重灌后，ingest 灌 `hrp_kb_knowledge`，answer 直答用。**接线前灌库实况见下行** |
-| 科普知识库现行灌库源 | `backend/data/rag_knowledge_corpus.jsonl` | 15 | 初版自建种子 | 接线前 ingest 实际读取的路径（`backend/app/config.py` `RAG_KNOWLEDGE_CORPUS_PATH`）；知识库实况 15 条 |
-| 检索钉测夹具 | `backend/data/rag_retrieve_test_seeds.jsonl` | 15 | 初版自建种子 | 仅 [test_retrieve.py](../../backend/tests/test_retrieve.py) 灌测试库，与生产语料分离。内容与现行灌库源种子相同，归并方式待定（见 backlog） |
+| 案例库语料 | `backend/data/rag_case_corpus.jsonl` | 14944 | 队友交付（`dataset/all_base.md` 经翻译层压平，一次性脚本已删） | ingest 灌 `hrp_kb_case`，collect/station 用 |
+| 科普知识库语料 | `backend/data/rag_knowledge_corpus.jsonl` | 1022 | 队友交付 | ingest 灌 `hrp_kb_knowledge`，answer 直答用 |
+| 检索钉测夹具 | `backend/data/rag_retrieve_test_seeds.jsonl` | 15 | 初版自建种子 | 仅 [test_retrieve.py](../../backend/tests/test_retrieve.py) 灌测试库，与生产语料分离 |
 
 Chroma 向量库 `backend/.rag_store/` 是运行时产物：不入 git，clone 后首次必跑灌库；两 collection 各自对应一个语料文件，条数以灌库实况为准。灌库命令与模型下载细则唯一记录处见 [option.md](../guides/option.md)「RAG 检索模型与灌库」，不在此复制。
-
-> ⚠️ 接线现状：科普库 1022 条新语料尚未接线（config 灌库源仍指 15 条种子），知识库 Chroma 实况 15 条；接线操作（config 改指+重灌+新文件入 git）未执行，接线后本表两行并回一行。语料交付与接线动作的状态登记见 `docs/todos/backlog.md`。
 
 ## 2. 语料 schema 与两库语义
 
