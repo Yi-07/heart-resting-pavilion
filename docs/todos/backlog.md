@@ -29,6 +29,7 @@
 - [ ] 0.85 信念阈值测试档无运行时接线（spec「formulation schema（Beck 认知概念化）」表注留口未通）——标注或接线二选一
 - [ ] `agents/graph.py` `_analysis` `refs: list = []` 补元素类型注
 - [ ] `config.py` `AUDIO_INPUT_MAX_S` 死常量（15s 属前端约束）——删或注明归属
+- [ ] `main.py` 启动类日志约 10 处用「事件名 · 中文描述」内嵌风格，与 coding-standards「事件名即消息本体、业务字段走 bind kwargs」不符——收编为统一风格
 - [ ] `router/classifier.py` LLM 判 answer 恒不检索、needs_rag 形同虚设（与 spec「L3 · 智能路由决策器」原意关系待核）——若有意成本门控，改 docstring 说破
 
 ## 2. 裁定残项（待人拍板/已裁定留档）
