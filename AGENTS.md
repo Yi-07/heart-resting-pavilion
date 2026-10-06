@@ -24,12 +24,12 @@
 命令单源是 `backend/pyproject.toml` 与 `frontend/package.json`；模型与环境变量单源是 `backend/.env.example`。
 
 ```bash
-uv run hrp    # 后端启动(backend/ 目录):默认 127.0.0.1:8000;--reload 热重载开发须配 TTS_SIDECAR_KILL_ON_EXIT=0
-uv run ruff check app && uv run mypy app && uv run pytest    # 后端验证
-uv run python -m app.rag.ingest    # 语料 jsonl 变更后重灌;--reset 清空重建,换模型或维度必须
-uv run python -m app.voice.fillers    # 预生成等待语音;换音色后删 data/fillers/ 重跑
-npm run dev    # 前端开发(frontend/ 目录)
-npm run type-check && npm run lint && npm run test:unit    # 前端验证;lint 自动改源文件
+uv run hrp    # 后端启动（backend/ 目录，uv）：默认 127.0.0.1:8000；--reload 热重载开发须配 TTS_SIDECAR_KILL_ON_EXIT=0
+uv run ruff check app && uv run mypy app && uv run pytest    # 检查、类型检查、测试
+uv run python -m app.rag.ingest    # 语料 jsonl 变更后重灌；--reset 清空重建，换模型或维度必须
+uv run python -m app.voice.fillers    # 预生成等待语音，幂等；换音色后删 data/fillers/ 重跑
+npm run dev    # 前端开发（frontend/ 目录）
+npm run type-check && npm run lint && npm run test:unit    # 前端验证；lint 带 --fix，自动改源文件
 ```
 
 ## 安全红线
