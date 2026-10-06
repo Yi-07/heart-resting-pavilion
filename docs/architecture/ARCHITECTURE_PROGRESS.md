@@ -30,7 +30,7 @@
 | 答辩溯源（`docs/references.md`） | 评审场景 | ✓ |
 | 决策记录（`docs/adr/NNN-标题.md`） | 架构级决策发生 | ✓ 实有 5 篇（001-005） |
 | 业务验收清单（`docs/tests/acceptance-v1.md`） | 第一版交付验收（B1 产出） | ✓ |
-| 数据契约（`docs/architecture/data-contract.md`） | 数据生产者≠消费者 | ✓ 案例库已接入（14944 条）；科普库 1022 条已交付未接线（契约 §1 有警示） |
+| 数据契约（`docs/architecture/data-contract.md`） | 数据生产者≠消费者 | ✓ 案例库已接入（14944 条）；科普库已接线（1022 条，.rag_store 双集合） |
 | 执行状态（kanban+handoff / backlog） | agent 跨会话 | ✓ |
 | 审查快照（docs/tests/reviews/） | 审查/摸查发生 | ✓ 3 份 |
 | 研究记录（docs/research/ 下 *-research-*.md） | 专题调研发生 | 已清理（3465b01/995eeae），触发再建 |

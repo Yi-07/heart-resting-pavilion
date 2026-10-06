@@ -40,12 +40,12 @@
 
 ### 过时注记（清理，非补做）
 
-- [ARCHITECTURE_PROGRESS.md](../architecture/ARCHITECTURE_PROGRESS.md)「科普库 1022 条已交付未接线」：commit 42eb184 已接线（.rag_store 双 collection，14944+1022），审计批晚于接线落笔。
+- [x] [ARCHITECTURE_PROGRESS.md](../architecture/ARCHITECTURE_PROGRESS.md)「科普库 1022 条已交付未接线」：已修——地图行更新为「科普库已接线（1022 条，.rag_store 双集合）」。
 - `frontend/src/App.vue` 与 `frontend/src/l2d/placeholder.ts` 头注「Live2D/语音留位（步骤 7/8）」：两者均已实现，注释滞后。
 - [backend-plan.md](../architecture/backend-plan.md)「R3 配置 UI 后续接管」：LLM 配置 UI 已实现；ASR/TTS 未配部分归本档「设计已有、实现未做」。
-- `backend/scripts/freeze_sidecar_rollback.txt` 头注引 option.md「6.1」已废节号（commit 46b1dbf 修了 freeze_gpu_blueprint.txt 同款引用，此文件漏改），对应现节为「TTS · CosyVoice 2」。
+- [x] `backend/scripts/freeze_sidecar_rollback.txt` 头注引 option.md「6.1」已废节号：已修——改「TTS · CosyVoice 2」节名。
 - [d1a-survey.md](../tests/reviews/d1a-survey.md) 快照 P13/P14/P18 已随后续批次修复未标销；同档 P16（frontend/README 零定制）仍真欠，见下「文档欠账」。
-- `workspace/README.md` 调研报告清单 3 份标「进行中」，与 workspace/HANDOFF「前置轮全部完结」矛盾，清单未刷。
+- `workspace/README.md` 调研报告清单 3 份标「进行中」，与 workspace/HANDOFF「前置轮全部完结」矛盾，清单未刷。（workspace/ 将整目录删除，随删自消）
 - `prototypes/README.md` 启动命令过时（旧 uvicorn 直启命令，现行 `uv run hrp`），且「后期统一清理」的临时区声明未兑现（.gitignore 同注）。
 
 ### 文档欠账（待补写）
@@ -89,8 +89,8 @@
 - backlog「裁定残项」：两条待拍板（「生不如死」分档、mood_select 回写）。
 - backlog「原 kanban 待办池迁入」：9 条全开放；「等待体验补全」与本档「设计已有、实现未做」首条同源。
 - backlog「D1-d 后置项」：推远程后两项（Redis compose 起草人审、临时目录 clone 全流程实测）；option.md Redis 节现仍为裸 docker run。
-- workspace/HANDOFF：skill 执行轮八项中①（doc-standards 重裁）②（coding-standards 补全）已随 commit 合入，⑤doc-style-human 处置、⑥W6 标点体例、⑦taste-profile 入册、⑧workspace/ 清理仍欠。
-- 未 commit 差异：git status 实况 5 个文件（AGENTS.md、CONTRIBUTING.md、docs/README.md、docs/guides/coding-standards.md、docs/todos/backlog.md）；workspace/HANDOFF 清单只登记前 3 个，收口时补记后 2 个。
+- workspace/HANDOFF：skill 执行轮八项中①②③④⑤⑥⑦已随 commit 合入，⑧workspace/ 清理进行中（HANDOFF 已写终态，整目录删除待执行）。
+- 未 commit 差异：git status 实况已收口——e62d6ae（coding-standards 补全+backlog 挂账）、f31b7c4（CONTRIBUTING §6 重写）、后续 doc-style-human 删除与 W6 标点统一批次按 workspace/HANDOFF 终态安排。
 - 推远程：origin 已配置，本地领先多笔，推不推由人定。
 - 看板 blackboard-v1（gitignored 活看板）：P1 四子项（素材目录、ws 契约草案、渲染器 asset 层、静态原型）与 P2/P3 未完；「语料关系分析」脚本 `docs/task-kanbans/yxw/blackboard-v1/scripts/corpus_cluster.py` 已存在而报告 corpus-analysis.md 未落，状态待核。
 - workspace2/3 残留：backend/.env 的 DEEPSEEK_MODEL 旧名与尾随空格处置待裁定；TTS RTF Round 2（provider 核验、实测、报告终稿）未做，且 workspace2 善后记录与 workspace3 前置「手动换 ort-gpu」存在跨线漂移，先核实现状。

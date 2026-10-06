@@ -37,6 +37,9 @@
 
 - [ ] `router/gate.py`「生不如死」归软档（0.4 单独不触危机）偏宽——内测词表抽测时复核分档
 - [ ] mood_select 是否回写 `formulation.emotion`（spec「L3 · 智能路由决策器」标签优先级链语义；裁定前不动行为）
+- [ ] `docs/todos/tasks-arrangement.md` 阶段完成状态行未补（第一阶段日期已过无标注）——头注补「阶段完成状态以对应看板为准」或直接归档，二选一（audit-5b 缺口 4）
+- [ ] `docs/references.md` 头注缺触发条款——补「采纳新开源参考或理论时登记于此，并与 Inspiration「其他灵感来源」表对齐」（audit-5b 缺口 6）
+- [ ] `docs/prds/rag-full-corpus-bge-m3.md` 三处现状陈述已被后续 commit 取代（语料接入后的行数/集合名等）——完结档处置：改时点陈述或整档归档，二选一（audit-5b 缺口 10）
 - [x] ~~Memory() 构造异常可泄连接串~~ **已裁定留档不修**：触发组合为自设密码+URL 写错（原型默认无凭证不触发）；将来修时只堵泄密（记 scheme/host）保 fail-fast 语义
 - [x] ~~station/admin 无鉴权~~ **已裁定补 spec 决策句**：backend-plan「模块职责表」鉴权决策段已写入（原型期不鉴权是有意取舍，127.0.0.1+CORS 缓解，暴露前加信物）
 - 文档冲突批（契约示例/事件名清单/`--verbose`/tts emotion_label/replay 时间戳等）不在此池，处置与裁定见 [c1-review.md](../tests/reviews/c1-review.md)「文档冲突批」节。

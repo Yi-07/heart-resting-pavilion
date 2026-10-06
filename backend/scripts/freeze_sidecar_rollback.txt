@@ -1,6 +1,6 @@
 # TTS sidecar 回滚版本参照清单(sidecar 历史可用环境的 pip freeze 导出)。
 # 用途:sidecar 升级后异常需回滚时,对照本清单恢复关键包版本;不整文件 pip install -r。
-# 重建流程与坑位说明 = docs/guides/option.md §6.1;现行蓝本 = freeze_gpu_blueprint.txt。
+# 重建流程与坑位说明 = docs/guides/option.md「TTS · CosyVoice 2」节;现行蓝本 = freeze_gpu_blueprint.txt。
 absl-py==2.5.0
 aiofiles==23.2.1
 aiohappyeyeballs==2.7.1
