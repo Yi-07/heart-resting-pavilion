@@ -24,7 +24,7 @@
 |---|---|---|
 | 后端代码 | `uv run ruff check app`、`uv run mypy app`、`uv run pytest` | ruff 零输出；mypy 零错误；pytest 全过 |
 | 前端代码 | `npm run type-check`、`npm run lint`、`npm run test:unit` | type-check 零错误；lint 零错误；test:unit 全过 |
-| 文档 | doc-standards skill 十判据自查 | 避用词 grep 零命中 |
+| 文档 | doc-standards skill 判据表自查 | 避用词 grep 零命中 |
 
 > [!tip]
 >
@@ -74,12 +74,7 @@ grilling 需求清晰化 → prototype 原型验证 → PRD 写作 → 架构对
 
 ## 6. 文档贡献
 
-按读者选写作规范，写完按 doc-standards skill 十判据自查：
-
-- 给人看的文档：先读 [.claude/rules/doc-style-human.md](.claude/rules/doc-style-human.md)。
-- agent 看的文档：按 writing-for-agents skill 写。
-
-新文档放哪、入树规则，见 [docs/README.md](docs/README.md)。
+写、改、审文档统一走 doc-standards skill：面向人的文档它会带你过表达三问（想传达什么、给谁、如何传达），面向 agent 的文档会走判据表；收尾统一 grep 验证。新文档放哪、入树规则，见 [docs/README.md](docs/README.md)。
 
 ## 7. 任务与状态
 
