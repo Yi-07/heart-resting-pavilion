@@ -31,3 +31,6 @@ prototypes/
 
 # 测试语音素材(安全红线 §7:音频绝不落库;B2 本地自备,路径见 handoff §2)
 backend/tests/voices/
+
+# GPT-SoVITS 第三方仓库(独立打包交付给协作方,不入本仓版本库)
+GPT-SoVITS/

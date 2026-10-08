@@ -5,6 +5,7 @@ POST /asr/transcribe:base64 webm/opus → SenseVoice 转写文本,前端回填�
 - 200 + {text}:转写成功,含空串="没听到"(前端 toast 不动 draft)
 - 413:超字节护栏;503:转写不可用(模型未加载/异常)
 - 音频转写后即弃不落存储(红线 §7);日志只记长度+指纹,事件名与网关时代一致
+ASR_MODE=remote 时经 HTTP 调远程 ASR Service;local 时本地 funasr 推理。
 """
 
 from __future__ import annotations

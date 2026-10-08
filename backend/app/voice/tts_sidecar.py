@@ -122,6 +122,8 @@ def _patch_load_wav() -> None:
 def _load_model() -> None:
     try:
         sys.path.insert(0, str(REPO))
+        # matcha lives in CosyVoice/third_party/Matcha-TTS, not at repo root
+        sys.path.insert(0, str(REPO / "third_party" / "Matcha-TTS"))
         _patch_load_wav()
         from cosyvoice.cli.cosyvoice import CosyVoice2
 

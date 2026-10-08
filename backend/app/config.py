@@ -133,3 +133,55 @@ AUDIO_INPUT_MAX_S = 15.0
 
 FILLERS_DIR = os.path.join(_BACKEND_DIR, "data", "fillers")
 """预生成等待语音目录(运行时直读零合成;gitignored)"""
+
+# ---- 远程服务模式(phase 1: TTS remote) ----
+
+TTS_MODE = os.getenv("TTS_MODE", "remote")
+"""TTS 运行模式: local = sidecar 子进程(原模式); remote = HTTP 远程服务"""
+
+TTS_SERVICE_URL = os.getenv("TTS_SERVICE_URL", "http://localhost:9001")
+"""远程 TTS Service 地址(remote 模式)"""
+
+TTS_SERVICE_TIMEOUT_S = float(os.getenv("TTS_SERVICE_TIMEOUT_S", "600"))
+"""远程 TTS 合成超时(秒);含首包+全部 chunk"""
+
+TTS_ANSWER_VOICE = os.getenv("TTS_ANSWER_VOICE", "1") not in ("0", "false", "no")
+"""answer 路由是否同时流式出语音。默认开:句子泵让首句音频不必等 LLM 全文生成完。
+
+关掉 = 只走文字流(调试语音链路、或想对比"有无语音"的体感差异时用)。
+其余路由(crisis 安抚语 / collect / 总结 / fillers)不受此开关影响。
+"""
+
+SERVICE_AUTH_TOKEN = os.getenv("SERVICE_AUTH_TOKEN", "")
+"""远程服务共享认证 token(Bearer header);空=跳过验证(开发环境)"""
+
+# ---- 远程服务模式(phase 2: ASR remote) ----
+
+ASR_MODE = os.getenv("ASR_MODE", "remote")
+"""ASR 运行模式: local = funasr 本地推理(原模式); remote = HTTP 远程服务"""
+
+ASR_SERVICE_URL = os.getenv("ASR_SERVICE_URL", "http://localhost:9002")
+"""远程 ASR Service 地址(remote 模式)"""
+
+ASR_SERVICE_TIMEOUT_S = float(os.getenv("ASR_SERVICE_TIMEOUT_S", "30"))
+"""远程 ASR 转写超时(秒)"""
+
+# ---- 远程服务模式(phase 3: RAG remote) ----
+
+RAG_MODE = os.getenv("RAG_MODE", "remote")
+"""RAG 运行模式: local = Chroma+BM25+reranker 本地推理(原模式); remote = HTTP 远程服务"""
+
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:9003")
+"""远程 RAG Service 地址(remote 模式)"""
+
+RAG_SERVICE_TIMEOUT_S = float(os.getenv("RAG_SERVICE_TIMEOUT_S", "10"))
+"""远程 RAG 检索超时(秒)"""
+
+
+TTS_FIRST_SENTENCE_HANZI = int(os.getenv("TTS_FIRST_SENTENCE_HANZI", "12"))
+"""首句字数上限(仅 answer 语音链路的第一句生效,后续句子仍按 30 字)。
+
+流水线 TTFB ≈ 首句字数 × LLM 每字耗时 + 服务侧首块耗时,首句是唯一的调节旋钮:
+实测首句 4 字 -> TTFB 0.72s;24 字 -> 3.14s;31 字 -> 4.29s。
+调小换取更快出声与更高的音文交错率,代价是首句语气更碎。
+"""
