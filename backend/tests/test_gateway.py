@@ -7,8 +7,10 @@
 
 import asyncio
 import json
+from collections.abc import Iterator
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import config
@@ -19,6 +21,31 @@ from app.main import app
 from app.rag.corpus import RagLibrary, Ref
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _no_answer_voice(monkeypatch):
+    """本文件的用例测的是帧序/黑板/seq/危机,不是语音。
+
+    两件事都要钉死,否则测试结果取决于"这台机器上 TTS 服务开没开":
+      1. 关掉 answer 语音 —— 它并发跑 TTS,给事件循环加负载;
+         batched_chunks 的攒批窗口是 100ms 墙钟,负载一变批次切分就变,
+         而这些用例断言精确帧数,会变成时序脆弱的测试。
+      2. TTS 桩成"不产出任何音频" —— 危机路径本来就会调 TTS,
+         真服务在跑时会多出 audio_chunk 帧,把帧序断言打乱。
+
+    语音链路本身由 tests/test_ws_streaming_e2e.py 覆盖(真服务 + 真 HTTP),
+    需要音频帧的用例自己覆写这个桩(见 test_crisis_speaks_hotline)。
+    """
+    monkeypatch.setattr(config, "TTS_ANSWER_VOICE", False)
+    monkeypatch.setattr(
+        "app.voice.tts.synthesize_stream",
+        lambda text, **kw: iter(()),
+    )
+
+
+def _silent_stream(text: str, **kw: Any) -> Iterator[bytes]:
+    return iter((b"WAVSTUB",))
 
 
 def _recv(ws: Any) -> dict:
@@ -203,7 +230,9 @@ def test_crisis_speaks_hotline(monkeypatch):
     import base64 as b64mod
 
     monkeypatch.setattr(
-        "app.voice.tts.synthesize_stream", lambda text: iter((b"WAVDATA",))
+        # 收 request_id:_speak_stream 现在会带上回合 id(为了能穿透打断到服务)
+        "app.voice.tts.synthesize_stream",
+        lambda text, **kw: iter((b"WAVDATA",)),
     )
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "我不想活了")

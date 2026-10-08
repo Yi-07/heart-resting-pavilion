@@ -21,7 +21,7 @@ from app.schema import (
     StageMapData,
 )
 
-WS_CONTRACT = Path(__file__).resolve().parents[2] / "architecture" / "ws-contract.md"
+WS_CONTRACT = Path(__file__).resolve().parents[2] / "docs" / "architecture" / "ws-contract.md"
 
 S2C_TYPES = frozenset({"first_frame", "draw", "text_delta", "audio_chunk", "done", "replay", "error"})
 CS_TYPES = frozenset({"user_input", "mood_select"})
