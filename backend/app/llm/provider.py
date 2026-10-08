@@ -16,7 +16,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, ValidationError
 
-from app import config
+from app import config, diag
 
 MessageRole = Literal["system", "user", "assistant"]
 
@@ -67,17 +67,38 @@ class OpenAICompatProvider:
         return resp.choices[0].message.content or ""
 
     async def stream(self, messages: list[Message]) -> AsyncIterator[str]:
+        # 注意:stream 是 async generator function,调用它只创建 generator 对象,
+        # 下面的 create() 要到第一次 __anext__ 才真正执行 —— 所以「LLM 请求发出」
+        # 的时刻是消费端的第一次迭代,不是调用 stream() 的时刻。
+        n = 0
         try:
+            diag.mark(
+                "llm_create_begin",
+                model=self.model,
+                n_msgs=len(messages),
+                # 实际发给服务端的 kwargs 就这三个 —— 没有 max_tokens /
+                # temperature / thinking / reasoning 任何一个
+                sent_kwargs=["model", "messages", "stream"],
+            )
             raw = await self._client.chat.completions.create(
                 model=self.model, messages=_oai_messages(messages), stream=True
             )
+            # create(stream=True) 返回 = HTTP 响应头已到(SSE 已建立)
+            diag.mark("llm_headers")
             async for chunk in raw:
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta.content
                 if delta:
+                    n += 1
+                    if n == 1:
+                        diag.mark("llm_token_1", size=len(delta), head=delta[:12])
+                    elif n == 2:
+                        diag.mark("llm_token_2", size=len(delta))
                     yield delta
+            diag.mark("llm_stream_end", n_chunks=n)
         except Exception as exc:
+            diag.mark("llm_stream_error", n_chunks=n, detail=str(exc)[:80])
             raise LLMError(f"stream 调用失败: {exc}") from exc
 
     async def chat_json(self, messages: list[Message], schema: type[T]) -> T:
