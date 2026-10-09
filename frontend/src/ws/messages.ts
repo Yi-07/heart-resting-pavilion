@@ -4,8 +4,8 @@
 /** 路由三值(契约 §5.2) */
 export type Route = 'answer' | 'collect' | 'crisis'
 
-/** 模板 id(契约 §5.2);beck=MVP 采集默认,wheel/stage_map=测试模板 */
-export type TemplateId = 'beck_formulation' | 'emotion_wheel' | 'stage_map'
+/** 模板 id(契约 §5.2);beck=MVP 采集默认,wheel/stage_map=测试模板,scene_*=黑板场景化板式 */
+export type TemplateId = 'beck_formulation' | 'emotion_wheel' | 'stage_map' | 'scene_default' | 'scene_focus' | 'scene_answer' | 'scene_crisis'
 
 /** 心情六档(契约 §4.2) */
 export type MoodKey = '难过' | '低落' | '平静' | '还好' | '开心' | '很好'
@@ -49,8 +49,20 @@ export interface StageMapData {
   from: string
 }
 
-/** draw.data 三型联合,随 template 取其一 */
-export type TemplateData = Formulation | EmotionWheelData | StageMapData
+/** scene_* 板式 collect 用:六字段同 formulation + 展示选材(assets 不进 formulation 域对象,归档不混选材) */
+export interface SceneFormulationData extends Formulation {
+  /** 字段 key → 图标 id,仅选中字段携带;可缺省(缺省该位不画,无默认兜底);
+   *  subject=画面主体选材,与字段键平等(有贴切才选;画不画由选材定,画哪多大由 zones.subject 声明) */
+  assets?: Partial<Record<keyof Formulation, string>> & { subject?: string }
+}
+
+/** scene_answer/scene_crisis 固定场景 data:图标预绑定在模板声明,只携底部注释行 */
+export interface SceneNoteData {
+  note: string | null
+}
+
+/** draw.data 五型联合,随 template 取其一 */
+export type TemplateData = Formulation | EmotionWheelData | StageMapData | SceneFormulationData | SceneNoteData
 
 // ---------- S→C(契约 §3) ----------
 

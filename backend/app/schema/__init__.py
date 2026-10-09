@@ -12,6 +12,8 @@ from .formulation import (
     EmotionWheelData,
     EmotionWheelDatum,
     Formulation,
+    SceneFormulation,
+    SceneNoteData,
     StageMapData,
     TemplateData,
 )
@@ -51,6 +53,8 @@ __all__ = [
     "ReplayTurn",
     "Route",
     "S2CMsg",
+    "SceneFormulation",
+    "SceneNoteData",
     "StageMapData",
     "StationReportResponse",
     "StationReportStatus",

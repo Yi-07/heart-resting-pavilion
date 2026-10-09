@@ -48,6 +48,8 @@ CORE_TERMS: dict[str, float] = {
 SOFT_TERMS: dict[str, float] = {
     "绝望": 0.4,
     "没意义": 0.4,
+    "没意思": 0.4,
+    "没什么意思": 0.4,
     "想消失": 0.4,
     "解脱": 0.4,
     "撑不下去": 0.4,
@@ -57,6 +59,9 @@ SOFT_TERMS: dict[str, float] = {
     "生不如死": 0.4,
     "吃安眠药": 0.4,
 }
+"""变体注记:「没意思/没什么意思」补「活着没意思」类低落高频口语——
+词典只当入口筛(便宜、漏报少),语义把关由软信号 LLM 复核(graph._soft_review)兜住;
+「没什么意思」被「没意思」子串覆盖(matched 列表会双记,severity 同值无影响)。"""
 
 _ALL_TERMS: dict[str, float] = {**CORE_TERMS, **SOFT_TERMS}
 

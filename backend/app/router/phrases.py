@@ -1,10 +1,10 @@
 """预设话术库(backend-plan §2 router 行):场景×情绪组织,不经 LLM。
 
 安全话术(危机)固定文案,确定性,绝不走 LLM;安抚语按场景取用。
-测试模板 stage_map 数据(契约 §6.3)在此单源。
+危机黑板帧文案(scene_crisis note)在此单源;stage_map 测试模板数据在前端 templates.ts。
 """
 
-from app.schema import MoodKey, StageMapData
+from app.schema import MoodKey
 
 # ---- 危机序列(契约 §6.3) ----
 
@@ -15,11 +15,9 @@ CRISIS_HOTLINE = (
     "或者告诉身边一位你能信任的人。这件事不需要你一个人扛,专业的人帮得到你。"
 )
 
-CRISIS_STAGE = StageMapData(
-    nodes=["现在", "拨打热线", "专业支持"],
-    current=0,
-    **{"from": "你不是一个人"},
-)
+# 危机黑板帧(blackboard-v1 定稿):scene_crisis 固定场景,note 单源在此。
+# stage_map 保留为测试模板,危机链路不再使用(数据保留于 frontend templates.ts)。
+CRISIS_SCENE_NOTE = "你不是一个人"
 
 # ---- 心情选择(契约 §4.2 独立到达的短安抚) ----
 

@@ -11,7 +11,7 @@ def _cs(**kwargs: object) -> CollectState:
     defaults: dict[str, object] = {
         "session_id": "sess_t",
         "route": "collect",
-        "template": "beck_formulation",
+        "template": "scene_default",
         "emotion_label": "焦虑",
         "confidence": 0.9,
     }

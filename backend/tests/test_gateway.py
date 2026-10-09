@@ -48,10 +48,8 @@ def test_crisis_sequence_and_audit():
             draw = _recv(ws)
             assert draw["type"] == "draw"
             assert draw["seq"] == 1  # 首帧=1
-            assert draw["template"] == "stage_map"
-            assert draw["data"]["nodes"] == ["现在", "拨打热线", "专业支持"]
-            assert draw["data"]["from"] == "你不是一个人"  # by_alias 序列化
-            assert "from_" not in draw["data"]
+            assert draw["template"] == "scene_crisis"  # blackboard-v1:危机固定场景帧
+            assert draw["data"]["note"] == "你不是一个人"
 
             text = _recv(ws)
             assert text["type"] == "text_delta"
@@ -116,11 +114,13 @@ def test_answer_seq_global_across_rounds(monkeypatch):
     monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub([]))
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "什么是正念")  # answer 路(RAG 关,无种子库则降级直答)
+        assert _recv(ws)["type"] == "draw"  # 场景帧先行
         text1 = _recv(ws)
         assert text1["type"] == "text_delta"
         assert _recv(ws)["type"] == "done"
 
         _send_input(ws, "如何缓解焦虑")
+        assert _recv(ws)["type"] == "draw"
         text2 = _recv(ws)
         assert text2["seq"] > text1["seq"]
         _recv(ws)
@@ -224,7 +224,7 @@ def test_crisis_speaks_hotline(monkeypatch):
         assert done["seq"] == audio["seq"] + 1
 
 
-# ---- answer 直答(契约 §6.1;CLAUDE.md §8 用例 1 判据:无 first_frame、无 draw) ----
+# ---- answer 直答(契约 §6.1 blackboard-v1 修订:场景帧先行,无 first_frame) ----
 
 
 class _StreamStub:
@@ -268,15 +268,16 @@ def test_answer_streams_without_blackboard(monkeypatch):
 
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "什么是正念")
-        frames = [_recv(ws), _recv(ws), _recv(ws)]
+        frames = [_recv(ws), _recv(ws), _recv(ws), _recv(ws)]
 
     types = [f["type"] for f in frames]
-    assert types == ["text_delta", "text_delta", "done"]
-    assert not any(t in ("first_frame", "draw") for t in types)  # 判据:无黑板
-    joined = frames[0]["text"] + frames[1]["text"]
+    assert types == ["draw", "text_delta", "text_delta", "done"]
+    assert frames[0]["template"] == "scene_answer"  # 空板缺口:场景帧先行
+    assert not any(t == "first_frame" for t in types)  # 判据:无 first_frame(§3.1)
+    joined = frames[1]["text"] + frames[2]["text"]
     assert joined == "A" * 20 + "B" * 20 + "C" * 5
-    assert frames[1]["final"] is True
-    assert frames[2]["type"] == "done"
+    assert frames[2]["final"] is True
+    assert frames[3]["type"] == "done"
 
     assert rag.calls == [("什么是正念", 3, RagLibrary.KNOWLEDGE)]  # answer 查科普库,默认 k=3
     assert stub.messages is not None
@@ -289,6 +290,7 @@ def test_answer_llm_error_falls_back(monkeypatch):
     monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "什么是正念")
+        assert _recv(ws)["type"] == "draw"  # 场景帧先行
         text = _recv(ws)
         assert text["type"] == "text_delta"
         assert text["final"] is True
@@ -301,6 +303,7 @@ def test_answer_timeout_bails_out(monkeypatch):
     monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "什么是正念")
+        assert _recv(ws)["type"] == "draw"  # 场景帧先行,超时后仍降级兜底
         err = _recv(ws)
         assert err == {**err, "type": "error", "code": "timeout"}
         text = _recv(ws)
@@ -316,7 +319,7 @@ def test_collect_placeholder_route(monkeypatch):
         assert first["type"] == "first_frame"
         assert first["route"] == "collect"
         assert first["mood_select"] is True
-        assert first["template"] == "beck_formulation"
+        assert first["template"] == "scene_default"  # 开场板式(接力单源在 CollectState)
 
 
 # ---- 记忆接线(步骤6;memory 真链路见 tests/test_memory.py) ----
@@ -370,7 +373,9 @@ def test_reconnect_adopts_session_id(monkeypatch):
                 }
             )
         )
-        assert _recv(ws)["type"] == "text_delta"
+        assert _recv(ws)["type"] == "draw"  # 场景帧先行
+        text = _recv(ws)
+        assert text["type"] == "text_delta"
         done = _recv(ws)
         assert done["type"] == "done"
         assert done["session_id"] == "sess_previous_round"

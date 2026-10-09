@@ -1,0 +1,180 @@
+{
+  "assets": {
+    "desk.overwhelmed": [
+      "被压垮",
+      "桌前",
+      "职场过载",
+      "学业"
+    ],
+    "desk.studying-late": [
+      "深夜",
+      "台灯",
+      "学习",
+      "学业焦虑"
+    ],
+    "desk.laptop": [
+      "电脑",
+      "书桌",
+      "工作"
+    ],
+    "desk.cluttered": [
+      "杂乱",
+      "文件堆",
+      "任务多"
+    ],
+    "desk.plain": [
+      "书桌",
+      "基线"
+    ],
+    "state.storm-cloud": [
+      "乌云",
+      "焦虑",
+      "压力大"
+    ],
+    "state.rain-cloud": [
+      "雨云",
+      "低落",
+      "流泪"
+    ],
+    "state.alone-room": [
+      "孤独",
+      "空房间",
+      "一个人"
+    ],
+    "state.volcano": [
+      "火山",
+      "愤怒",
+      "爆发"
+    ],
+    "state.scrolling-phone": [
+      "刷手机",
+      "拖延",
+      "失眠"
+    ],
+    "self.compare-figures": [
+      "比较",
+      "高低",
+      "自我怀疑"
+    ],
+    "self.crossroads": [
+      "十字路口",
+      "迷茫",
+      "选择"
+    ],
+    "self.mirror": [
+      "镜子",
+      "身体形象",
+      "自我审视"
+    ],
+    "self.scale": [
+      "体重秤",
+      "身材焦虑",
+      "身体形象"
+    ],
+    "self.startling-awake": [
+      "惊醒",
+      "失眠",
+      "夜里醒"
+    ],
+    "rel.alone-in-crowd": [
+      "聚会孤独",
+      "人群边缘",
+      "社交"
+    ],
+    "rel.crowd": [
+      "人群",
+      "热闹",
+      "聚会"
+    ],
+    "rel.two-hearts": [
+      "恋爱",
+      "两颗心",
+      "亲密"
+    ],
+    "rel.heart-crack": [
+      "失恋",
+      "心碎",
+      "裂痕"
+    ],
+    "rel.empty-armchair": [
+      "空椅",
+      "丧失",
+      "故人空位"
+    ],
+    "warm.mug": [
+      "热饮",
+      "安心",
+      "捧杯"
+    ],
+    "warm.reading-armchair": [
+      "看书",
+      "闲适",
+      "扶手椅"
+    ],
+    "warm.cat": [
+      "猫",
+      "打盹",
+      "陪伴"
+    ],
+    "warm.fireplace": [
+      "壁炉",
+      "炉火",
+      "屋里暖"
+    ],
+    "warm.house-night": [
+      "家",
+      "亮灯",
+      "有人在等"
+    ],
+    "read.open-book": [
+      "书",
+      "科普",
+      "阅读"
+    ],
+    "read.magnifier": [
+      "放大镜",
+      "求证",
+      "细看"
+    ],
+    "read.quill": [
+      "羽毛笔",
+      "记录",
+      "思考"
+    ],
+    "read.big-book": [
+      "读大书",
+      "投入",
+      "钻研"
+    ],
+    "read.candle": [
+      "蜡烛",
+      "安静",
+      "沉思"
+    ],
+    "crisis.lighthouse": [
+      "灯塔",
+      "照引",
+      "风暴中"
+    ],
+    "crisis.parachute": [
+      "降落伞",
+      "被接住",
+      "托底"
+    ],
+    "crisis.holding-hand": [
+      "牵手",
+      "握住",
+      "陪伴"
+    ],
+    "crisis.catching": [
+      "接住",
+      "拉一把",
+      "支撑"
+    ],
+    "crisis.umbrella": [
+      "共伞",
+      "一起挡雨",
+      "不孤单"
+    ]
+  }
+}

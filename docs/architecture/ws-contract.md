@@ -98,19 +98,23 @@
 {
   "type": "draw",
   "seq": 3,
-  "template": "beck_formulation",
+  "template": "scene_focus",
   "data": {
     "situation": "被 leader 当众否定",
     "emotion": { "label": "焦虑", "intensity": 0.85 },
     "thought": "我不行",
     "behavior": "逃避会议",
     "intermediate_belief": null,
-    "core_belief": null
+    "core_belief": null,
+    "assets": { "situation": "desk.cluttered", "emotion": "state.storm-cloud", "subject": "desk.overwhelmed" }
   }
 }
 ```
 
 - **data 携完整 formulation**（不是增量），前端按 seq 差动画新字段（已画的保留，新的淡入）
+- scene_* 板式的 data 为 **scene_formulation** 型（§5.1）：六字段同 formulation + `assets` 展示选材
+- `assets`：字段 key → 图标 id，仅选中字段携带；`subject` 为画面主体选材，与字段键平等——选材与模板声明都在才画，无默认兜底
+- assets 不进 formulation 域对象（归档不含选材）；assets 变更不触发前端重画（选材与字段文本同轮由提取产出）
 - seq：**会话内全局递增**（不随回合重置）；前端忽略 `seq <= 已处理` 的旧帧；跨回合陈旧帧天然被丢弃
 
 ### 3.3 text_delta
@@ -215,6 +219,10 @@
 
 - 未采字段为 null（前端不画该格；belief 字段允许留白，后端不硬填）
 
+**scene_* 板式 data 扩展（scene_formulation）**：六字段同 formulation + `assets`（定义与语义见 §3.2）；后端实现为 formulation 子型，Draw 判别校验按 TEMPLATE_DATA 映射取型
+
+**scene_answer / scene_crisis 固定场景 data（scene_note）**：`{ "note": "string|null" }`——图标全预绑定无 LLM，data 只携底部注释行文字（crisis 恒 `note: "你不是一个人"`；answer 恒 `note: null`）
+
 **测试模板 data**：
 - `emotion_wheel`：`{ emotions: [{ label: string, intensity: 0~1, color: string }] }`
 - `stage_map`：`{ nodes: [string], current: int, from: string }`
@@ -224,33 +232,38 @@
 | 枚举 | 值 |
 |---|---|
 | route | `answer` / `collect` / `crisis` |
-| template | `beck_formulation`（默认，MVP 采集）· `emotion_wheel` · `stage_map`（测试模板，危机用）|
+| template | `scene_default`（兜底暖场景，兼 collect 开场）· `scene_focus`（正题聚焦板，接力后用）· `scene_answer`（answer 固定场景）· `scene_crisis`（危机固定场景）· `emotion_wheel` · `stage_map`（测试模板）|
 | mood_select.mood | 见 §4.2 六档 |
 | emotion.intensity | 0~1 或 null（研判无强度可缺省） |
+
+- `beck_formulation` 从 collect 链路退役，枚举保留作几何测试模板；后续板式按 `scene_<处境族>` 扩展
 
 ---
 
 ## 6. 时序
 
-### 6.1 answer（直接答，无黑板）
+### 6.1 answer（直接答，场景帧先行）
 
 ```
 C→S  user_input
+S→C  draw (template:"scene_answer", data:{note:null})   ← 回合起点发（空板缺口补场景），无 first_frame（§3.1 语义不变）
 S→C  text_delta ×N   (流式;知识型走 RAG 后同)
 S→C  done
 ```
 
-### 6.2 collect（多轮采集）
+- 模板切换触发前端转场管线（空板→场景淡入）；重复 answer 回合同模板不转场、同 data 不重画
+
+### 6.2 collect（多轮采集，板式接力）
 
 ```
 C→S  user_input
-S→C  first_frame (route=collect, template, 安抚语, mood_select=true)
-S→C  draw (seq=1, 粗稿: emotion + 占位)
+S→C  first_frame (route=collect, template=scene_default, 安抚语, mood_select=true)
+S→C  draw (template=scene_default, 粗稿: 暖场景, 仅 emotion 有值)
 S→C  audio_chunk ×N (安抚语语音,可选)
 S→C  text_delta (确认情绪 + 第 1 问)
      C→S  mood_select (可选,用户点了才发)
      C→S  user_input (第 1 轮回答)
-S→C  draw (全量,+situation+emotion)
+S→C  draw (template=scene_default|scene_focus, 全量,+situation+emotion)
 S→C  text_delta (确认 + 第 2 问)
      C→S  user_input (第 2 轮回答)
 S→C  draw (全量,+thought+behavior)
@@ -263,20 +276,24 @@ S→C  done
 S→C  audio_chunk ×N (总结语音,异步流出,可选;done 后到达,抢占即蒸发)
 ```
 
+- **板式接力**：开场恒 `scene_default` 暖场景（无字段槽位，纯陪伴）；situation/thought/behavior 任一**首次入格且该字段选材图标有效**的那轮 draw 切 `scene_focus`，单向不变；该类字段无有效选材图标时维持暖场景，字段文本暂不上板；选材熔断 → 永久暖场景（`asset_fuse_trip` WARN）
+- **打岔挂起/恢复**（ADR-003）：采集期命中 answer 的输入 → `draw (template:"scene_answer")` 接管黑板 + 短答 + done，采集态挂起不清；下一输入恢复采集，恢复轮照常发全量 draw（模板切回触发转场）
 - **降级**（答案过短/话题漂移/负面词）：后端跳过剩余轮次，直接发精稿 draw + 转共情陪聊/已采字段收尾；情绪变差命中软预筛 → 改发危机序列（§6.3）
 - **分析等待**：停采后同步分析，精稿 draw 前有分析耗时（前端显示"收尾中"）；后台并行属二期
-- **seq 示例**：时序图仅粗稿标 seq=1；text/audio 交错消耗号，后续帧不标数值（递增规则见 §3.2）
+- **seq 示例**：时序图仅示意；text/audio 交错消耗号，递增规则见 §3.2
 
 ### 6.3 crisis（危机）
 
 ```
 C→S  user_input
 S→C  first_frame (route=crisis, 郑重安抚, mood_select=false)
-S→C  draw (seq=1, template:"stage_map", data:{nodes:["现在","拨打热线","专业支持"], current:0, from:"你不是一个人"})
+S→C  draw (seq=1, template:"scene_crisis", data:{note:"你不是一个人"})
 S→C  text_delta (热线 12356 引导)
 S→C  audio_chunk ×N (危机话术语音,可选)
 S→C  done
 ```
+
+- 图标预绑定，无 LLM 选材（危机链路不走选材）；热线引导仍走 text_delta
 
 ---
 
@@ -332,7 +349,7 @@ S→C  done
 | ERROR | 消息非法、后端异常、error 帧发出 |
 | FATAL | 进程级故障 |
 
-事件： `session_open` · `user_input_received` · `crisis_gate_hit` · `route_decided` · `first_frame_sent` · `collection_start` · `collection_round` · `sufficiency_scored` · `degraded` · `analysis_start` · `analysis_end` · `draw_sent` · `replay_sent`（ADR-005） · `done` · `error` · `escalate_end` · `audio_sent` · `mood_select_received` · `reconnect_adopted` · `memory_restored` · `memory_degraded` · `memory_cleared` · `memory_clear_failed` · `session_close` · `event_loop_lag` · `rag_warm_ready` · `rag_retrieved` · `extract_filled` · `extract_empty` · `tts_degraded` · `tts_sidecar_version_mismatch`；REST 侧： `asr_transcribed` · `asr_empty`（归属 `/asr/transcribe`，ADR-004）。本表为全量事件名清单，与代码 `logger` 调用同步维护
+事件： `session_open` · `user_input_received` · `crisis_gate_hit` · `route_decided` · `first_frame_sent` · `collection_start` · `collection_round` · `sufficiency_scored` · `degraded` · `analysis_start` · `analysis_end` · `draw_sent` · `replay_sent`（ADR-005） · `done` · `error` · `escalate_end` · `audio_sent` · `mood_select_received` · `reconnect_adopted` · `memory_restored` · `memory_degraded` · `memory_cleared` · `memory_clear_failed` · `session_close` · `event_loop_lag` · `rag_warm_ready` · `rag_retrieved` · `extract_filled` · `extract_empty` · `asset_fallback`（WARN，选材校验拒绝落默认） · `asset_fuse_trip`（WARN，选材熔断全默认） · `tts_degraded` · `tts_sidecar_version_mismatch`；REST 侧： `asr_transcribed` · `asr_empty`（归属 `/asr/transcribe`，ADR-004）。本表为全量事件名清单，与代码 `logger` 调用同步维护
 
 ### 9.4 脱敏（硬约束）
 
@@ -354,15 +371,16 @@ S→C  done
 **前端**
 1. WS 客户端（9 种消息解析、seq 校验、断线重连）
 2. first_frame → 清黑板/重置/收起选择器
-3. draw → 增量渲染（新字段动画）
+3. draw → 增量渲染（新字段动画；scene 模板 asset 渲染——未知 id 跳过兜底，subject 与 zones 声明都在才画）
 4. mood_select 上报（含独立到达）
 5. error → 温和兜底
 6. replay → 幕布回放/小结卡（ADR-005；session_id 经 localStorage 持久化）
 
 **后端**
 1. WS 网关（session_id、消息路由、seq 管理）
-2. first_frame 生成（route/template/安抚语）
-3. draw 下发（粗稿/逐轮/精稿）
+2. first_frame 生成（route/template/安抚语；collect 开场=scene_default）
+3. draw 下发（粗稿/逐轮/精稿；collect 板式接力 scene_default→scene_focus）
 4. mood_select 处理（profile 更新 / 独立到达）
 5. error 帧 + 超时兜底
 6. replay 推送（重连认领后，ADR-005）+ `/asr/transcribe` 转写端点（ADR-004）
+7. asset_catalog 加载 + 选材白名单校验 + 熔断与日志（extract 同调用顺带选材，不加 LLM 次数）

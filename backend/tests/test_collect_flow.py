@@ -20,6 +20,7 @@ class _ScriptedProvider:
         risk_error: bool = False,
         stream_parts: list[str] | None = None,
         stream_delay: float = 0.0,
+        assets: dict[str, str] | None = None,
     ) -> None:
         self.extract = extract if extract is not None else {"value": "提炼后的短句", "off_topic": False}
         self.review = review if review is not None else {"label": "焦虑", "intensity": 0.8}
@@ -27,6 +28,7 @@ class _ScriptedProvider:
         self.risk_error = risk_error
         self.stream_parts = stream_parts or ["总结第一段", "总结第二段"]
         self.stream_delay = stream_delay
+        self.assets = assets or {}
 
     async def chat(self, messages: list[Message]) -> str:
         raise AssertionError("collect 图测试不应调用 chat")
@@ -45,10 +47,17 @@ class _ScriptedProvider:
             off_topic = bool(self.extract.get("off_topic", False))
             custom = self.extract.get("fields")
             if isinstance(custom, dict):  # 跨字段编程:直接按给定 dict 填
-                return schema(fields=dict(custom), off_topic=off_topic)
+                return schema(fields=dict(custom), assets=dict(self.assets), off_topic=off_topic)
             asked = self._asked_field(messages)
             value = str(self.extract.get("value", "提炼后的短句"))
-            return schema(fields={} if off_topic else {asked: value}, off_topic=off_topic)
+            return schema(
+                fields={} if off_topic else {asked: value},
+                assets=dict(self.assets),
+                off_topic=off_topic,
+            )
+        if name == "RouteLabel":
+            # fallback 输入走 classifier 的 LLM 分支;低 conf 落 collect 兜底
+            return schema(route="collect", emotion_label=None, confidence=0.9)
         if name == "_ReviewOut":
             return schema(**self.review)  # type: ignore[return-value]
         if name == "_RiskOut":
@@ -94,6 +103,7 @@ def _patch_llm(monkeypatch: pytest.MonkeyPatch, provider: _ScriptedProvider) -> 
         "app.agents.extract.get_provider",
         "app.agents.analysis.get_provider",
         "app.agents.graph.get_provider",
+        "app.router.classifier.get_provider",  # fallback 输入走 classify 的 LLM 分支
     ):
         monkeypatch.setattr(target, lambda: provider)
 
@@ -102,7 +112,7 @@ def _state() -> CollectState:
     return CollectState(
         session_id="sess_t",
         route="collect",
-        template="beck_formulation",
+        template="scene_default",  # 建态=暖场景开场,接力在图内
         emotion_label="焦虑",
         confidence=0.9,
         max_rounds=3,
@@ -216,3 +226,61 @@ async def test_risk_review_failure_does_not_escalate(monkeypatch):
 
     assert isinstance(ev, Finish)  # 复核失败不升级,按常规收尾
     assert "risk_review_failed" in rec.logs
+
+
+# ---- 板式接力(scene_default → scene_focus,选材驱动) ----
+
+
+def _with_selector(cs: CollectState, catalog: dict[str, list[str]]) -> CollectState:
+    from app.board import AssetSelector
+
+    cs.asset_selector = AssetSelector(catalog=catalog)
+    return cs
+
+
+async def test_template_switches_on_first_substantive_disclosure(monkeypatch):
+    """接力主链:situation 入格+有效选材 → scene_default 切 scene_focus,单向不变。"""
+    provider = _ScriptedProvider(extract={"fields": {"situation": "被当众批评"}})
+    _patch_llm(monkeypatch, provider)
+    cs = _with_selector(
+        _state(),
+        {
+            "desk.cluttered": ["杂乱", "文件堆"],
+            "desk.overwhelmed": ["被压垮", "桌前"],
+            "state.storm-cloud": ["乌云", "焦虑"],
+        },
+    )
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
+    await run_collect(cs, rec)  # entry:粗稿,暖场景
+    assert cs.template == "scene_default"
+
+    provider.assets = {"situation": "desk.cluttered", "subject": "desk.overwhelmed"}
+    cs.turns.append(Turn(role="user", text="被领导当众批评了"))
+    await run_collect(cs, rec)
+    assert cs.template == "scene_focus"  # 触发集字段入格+图标有效
+    assert rec.draws[-1].assets == {
+        "situation": "desk.cluttered",
+        "subject": "desk.overwhelmed",
+    }
+
+    provider.assets = {}
+    cs.turns.append(Turn(role="user", text="后来我就躲着走"))
+    await run_collect(cs, rec)
+    assert cs.template == "scene_focus"  # 单向:后续轮不再回退
+
+
+async def test_template_stays_default_without_icon(monkeypatch):
+    """无有效选材图标(目录无对应素材)维持暖场景候着,切换不发生。"""
+    provider = _ScriptedProvider(extract={"fields": {"situation": "和妈妈吵架了"}})
+    _patch_llm(monkeypatch, provider)
+    cs = _with_selector(_state(), {"state.storm-cloud": ["乌云", "焦虑"]})  # 目录无 situation 可选
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
+    await run_collect(cs, rec)
+
+    provider.assets = {}  # LLM 无图标可给 → 校验空 → 不触发
+    cs.turns.append(Turn(role="user", text="和妈妈大吵了一架"))
+    await run_collect(cs, rec)
+    assert cs.template == "scene_default"
+    assert rec.draws[-1].situation == "和妈妈吵架了"  # 字段照常入格,只是不切板式

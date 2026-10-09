@@ -58,6 +58,7 @@ from app.schema import (
     MoodSelect,
     ReplayFrame,
     ReplayTurn,
+    SceneNoteData,
     TemplateData,
     TemplateId,
     TextDelta,
@@ -226,7 +227,9 @@ async def _on_message(conn: Connection, raw: str) -> None:
         return
 
     # user_input:抢占当前处理(分析中 cancel + 弃 state + 旧 emitter 标 dead
-    # → 未发帧蒸发),新任务接管;轮次回答不经过此处销毁(state 仅在处理中被弃)
+    # → 未发帧蒸发),新任务接管;轮次回答不经过此处销毁(state 仅在处理中被弃)。
+    # 已知边界:task.done() 判定在「done 帧已发→Task 状态翻转」的调度窗口内有
+    # 误判可能(挂起态被误清、承接变体重开),间歇性,记 backlog 待单独修复
     preempted = False
     if conn.current is not None and not conn.current.done():
         conn.current.cancel()
@@ -311,7 +314,10 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
         return
 
     try:
-        cls = classifier.classify_rules(text)
+        # 分层判定(spec §4 L4):classify() 内部规则速判在前(命中即返,零 LLM),
+        # 规则全不命中才 LLM 语义判定;
+        # 超时/失败/低 conf 均落 collect 兜底(fallback),不杀回合
+        cls = await classifier.classify(text)
         if cls.route == "answer" and conn.collect_state is not None:
             # 采集态门控(ADR-003):采集中的输入默认服务采集主线——
             # 纯概念问句/连续追问满 2/显式要求回答 → 短答支线:挂起不清空
@@ -334,6 +340,8 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
                     via="concept_suspend",
                     ask_count=state.pending_ask_count,
                 )
+                # 采集期打岔(ADR-003):场景帧由 _answer_sequence 统一先发,answer 场景淡入
+                # 接管黑板;恢复=下一 collect 轮照常发全量 draw,模板切换触发前端转场
                 await asyncio.wait_for(
                     _answer_sequence(conn, text, cls), timeout=config.LLM_TIMEOUT_S
                 )
@@ -379,13 +387,17 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
                 timeout=config.LLM_TIMEOUT_S,
             )
     except asyncio.TimeoutError:
-        conn.collect_state = None
+        # 挂起态(打岔支线)失败不弃采集:ADR-003「挂起不清空」,只结束 answer 支线
+        if conn.collect_state is None or not conn.collect_state.suspended:
+            conn.collect_state = None
         conn.log("degraded", level="WARN", trace_id=trace, reason="timeout")
         await conn.send_error("timeout", "这次回应太慢了,先给你一句兜底")
         await conn.send_text(phrases.ANSWER_FALLBACK, final=True)
         await conn.send_done()
     except Exception as exc:  # noqa: BLE001 — 网关收口:任何异常 error 帧 + 不崩连接
-        conn.collect_state = None
+        # 同上:挂起中的采集进度不被 answer 支线异常拖累
+        if conn.collect_state is None or not conn.collect_state.suspended:
+            conn.collect_state = None
         conn.log(
             "error", level="ERROR", trace_id=trace, code="server_error", detail=str(exc)[:160]
         )
@@ -451,7 +463,7 @@ async def _crisis_sequence(conn: Connection) -> None:
     await conn.send_first_frame(
         route="crisis", text=phrases.CRISIS_SOOTHE, mood_select=False
     )
-    await conn.send_draw("stage_map", phrases.CRISIS_STAGE)
+    await conn.send_draw("scene_crisis", SceneNoteData(note=phrases.CRISIS_SCENE_NOTE))
     await conn.send_text(phrases.CRISIS_HOTLINE, final=True)
     await _speak(conn, phrases.CRISIS_HOTLINE)
     await conn.send_done()
@@ -467,14 +479,19 @@ async def _collect_sequence(
     if state is None:
         # entry:first_frame(≤300ms 语义,规则速判)+ 建态;承接变体=抢占后重开;
         # 热层 snapshot 恢复上下文(重连/续话,契约 §8.4;记忆不可用降级空档)
+        # 板式接力:建态=scene_default 暖场景开场,图内首次实质披露切
+        # scene_focus;template 单源在 state
         state = CollectState(
             session_id=conn.session_id,
             route="collect",
-            template="beck_formulation",
+            template="scene_default",
             emotion_label=cls.emotion_label,
             confidence=cls.confidence,
             max_rounds=config.COLLECT_MAX_ROUNDS,
         )
+        from app.board import AssetSelector  # 懒加载:目录读盘只进 collect 路径
+
+        state.asset_selector = AssetSelector()
         state.session_context = await get_memory().snapshot(conn.session_id)
         if state.session_context.history_summary is not None or state.session_context.recent_turns:
             conn.log(
@@ -492,7 +509,7 @@ async def _collect_sequence(
         soothe = phrases.collect_soothe(cls.emotion_label, carried=carried)
         await conn.send_first_frame(
             route="collect",
-            template="beck_formulation",
+            template=state.template,  # first_frame 随开场板式(scene_default)
             emotion_label=cls.emotion_label,
             mood_select=True,
             text=soothe,
@@ -503,7 +520,8 @@ async def _collect_sequence(
     # 轮次回答:同回合继续,无 first_frame(契约 §6.2)
     state.turns.append(Turn(role="user", text=text))
 
-    emitter = ConnEmitter(conn, "beck_formulation")
+    # 板式接力:emitter 每帧读 state.template,图内中途切板式即时生效
+    emitter = ConnEmitter(conn, lambda: state.template or "scene_default")
     conn.current_emitter = emitter
     try:
         from app.agents import run_collect  # 懒加载:LangGraph 只进 collect 路径
@@ -603,6 +621,8 @@ def _answer_messages(query: str, refs: list[Ref]) -> list[Message]:
 
 
 async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> None:
+    # 纯 answer 回合起点发场景帧(空板缺口):同模板不转场、同 data 不重画,前端幂等
+    await conn.send_draw("scene_answer", SceneNoteData(note=None))
     refs: list[Ref] = []
     if cls.needs_rag:
         try:
@@ -619,7 +639,7 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
             conn.log("degraded", level="WARN", reason="rag_failed", detail=str(exc)[:120])
             refs = []
 
-    emitter = ConnEmitter(conn, "beck_formulation")  # answer 不画黑板,draw 不触达
+    emitter = ConnEmitter(conn, "scene_answer")  # answer 不走 collect 图,emitter 仅兜底用
     conn.current_emitter = emitter
     try:
         sent = False

@@ -6,9 +6,12 @@ where_next 纯函数从字段算出)。脱敏:state 含用户原文,只活连接
 """
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from app.schema import Formulation, MoodKey, TemplateId
+
+if TYPE_CHECKING:
+    from app.board import AssetSelector
 
 FieldKey = Literal[
     "situation", "emotion", "thought", "behavior", "intermediate_belief", "core_belief"
@@ -50,6 +53,9 @@ class CollectState:
     session_id: str
     route: Literal["answer", "collect"]
     template: TemplateId | None
+    """黑板板式单源:网关建态=scene_default(暖场景开场),图内首次实质披露
+    切 scene_focus(非情绪字段入格且有有效选材图标),单向不变;
+    emitter.draw 经它取当轮板式(first_frame 同源)。"""
     emotion_label: str | None
     confidence: float
     # B
@@ -71,6 +77,10 @@ class CollectState:
     满 2 或显式要求回答即允许短答;回采集后清零。"""
     risk_reviewed_terms: set[str] = field(default_factory=set)
     """软信号已复核词集(H7:softscan/risk 命中复核去重,spec §4 L5);只活连接内存。"""
+    asset_selector: "AssetSelector | None" = None
+    """黑板选材状态机(白名单+熔断);None=选材关闭(测试/降级)。"""
+    pending_assets: dict[str, str] | None = None
+    """最近一轮 extract 的原始选材输出(待校验);每轮重置,只活单次图调用。"""
 
 
 # ---- 图出口事件(§3.4;网关按事件收尾,不读 state 内部) ----

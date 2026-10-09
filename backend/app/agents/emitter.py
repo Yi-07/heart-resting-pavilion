@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Protocol
 
 from app.schema import Formulation, TemplateId
@@ -64,9 +64,13 @@ async def stream_final(emitter: Emitter, chunks: AsyncIterator[str]) -> bool:
 
 
 class ConnEmitter:
-    """Connection 适配 + dead 蒸发;log 透传网关标准事件日志。"""
+    """Connection 适配 + dead 蒸发;log 透传网关标准事件日志。
 
-    def __init__(self, conn: Connection, template: TemplateId) -> None:
+    template 支持 callable:collect 板式接力时图内改 CollectState.template,
+    emitter 每次 draw 现取——构造期快照会错过中途切换。
+    """
+
+    def __init__(self, conn: Connection, template: TemplateId | Callable[[], TemplateId]) -> None:
         self._conn = conn
         self._template = template
         self.dead = False
@@ -79,10 +83,13 @@ class ConnEmitter:
         if not self.dead:
             self._conn.log(event, level=level, **fields)
 
+    def _current_template(self) -> TemplateId:
+        return self._template() if callable(self._template) else self._template
+
     async def draw(self, formulation: Formulation) -> None:
         if self.dead:
             return
-        await self._conn.send_draw(self._template, formulation)
+        await self._conn.send_draw(self._current_template(), formulation)
 
     async def text(self, s: str, *, final: bool = False) -> None:
         if self.dead:

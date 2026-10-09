@@ -38,9 +38,10 @@ from app.agents.state import (
     FinishCause,
     PendingQuestion,
 )
+from app.board import asset_system
 from app.llm import LLMError, Message, get_provider
 from app.router import gate, phrases
-from app.schema import Emotion, Formulation
+from app.schema import Emotion, Formulation, SceneFormulation
 
 
 class GraphState(TypedDict, total=False):
@@ -103,6 +104,41 @@ def _emitter(config: RunnableConfig) -> ConnEmitter:
     return cast(ConnEmitter, config["configurable"]["emitter"])
 
 
+def _scene_draw_data(cs: CollectState, assets: dict[str, str] | None) -> SceneFormulation:
+    """黑板 draw 数据:formulation 快照 + 选材 assets(域对象不混选材,归档干净)。
+
+    assets 由调用方先经 selector.apply 得出(单次调用,熔断计数不双计);
+    None=selector 未挂/熔断/无选材,前端全落槽位默认图标。
+    """
+    data = SceneFormulation(**cs.formulation.model_dump())
+    if assets:
+        data.assets = assets
+    return data
+
+
+_TRIGGER_FIELDS: tuple[str, ...] = ("situation", "thought", "behavior")
+"""板式接力触发集:非情绪三字段任一首次入格且本轮选材含其图标
+→ scene_default 切 scene_focus;emotion 不在内(开场由研判种子占位,算入会让
+暖场景只活一帧)。无有效图标(如目录无对应素材)维持暖场景候着。"""
+
+
+def _maybe_switch_template(cs: CollectState, assets: dict[str, str] | None) -> None:
+    """板式接力单源:scene_default → scene_focus 单向一次。"""
+    if cs.template != "scene_default":
+        return
+    if not any(f in (assets or {}) for f in _TRIGGER_FIELDS):
+        return
+    cs.template = "scene_focus"
+
+
+def _applied_assets(cs: CollectState) -> dict[str, str] | None:
+    """本轮选材经白名单/熔断的唯一入口(selector.apply 有状态,只许调一次)。"""
+    selector = cs.asset_selector
+    if selector is None or not cs.pending_assets:
+        return None
+    return selector.apply(cs.pending_assets)
+
+
 # ---- 节点 ----
 
 
@@ -115,7 +151,7 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
         if cs.emotion_label and cs.formulation.emotion.label is None:
             cs.formulation.emotion = Emotion(label=cs.emotion_label)
         cs.sufficiency = collect.sufficiency(cs.formulation)
-        await em.draw(cs.formulation)
+        await em.draw(_scene_draw_data(cs, _applied_assets(cs)))
         em.log("collection_round", round_index=0, sufficiency=cs.sufficiency, phase="draft")
         return {}
 
@@ -132,10 +168,15 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
 
     reason = collect.detect(answer)
     values: dict[FieldKey, str] = {}
+    cs.pending_assets = None
     if reason is None:
-        values = await extract_fields(
-            pending.text, pending.target_field, answer, _open_fields(cs, pending.target_field)
+        selector = cs.asset_selector
+        asset_hint = asset_system(selector.catalog) if selector is not None else None
+        values, raw_assets = await extract_fields(
+            pending.text, pending.target_field, answer, _open_fields(cs, pending.target_field),
+            asset_hint=asset_hint,
         )
+        cs.pending_assets = raw_assets or None
         if not values:
             reason = "off_topic"
 
@@ -146,7 +187,9 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
             cs.pending_question = None  # 本题已答;未答则保留挂起,防下一条被吞
         cs.degrade_reason = None
         cs.sufficiency = collect.sufficiency(cs.formulation)
-        await em.draw(cs.formulation)
+        assets = _applied_assets(cs)
+        _maybe_switch_template(cs, assets)
+        await em.draw(_scene_draw_data(cs, assets))
         em.log(
             "sufficiency_scored",
             round_index=cs.round_index,
@@ -273,7 +316,7 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
 
     cs.formulation.emotion = await analysis.review_emotion(cs)
     cs.sufficiency = collect.sufficiency(cs.formulation)
-    await em.draw(cs.formulation)  # 精稿(emotion 复核后全量)
+    await em.draw(_scene_draw_data(cs, None))  # 精稿(emotion 复核后全量;选材不重发)
 
     refs: list = []
     try:

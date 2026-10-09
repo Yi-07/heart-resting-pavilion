@@ -12,7 +12,7 @@ import type {
 } from '../messages'
 
 // vitest 里 import.meta.url 被 vite 改写,走 cwd(测试恒从 frontend/ 跑)定位仓库根
-const CONTRACT_PATH = resolve(process.cwd(), '..', 'architecture', 'ws-contract.md')
+const CONTRACT_PATH = resolve(process.cwd(), '..', 'docs', 'architecture', 'ws-contract.md')
 
 const FORMULATION_KEYS = {
   situation: true,

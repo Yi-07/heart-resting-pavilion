@@ -1,11 +1,11 @@
 """采集态门控钉测试(ADR-003):in_round 时 answer 命中不得弃采集态。
 
 矩阵:
-- 概念问句 → 短答支线(answer 帧序无 first_frame/draw,黑板保活),state.suspended
+- 概念问句 → 短答支线(scene_answer 场景帧接管黑板;无 first_frame),state.suspended
 - 求助句(怎么办类) → 留 collect(提取/陪聊),不 preempt
-- 挂起后下一输入 → 恢复采集(增量 draw 接得上,无新 first_frame)
+- 挂起后下一输入 → 恢复采集(全量 draw 模板切回,无新 first_frame)
 - 连续概念问句 → 两次短答,state 保留
-- 危机词 → crisis 优先(回归钉)
+- 危机词 → crisis 优先(回归钉,scene_crisis 场景帧)
 """
 
 import pytest
@@ -39,7 +39,7 @@ def _gate_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_in_round_concept_suspends_and_resumes(monkeypatch):
-    """概念问句:answer 帧序不画黑板;下一条输入恢复采集,增量接得上。"""
+    """概念问句:scene_answer 场景帧接管黑板;下一条输入恢复采集,模板切回。"""
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "最近很焦虑睡不着")  # 入场
         assert _recv(ws)["type"] == "first_frame"
@@ -53,13 +53,15 @@ def test_in_round_concept_suspends_and_resumes(monkeypatch):
         assert _recv(ws)["type"] == "text_delta"  # 确认+第2问
 
         _send_input(ws, "什么是正念?")  # 概念问句 → 短答支线
-        types = [_recv(ws)["type"], _recv(ws)["type"]]
-        assert "text_delta" in types and "done" in types
-        assert "first_frame" not in types and "draw" not in types  # 黑板保活
+        suspend = _recv(ws)
+        assert suspend["type"] == "draw" and suspend["template"] == "scene_answer"  # 挂起:场景接管
+        assert "first_frame" not in (suspend["type"],)  # 无回合重开
+        assert _recv(ws)["type"] == "text_delta"
+        assert _recv(ws)["type"] == "done"
 
         _send_input(ws, "就是开会那次,我满脑子都是要搞砸了。")  # 恢复:答挂起前问题
         draw3 = _recv(ws)
-        assert draw3["type"] == "draw"  # 恢复采集:增量(无 first_frame)
+        assert draw3["type"] == "draw"  # 恢复采集:模板切回(无 first_frame)
         assert draw3["seq"] > draw2["seq"]
 
 
@@ -86,10 +88,12 @@ def test_two_consecutive_concepts_keep_state(monkeypatch):
         _recv(ws)
 
         _send_input(ws, "什么是正念")
+        assert _recv(ws)["type"] == "draw"  # 挂起场景帧
         assert _recv(ws)["type"] == "text_delta"
         assert _recv(ws)["type"] == "done"
 
         _send_input(ws, "什么是认知行为疗法")
+        assert _recv(ws)["type"] == "draw"  # 同模板,场景帧幂等
         assert _recv(ws)["type"] == "text_delta"
         assert _recv(ws)["type"] == "done"
 
@@ -107,9 +111,10 @@ def test_explicit_ask_upgrades_to_short_answer(monkeypatch):
         _recv(ws)
 
         _send_input(ws, "你先回答我，什么是正念")
-        types = [_recv(ws)["type"], _recv(ws)["type"]]
-        assert "text_delta" in types and "done" in types
-        assert "first_frame" not in types  # 短答支线,黑板保活
+        suspend = _recv(ws)
+        assert suspend["type"] == "draw" and suspend["template"] == "scene_answer"  # 场景接管
+        assert _recv(ws)["type"] == "text_delta"
+        assert _recv(ws)["type"] == "done"
 
         _send_input(ws, "睡不着的时候脑子特别乱。")  # 恢复
         assert _recv(ws)["type"] == "draw"
@@ -124,9 +129,12 @@ def test_crisis_during_suspended(monkeypatch):
         _recv(ws)
 
         _send_input(ws, "什么是正念")
+        assert _recv(ws)["type"] == "draw"  # 挂起场景帧
         assert _recv(ws)["type"] == "text_delta"
         assert _recv(ws)["type"] == "done"
 
         _send_input(ws, "我不想活了")
         assert _recv(ws)["type"] == "first_frame"  # crisis 有自己的回合起点
-        assert _recv(ws)["type"] == "draw"
+        crisis_draw = _recv(ws)
+        assert crisis_draw["type"] == "draw"
+        assert crisis_draw["template"] == "scene_crisis"  # 危机固定场景

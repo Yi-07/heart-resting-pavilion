@@ -38,6 +38,8 @@ class _ScriptedProvider:
                     if line.startswith("所问字段:"):
                         asked = line.split(":", 1)[1].strip()
             return schema(fields={asked: "提炼值"}, off_topic=False)
+        if name == "RouteLabel":
+            return schema(route="collect", emotion_label=None, confidence=0.9)  # 低 conf 落 collect 兜底(classify 契约)
         if name == "_ReviewOut":
             return schema(label="焦虑", intensity=0.8)
         if name == "_RiskOut":
@@ -55,6 +57,7 @@ def _patch(monkeypatch, provider: _ScriptedProvider) -> None:
         "app.agents.extract.get_provider",
         "app.agents.analysis.get_provider",
         "app.agents.graph.get_provider",
+        "app.router.classifier.get_provider",  # fallback 输入走 classify 的 LLM 分支
     ):
         monkeypatch.setattr(target, lambda: provider)
     monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub())
@@ -75,7 +78,7 @@ def test_collect_full_round(monkeypatch):
         _send(ws, "最近很焦虑睡不着")
         first = _recv(ws)
         assert first["type"] == "first_frame" and first["route"] == "collect"
-        assert first["mood_select"] is True and first["template"] == "beck_formulation"
+        assert first["mood_select"] is True and first["template"] == "scene_default"  # 开场板式
         draft = _recv(ws)
         assert draft["type"] == "draw" and draft["data"]["emotion"]["label"] == "焦虑"
         q1 = _recv(ws)

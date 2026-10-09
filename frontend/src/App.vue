@@ -93,12 +93,19 @@ watch(chipState, (s) => {
 
 const moodPillText = computed(() => `此刻 · ${round.emotionLabel ?? '平静'}`)
 const boardTitle = computed(() => {
-  if (round.crisis || lastTemplate.value === 'stage_map') return '你不需要一个人扛'
+  if (round.crisis || lastTemplate.value === 'stage_map' || lastTemplate.value === 'scene_crisis') return '你不需要一个人扛'
   if (lastTemplate.value === 'emotion_wheel') return '情绪轮盘'
+  if (lastTemplate.value === 'scene_focus') return '心里那摊事'
+  if (lastTemplate.value === 'scene_answer') return '让我想一想'
+  if (lastTemplate.value?.startsWith('scene_') ?? false) return '心栖的黑板'
   return '心里的那棵树'
 })
 const boardNote = computed(() => {
-  if (round.crisis || lastTemplate.value === 'stage_map') return '热线 12356 一直在 · 先一起待一会儿'
+  if (round.crisis || lastTemplate.value === 'stage_map' || lastTemplate.value === 'scene_crisis') return '热线 12356 一直在 · 先一起待一会儿'
+  if (lastTemplate.value === 'emotion_wheel') return '情绪会起落,轮盘看着它转'
+  if (lastTemplate.value === 'scene_focus') return '小栖把你说的画在黑板上'
+  if (lastTemplate.value === 'scene_answer') return '这个问题的回答...'
+  if (lastTemplate.value?.startsWith('scene_') ?? false) return '说说最近的状况,我把它画出来'
   if (lastTemplate.value === null) return '等一句你的话,我在听。'
   return '小栖在听,黑板会慢慢长出来'
 })

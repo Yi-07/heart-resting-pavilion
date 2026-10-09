@@ -2,15 +2,19 @@
 //   render(templateId, data):diff 出变化字段 → 清该字段组重画(连线随组重画);null=擦除不画。
 //   未知 templateId:记 WARN 跳帧不崩(黑板保留上一帧)。
 //   clear():first_frame 清黑板(取消进行中的绘制计时器)。
+// 场景化(blackboard-v1):模板声明可带 scene 预绑定底图(构图沿已验收原型),
+//   字段声明可带 icon 槽位图标(data.assets 携 LLM 选材 id,未知 id 跳过兜底);
+//   换模板/清板走转场管线(0.55s 淡出→清→新内容随 prim 渐现),同模板增量不转场。
 // 粉笔效果:线中点抖动(二次贝塞尔)/椭圆半径噪声/dash-reveal 起笔/粉笔光标跟随;
 // feDisplacementMap 滤镜只套图形组不套文字组(保标签可读,定案优于 mockup 原样)。
 // 新鲜度由 ws 层保证(client seq 单点校验),收到即新帧。
 
 import { logger } from '../logger'
-import type { Emotion, EmotionWheelData, StageMapData, TemplateData } from '../ws/messages'
+import type { Emotion, EmotionWheelData, SceneFormulationData, StageMapData, TemplateData } from '../ws/messages'
 import { diff, fieldOf } from './diff'
+import { assetSvg } from './manifests'
 import { get } from './templateRegistry'
-import type { FieldDecl, TemplateDecl, Zone } from './types'
+import type { FieldDecl, SceneItem, TemplateDecl, Zone } from './types'
 
 const NS = 'http://www.w3.org/2000/svg'
 const CHALK = '#F3EBDD'
@@ -21,6 +25,8 @@ const HAND = '"Ma Shan Zheng","Noto Serif SC",serif'
 const FIELD_STAGGER_S = 0.45
 /** 末笔后光标驻留时长(秒) */
 const CURSOR_LINGER_S = 1.6
+/** 场景切换淡出时长(秒;淡入走 .board-primitive 的 0.55s 过渡) */
+const FADE_OUT_S = 0.55
 
 /** stage_map 主径:两段二次贝塞尔(3 节点恰落端点/中点,源自 mockup) */
 const STAGE_PATH = {
@@ -121,8 +127,13 @@ let filterSeq = 0
 export class BoardRenderer {
   private templateId: string | null = null
   private lastData: TemplateData | null = null
+  private lastSubjectId: string | null = null
   private timers: number[] = []
   private prims: Prim[] = []
+  /** 转场淡出计时器:非空=淡出进行中,期间新 render 立即完成切换(最新帧赢,不排队) */
+  private fadeTimer: number | null = null
+  /** 淡出后的续画动作(转场状态机单字段:pending 动作即实现,不引入队列) */
+  private pendingPaint: (() => void) | null = null
   private readonly svg: SVGSVGElement
   private readonly gfxRoot: SVGGElement // 图形层(滤镜)
   private readonly textRoot: SVGGElement // 文字层(不滤镜)
@@ -192,10 +203,21 @@ export class BoardRenderer {
       return
     }
     if (templateId !== this.templateId) {
-      this.resetCanvas()
-      this.templateId = templateId
-      this.lastData = null
+      // 换模板:走转场管线(淡出旧画面→清→新画面随 prim 渐现);淡出中到达则直接换(最新帧赢)
+      this.transitionTo(() => {
+        this.templateId = templateId
+        this.lastData = null
+        this.lastSubjectId = null
+        this.paintScene(decl, data)
+        this.paintFields(decl, data)
+      })
+      return
     }
+    this.paintFields(decl, data)
+  }
+
+  /** 字段绘制:diff 出变化字段 → 清该字段组重画(连线随组重画);null=擦除不画 */
+  private paintFields(decl: TemplateDecl, data: TemplateData): void {
     const changed = diff(this.lastData, data)
     let delay = 0.1
     let drew = false
@@ -211,20 +233,94 @@ export class BoardRenderer {
       drew = true
     }
     this.lastData = data
+    this.paintSubject(decl, data)
     if (drew) this.schedulePrims()
   }
 
-  /** first_frame 清黑板:取消未落笔的绘制,回到空板 */
+  /** 画面主体:与字段图标平等的选材项(assets.subject)——选材与 zones.subject 声明都在才画。
+   *  随每帧比对选材值,变了清旧组重画;无选材=主体位空着(不兜底,避免语义不明图标突兀)。 */
+  private paintSubject(decl: TemplateDecl, data: TemplateData): void {
+    const subjectAsset =
+      'assets' in data ? (data as SceneFormulationData).assets?.['subject'] : undefined
+    const prev = this.lastSubjectId
+    this.lastSubjectId = typeof subjectAsset === 'string' ? subjectAsset : null
+    if (this.lastSubjectId === prev) return
+    this.clearField('subject')
+    if (
+      this.lastSubjectId !== null &&
+      assetSvg(this.lastSubjectId) !== null &&
+      decl.zones['subject'] !== undefined
+    ) {
+      const zone = decl.zones['subject']
+      const rx = zone.rx ?? 120
+      const ry = zone.ry ?? 110
+      this.paintSceneItem(
+        { icon: this.lastSubjectId, x: zone.cx - rx, y: zone.cy - ry, w: rx * 2, h: ry * 2 },
+        0.2,
+      )
+      this.schedulePrims()
+    }
+  }
+
+  /** first_frame 清黑板:淡出旧画面(如有)→ 回到空板 */
   clear(): void {
-    this.resetCanvas()
-    this.templateId = null
-    this.lastData = null
+    this.transitionTo(() => {
+      this.templateId = null
+      this.lastData = null
+      this.lastSubjectId = null
+    })
   }
 
   destroy(): void {
     this.clearTimers()
+    if (this.fadeTimer !== null) {
+      window.clearTimeout(this.fadeTimer)
+      this.fadeTimer = null
+    }
+    this.pendingPaint = null
   }
 
+  /**
+   * 转场管线:所有场景切换走这一条——
+   * 有旧画面 → gfx/text 双层整体淡出 0.55s → 清板 → 执行 pending;
+   * 板上无内容(空板起步/淡出中再切)→ 立即执行 pending 不转场。
+   * 最新帧赢:淡出期间新请求直接取替 pending,不排队。
+   */
+  private transitionTo(paint: () => void): void {
+    this.pendingPaint = paint
+    const hasContent =
+      this.gfxRoot.firstElementChild !== null || this.textRoot.firstElementChild !== null
+    if (!hasContent) {
+      this.finishTransition()
+      return
+    }
+    if (this.fadeTimer !== null) return // 淡出已在途:pending 已更新,等现有计时器触发即可
+    this.clearTimers()
+    this.prims = []
+    this.cursorG.setAttribute('opacity', '0')
+    this.gfxRoot.style.transition = `opacity ${FADE_OUT_S}s ease`
+    this.textRoot.style.transition = `opacity ${FADE_OUT_S}s ease`
+    this.gfxRoot.style.opacity = '0'
+    this.textRoot.style.opacity = '0'
+    this.fadeTimer = window.setTimeout(() => {
+      this.fadeTimer = null
+      this.finishTransition()
+    }, FADE_OUT_S * 1000)
+  }
+
+  /** 淡出完成:清板+复位透明度+执行挂起动作 */
+  private finishTransition(): void {
+    const paint = this.pendingPaint
+    this.pendingPaint = null
+    this.resetCanvas()
+    this.gfxRoot.style.transition = ''
+    this.textRoot.style.transition = ''
+    this.gfxRoot.style.opacity = ''
+    this.textRoot.style.opacity = ''
+    paint?.()
+  }
+
+  /** resetCanvas:取消未落笔的绘制,清空双层(转场管线终态;同步直清语义保留给测试) */
   private resetCanvas(): void {
     this.clearTimers()
     this.prims = []
@@ -308,6 +404,29 @@ export class BoardRenderer {
       case 'stage_nodes':
         this.paintStage(gfx, text, data as StageMapData, delay)
         break
+      case 'icon+text': {
+        // 场景槽位:图标为主(选材 id 优先,未知/缺省落声明默认),文字弱化为图标下小字
+        const assets = 'assets' in data ? (data as SceneFormulationData).assets : undefined
+        const chosen = assets?.[field.key as keyof typeof assets]
+        const iconId = typeof chosen === 'string' && assetSvg(chosen) !== null ? chosen : field.icon
+        if (iconId !== undefined) {
+          const rx = zone.rx ?? 60
+          const ry = zone.ry ?? 60
+          this.paintSceneItem(
+            { icon: iconId, x: zone.cx - rx, y: zone.cy - ry, w: rx * 2, h: ry * 2 },
+            delay,
+          )
+        }
+        const label = displayText(field, fieldOf(data, field.key))
+        if (label !== '') {
+          this.chalkText(text, zone.cx, zone.cy + (zone.ry ?? 60) + 16, label, {
+            size: field.size ?? 13,
+            color: CHALK_SUB,
+            maxWidth: (zone.rx ?? 60) * 2 + 40,
+          }, delay + 0.3)
+        }
+        break
+      }
     }
   }
 
@@ -348,6 +467,70 @@ export class BoardRenderer {
       this.chalkText(text, p.x, p.y + 34, label, { size: isCur ? 16 : 14, color: isCur ? WARM : CHALK }, delay + 0.7 + i * 0.5)
     })
     this.roughEllipse(gfx, STAGE_PATH.p2.x, STAGE_PATH.p2.y, 24, 24, { stroke: WARM, width: 2, fill: 'rgba(232,217,168,.14)' }, delay + 0.8 + n * 0.5)
+  }
+
+  // ── 场景化(blackboard-v1):预绑定底图 + 槽位图标 ──
+
+  /** 场景底图:模板声明预绑定元素序列,一次性画入(仅换模板/清板后的首绘路径)。
+   *  场景层只画预绑定装饰(分隔线等);主体/字段图标全由选材驱动,不在此层兜底 */
+  private paintScene(decl: TemplateDecl, data: TemplateData): void {
+    const items = decl.scene
+    if (items !== undefined) {
+      items.forEach((item, i) => {
+        if (item.kind === 'line') {
+          this.roughLine(this.gfxRoot, item.x1 ?? 0, item.y1 ?? 0, item.x2 ?? 0, item.y2 ?? 0, {
+            stroke: 'rgba(243,235,221,.35)',
+            width: 1.2,
+          }, item.delay ?? i * 0.35)
+        } else if (item.icon !== undefined) {
+          this.paintSceneItem(item as SceneItem & { icon: string }, item.delay ?? i * 0.35)
+        }
+      })
+    }
+    // 固定场景的注释行(scene_answer/scene_crisis):note 进底部小字区
+    if ('note' in data) {
+      const note = (data as { note: string | null }).note
+      if (note !== null && note !== '') this.chalkText(this.textRoot, 320, 420, note, { size: 15, color: CHALK_SUB, maxWidth: 520 }, 0.1)
+    }
+    this.schedulePrims()
+  }
+
+  /** 单个场景图标:SVG 内联进 <g>,等比 contain 适配放置区,currentColor 继承粉笔色 */
+  private paintSceneItem(item: SceneItem & { icon: string }, delay: number): void {
+    const svgText = assetSvg(item.icon)
+    if (svgText === null) {
+      logger.warn('board', `未知素材 id,跳过: ${item.icon}`)
+      return
+    }
+    const x = item.x ?? 0
+    const y = item.y ?? 0
+    const w = item.w ?? 100
+    const h = item.h ?? 100
+    // 外层 g 定位+着色,内层 g 作动画单元(koboyo 内层是散装 path,需自己包一层)
+    const outer = this.el(this.gfxRoot, 'g', { 'data-scene-icon': item.icon })
+    const prim = this.svg.ownerDocument.createElementNS(NS, 'g')
+    this.inlineSvg(outer, prim, svgText, { ...item, x, y, w, h })
+    prim.classList.add('board-primitive')
+    this.prims.push({ el: prim, delay, cursor: { x: x + w / 2, y: y + h / 2 } })
+  }
+
+  /**
+   * SVG 内联:取根 <svg> 内层装进动画 g(koboyo 根标签 fill=currentColor 提取内层后会丢,
+   * 外层必须补 fill,否则回落黑色——原型页踩过的坑);viewBox 等比 contain 缩放居中。
+   */
+  private inlineSvg(outer: SVGElement, prim: SVGElement, svgText: string, item: { x: number; y: number; w: number; h: number }): void {
+    const vb = svgText.match(/viewBox="([^"]+)"/)?.[1]
+    const inner = svgText.match(/<svg[^>]*>([\s\S]*)<\/svg>/)?.[1] ?? ''
+    const [vx = 0, vy = 0, vw = 100, vh = 100] = (vb ?? '').split(/[\s,]+/).map(Number)
+    const s = Math.min(item.w / vw, item.h / vh)
+    const x = item.x + (item.w - vw * s) / 2
+    const y = item.y + (item.h - vh * s) / 2
+    outer.setAttribute('fill', 'currentColor')
+    outer.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${s.toFixed(4)}) translate(${-vx} ${-vy})`)
+    // 纯粉笔白定稿:一律粉笔白;tone 声明保留作对照,暖点缀方案时按 tone 分色
+    outer.setAttribute('color', CHALK)
+    prim.innerHTML = inner
+    outer.append(prim)
   }
 
   // ── 粉笔原语(中点抖动/半径噪声/dash-reveal/光标跟随)──
@@ -499,15 +682,12 @@ export class BoardRenderer {
   }
 }
 
-/** 字段值 → 粉笔展示文字:字符串加标签前缀;emotion 对象拼 label · intensity */
+/** 字段值 → 粉笔展示文字:字符串加标签前缀;emotion 对象只取 label(intensity 不上黑板,黑板非仪表盘) */
 function displayText(field: FieldDecl, value: unknown): string {
   const prefix = field.label !== undefined ? `${field.label} · ` : ''
   if (typeof value === 'string') return `${prefix}${value}`
   if (isEmotion(value)) {
-    const parts = [value.label, value.intensity !== null ? String(value.intensity) : null].filter(
-      (p): p is string => p !== null && p !== '',
-    )
-    return parts.length > 0 ? prefix + parts.join(' · ') : ''
+    return value.label !== null && value.label !== '' ? `${prefix}${value.label}` : ''
   }
   return ''
 }
