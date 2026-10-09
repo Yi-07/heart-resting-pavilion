@@ -97,8 +97,13 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     monkeypatch.setattr("app.admin.routes.get_memory", lambda: mem)
     monkeypatch.setattr("app.main.get_memory", lambda: mem)
     # 语音默认静音:TTS 流式合成不出块(跳过音频帧)、fillers 取不到——防测试
-    # 拉起真 sidecar 或多出 audio_chunk 破坏既有帧序断言;语音用例自行覆盖
-    monkeypatch.setattr("app.voice.tts.synthesize_stream", lambda text: iter(()))
+    # 拉起真 sidecar 或多出 audio_chunk 破坏既有帧序断言;语音用例自行覆盖。
+    # synthesize_stream_detailed 也要桩:句子泵走它,remote 模式下它直连远程服务
+    # (本机 GPT-SoVITS 在场时测试会收到真音频,帧序断言被打破)
+    monkeypatch.setattr("app.voice.tts.synthesize_stream", lambda *a, **k: iter(()))
+    monkeypatch.setattr(
+        "app.voice.tts.synthesize_stream_detailed", lambda *a, **k: iter(())
+    )
     monkeypatch.setattr("app.voice.fillers.pick", lambda: None)
     # sidecar 进程编排不进测试:TestClient 触发 lifespan 时不得真拉 sidecar,
     # 也不得留下 _stopping=True 污染同进程的后续语音用例;语音用例自行还原

@@ -139,6 +139,13 @@ TTS_FIRST_SENTENCE_HANZI = int(os.getenv("TTS_FIRST_SENTENCE_HANZI", "12"))
 调小换取更快出声与更高的音文交错率,代价是首句语气更碎。
 """
 
+TTS_ANSWER_VOICE = os.getenv("TTS_ANSWER_VOICE", "1") not in ("0", "false", "no")
+"""answer 路由是否同时流式出语音。默认开:句子泵让首句音频不必等 LLM 全文生成完。
+
+关掉 = 只走文字流(调试语音链路、或想对比"有无语音"的体感差异时用)。
+其余路由(crisis 安抚语 / collect / 总结 / fillers)不受此开关影响。
+"""
+
 TTS_SERVICE_URL = os.getenv("TTS_SERVICE_URL", "http://127.0.0.1:9001")
 """远程 TTS 服务地址;必须写 127.0.0.1 不写 localhost(IPv6 ::1 先解析会白等 2.1s)"""
 

@@ -45,3 +45,6 @@ docs/task-kanbans/yxw/
 
 # 测试语音素材(安全红线 §7:音频绝不落库;B2 本地自备,路径见 handoff §2)
 backend/tests/voices/
+
+# GPT-SoVITS 引擎独立交付件(第三方源码+权重,不入库)
+GPT-SoVITS/

@@ -203,7 +203,7 @@ def test_crisis_speaks_hotline(monkeypatch):
     import base64 as b64mod
 
     monkeypatch.setattr(
-        "app.voice.tts.synthesize_stream", lambda text: iter((b"WAVDATA",))
+        "app.voice.tts.synthesize_stream", lambda *a, **k: iter((b"WAVDATA",))
     )
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "我不想活了")
