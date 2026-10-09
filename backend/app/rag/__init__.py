@@ -7,6 +7,7 @@ engine 内。两库(科普知识库/案例库)由 RagLibrary 标识,调用方只
 进程编排(ADR-003):模型加载 ~18s 级,禁止请求路径同步加载——lifespan 后台
 warm() 预热;请求侧 retrieve_async 等就绪(上限 2s,超时 RagNotReady 由调用方
 降级直答),检索本体走 to_thread(encode/query/rerank 数百 ms 同样不进事件循环)。
+BM25 索引按库持久化缓存(.rag_store/bm25/),启动预热直接读缓存免回建。
 """
 
 import asyncio

@@ -43,6 +43,8 @@ def main() -> None:
     args = parser.parse_args()
 
     case_override = Path(args.corpus) if args.corpus else None
+    if case_override is not None and args.library == RagLibrary.KNOWLEDGE.value:
+        parser.error("位置语料参数只适用于 case 库,不能与 --library knowledge 同时使用")
     targets = (
         [RagLibrary(args.library)]
         if args.library
