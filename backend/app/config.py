@@ -131,6 +131,14 @@ TTS_SIDECAR_KILL_ON_EXIT = os.getenv("TTS_SIDECAR_KILL_ON_EXIT", "1") != "0"
 TTS_MODE = os.getenv("TTS_MODE", "remote")
 """TTS 运行模式: remote = HTTP 远程服务(默认); local = sidecar 子进程(回滚用)"""
 
+TTS_FIRST_SENTENCE_HANZI = int(os.getenv("TTS_FIRST_SENTENCE_HANZI", "12"))
+"""首句字数上限(仅 answer 语音链路的第一句生效,后续句子仍按 30 字)。
+
+流水线 TTFB ≈ 首句字数 × LLM 每字耗时 + 服务侧首块耗时,首句是唯一的调节旋钮:
+实测首句 4 字 -> TTFB 0.72s;24 字 -> 3.14s;31 字 -> 4.29s。
+调小换取更快出声与更高的音文交错率,代价是首句语气更碎。
+"""
+
 TTS_SERVICE_URL = os.getenv("TTS_SERVICE_URL", "http://127.0.0.1:9001")
 """远程 TTS 服务地址;必须写 127.0.0.1 不写 localhost(IPv6 ::1 先解析会白等 2.1s)"""
 
