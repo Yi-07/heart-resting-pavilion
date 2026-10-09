@@ -131,7 +131,9 @@
 { "type": "audio_chunk", "seq": 6, "format": "wav", "data": "<base64>", "final": false }
 ```
 
-- **可多帧**：TTS 按句合成，一段语音拆为多个 audio_chunk（seq 单调递增），前端按序连播。实现注记：后端每帧均置 `final: true`，前端不依赖该位判尾
+- **format 固定 `wav`**：后端 `Connection.send_audio` 发的是 wav 字节，前端 `AudioQueue` 把 `format` 直接拼进 `data:audio/<format>;base64,` —— 换编码要前后端一起改
+- **可多帧**：TTS 按句合成，一段语音 = 多个 audio_chunk（seq 单调递增），前端按序连播
+- **final 语义**：`true` 标记本回合最后一块（单发路径如安抚语/危机热线恒 true；answer 流式路径恒 false，最后一块不补发）。前端当前不读该字段，不依赖它也能播
 - **时序例外**：总结语音与安抚语异步流出，可在 `done` 之后到达（见 §6.2）；前端播放队列独立于回合状态，下一回合 `first_frame` 清队（音频打断由 AudioQueue 承担）
 
 ### 3.5 done
@@ -248,10 +250,14 @@
 C→S  user_input
 S→C  draw (template:"scene_answer", data:{note:null})   ← 回合起点发（空板缺口补场景），无 first_frame（§3.1 语义不变）
 S→C  text_delta ×N   (流式;知识型走 RAG 后同)
+     S→C  audio_chunk ×N (逐句语音,与 text_delta 交错,可选)
 S→C  done
 ```
 
 - 模板切换触发前端转场管线（空板→场景淡入）；重复 answer 回合同模板不转场、同 data 不重画
+- **语音与文字交错**：句子泵把 LLM 流增量切句，凑够一句就送 TTS，出声不等全文生成完。两者共用 seq 计数（§3.2），顺序以到达为准
+- **文字不被音频拖住**：LLM 出字比合成快一个量级，两条队列分开走
+- **语音缺席不杀回合**：TTS 失败只记 degraded，文字链路照常；`TTS_ANSWER_VOICE=0` 可整体关停 answer 语音（调试用）
 
 ### 6.2 collect（多轮采集，板式接力）
 
