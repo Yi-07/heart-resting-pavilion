@@ -102,8 +102,13 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     monkeypatch.setattr("app.voice.fillers.pick", lambda: None)
     # sidecar 进程编排不进测试:TestClient 触发 lifespan 时不得真拉 sidecar,
     # 也不得留下 _stopping=True 污染同进程的后续语音用例;语音用例自行还原
-    monkeypatch.setattr("app.voice.tts.ensure_sidecar", lambda timeout_s=None: False)
-    monkeypatch.setattr("app.voice.tts.shutdown_spawned", lambda: None)
+    # remote 模式下 ensure_sidecar/shutdown_spawned 不存在,跳过
+    from app.voice import tts as _tts_mod
+
+    if hasattr(_tts_mod, "ensure_sidecar"):
+        monkeypatch.setattr("app.voice.tts.ensure_sidecar", lambda timeout_s=None: False)
+    if hasattr(_tts_mod, "shutdown_spawned"):
+        monkeypatch.setattr("app.voice.tts.shutdown_spawned", lambda: None)
     # RAG 预热旗标置位:单测不跑真预热(真实加载 ~18s),retrieve_async 直通
     import threading
 
