@@ -128,6 +128,18 @@ TTS_SIDECAR_READY_TIMEOUT_S = 120.0
 TTS_SIDECAR_KILL_ON_EXIT = os.getenv("TTS_SIDECAR_KILL_ON_EXIT", "1") != "0"
 """backend 退出时是否关停自己拉起的 sidecar;--reload 热载开发设 0,免得改一行代码陪杀模型"""
 
+TTS_MODE = os.getenv("TTS_MODE", "remote")
+"""TTS 运行模式: remote = HTTP 远程服务(默认); local = sidecar 子进程(回滚用)"""
+
+TTS_SERVICE_URL = os.getenv("TTS_SERVICE_URL", "http://127.0.0.1:9001")
+"""远程 TTS 服务地址;必须写 127.0.0.1 不写 localhost(IPv6 ::1 先解析会白等 2.1s)"""
+
+TTS_SERVICE_TIMEOUT_S = float(os.getenv("TTS_SERVICE_TIMEOUT_S", "600"))
+"""远程 TTS 合成流整体超时(秒);首包超时 30s 固定在客户端"""
+
+SERVICE_AUTH_TOKEN = os.getenv("SERVICE_AUTH_TOKEN", "")
+"""远程服务共享认证 token(Bearer header);空=跳过验证(开发环境)"""
+
 AUDIO_INPUT_MAX_S = 15.0
 """语音输入单段上限(契约 §4.1;前端录音侧执行)"""
 
