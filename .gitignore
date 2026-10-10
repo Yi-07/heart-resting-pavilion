@@ -32,5 +32,6 @@ prototypes/
 # 测试语音素材(安全红线 §7:音频绝不落库;B2 本地自备,路径见 handoff §2)
 backend/tests/voices/
 
-# GPT-SoVITS 第三方仓库(独立打包交付给协作方,不入本仓版本库)
-GPT-SoVITS/
+# 注:GPT-SoVITS/ 曾作为独立嵌套仓库被本行排除(2026-10-10 起解除)。
+# 现改为项目内普通目录,由本仓统一追踪;其自身的忽略规则(虚拟环境、
+# 模型权重、temp/、logs/ 等)由 GPT-SoVITS/.gitignore 承接。

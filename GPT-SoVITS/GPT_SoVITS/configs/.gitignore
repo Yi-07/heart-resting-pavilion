@@ -1,0 +1,11 @@
+*.yaml
+# 本项目需要跟踪这些推理配置(权重路径、version、device 等),
+# 上游默认忽略 *.yaml,这里显式放行。
+!tts_infer.yaml
+!s1.yaml
+!s1big.yaml
+!s1big2.yaml
+!s1longer.yaml
+!s1longer-v2.yaml
+!s1mq.yaml
+!train.yaml
