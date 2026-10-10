@@ -35,7 +35,7 @@ else:
     _SILENCE_GATE = 100
     """近静音门限(16bit PCM 平均绝对幅值,32768 满幅;≈-50dBFS)。"""
 
-    from app.voice.asr_errors import ASRError  # noqa: F401
+    from app.voice.asr_errors import ASRError
 
     @lru_cache(maxsize=1)
     def _model():

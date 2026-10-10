@@ -18,7 +18,7 @@ import urllib.request
 
 from app import config
 from app import logger as app_logger
-from app.voice.asr_errors import ASRError  # noqa: F401
+from app.voice.asr_errors import ASRError
 
 logger = app_logger.logger.bind(service=app_logger.SERVICE, module="asr_client")
 
