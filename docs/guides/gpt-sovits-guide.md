@@ -1,7 +1,7 @@
 ---
 title: GPT-SoVITS TTS 服务说明
 section: guides
-last_updated: 2026-10-08
+last_updated: 2026-10-09
 ---
 
 # GPT-SoVITS TTS 服务说明
@@ -15,20 +15,11 @@ last_updated: 2026-10-08
 它是一个**独立的 FastAPI TTS 微服务**，把 GPT-SoVITS 的推理能力包成了标准的 HTTP 接口。
 主服务通过 HTTP 调它合成语音，而不是自己加载 AI 模型。
 
-**它不在本仓库源码里**，源码在：
-
-```text
-E:\aic-project\GPT-SoVITS
-```
-
 ---
 
 ## 2. 启动方式
 
 ```powershell
-# 在源码仓库根目录下
-cd E:\aic-project\GPT-SoVITS
-
 python -m tts_service
 ```
 
@@ -50,14 +41,15 @@ python -m tts_service --host 0.0.0.0 --port 9880 --voice yilai
 | GET | `/ready` | 模型就绪才返回 200，否则 503 |
 | GET | `/v1/health` | 详细健康：端口、模型名、GPU 状态 |
 | GET | `/metrics` | Prometheus 指标 |
-| POST | `/v1/tts/stream` | 流式合成语音 |
-| POST | `/v1/tts/cancel` | 打断当前合成 |
+| POST | `/v1/tts/stream` | **legacy**：逐句产出整句 WAV |
+| POST | `/v2/tts/stream` | **realtime**：逐块产出 PCM16 |
+| POST | `/v1/tts/cancel` | round 级打断 |
 
 ---
 
 ## 4. 请求/响应格式
 
-### 4.1 合成请求
+### 4.1 legacy 合成请求（`/v1`）
 
 ```http
 POST /v1/tts/stream
@@ -69,8 +61,12 @@ X-Request-ID: r-123
 
 - `text`：**必须纯中文**，含英文字母会直接返回 400
 - `voice`：可选，对应 `reference/<name>.wav`
+- `X-Request-ID` 当作 `round_id` 用，打断时用同一个值
 
-### 4.2 响应（NDJSON）
+**legacy 契约不要求 body 里带 `round_id`** —— 那是 `/v2` 才引入的规则，
+不要用 v2 的要求去校验 v1 的调用方。
+
+### 4.2 legacy 响应（NDJSON）
 
 每行一个 JSON，每行是一个完整的 wav 文件（base64 编码）：
 
@@ -84,9 +80,47 @@ X-Request-ID: r-123
 {"error": "text contains ASCII characters", "code": "ascii_unsupported"}
 ```
 
+### 4.3 realtime 合成请求（`/v2`）
+
+```http
+POST /v2/tts/stream
+Content-Type: application/json
+X-Request-ID: r-123
+
+{"text": "你好，今天天气不错。", "voice": "", "round_id": "r-123"}
+```
+
+**强制 `X-Request-ID == body.round_id`**。不一致直接 400 `round_id_mismatch`，
+**不进入推理**。理由不是形式主义：打断是按 `round_id` 命中的，两处给不同的值，
+打断要么打不中（排队继续出声），要么打中别人（跨 round 误伤）。
+
+### 4.4 realtime 响应（NDJSON）
+
+音频块（裸 PCM16，无 WAV 头，base64 编码）：
+
+```json
+{"type": "audio", "round_id": "r-123", "seq": 0, "sentence_index": 0,
+ "sample_rate": 32000, "channels": 1, "format": "pcm_s16le", "pcm": "xxxx..."}
+```
+
+控制帧：
+
+```json
+{"type": "sentence_end", "round_id": "r-123", "sentence_index": 0}
+{"type": "end", "round_id": "r-123"}
+{"type": "cancelled", "round_id": "r-123"}
+{"type": "error", "round_id": "r-123", "code": "synth_failed", "message": "..."}
+```
+
+- `end` 与 `cancelled` **互斥**
+- `seq` 从 0 开始，在**一个 round 内**单调递增、跨句连续、不跳号、不重号
+- PCM 固定 `32000 Hz / 单声道 / pcm_s16le`（小端、交错）
+
 ---
 
 ## 5. 核心链路（调用顺序）
+
+### 5.1 legacy（`/v1`，整句交付）
 
 ```
 POST /v1/tts/stream
@@ -95,7 +129,7 @@ server.py 读取请求、做基础校验
   ↓
 engine.py.guard()  —— 输入守卫（长度、空文本、ASCII 禁用、句数上限）
   ↓
-engine.py.synthesize()  —— 逐句合成
+engine.py.synthesize()  —— 逐句合成，整句齐了才交
   ↓
 engine.py._build_req()  —— 准备模型需要的参数
   ↓
@@ -146,6 +180,16 @@ TextPreprocessor  →  AR 文本到语义 token  →  vits/vocoder 生成音频
 4. **打断靠 token，不杀线程**  
    如果直接杀线程，CUDA 同步会漏掉，显存可能无法释放。
 
+5. **chunk 级打断不中断在跑的那一块**  
+   `/v1` 与 `/v2` 都是 **chunk 级**：取消命中后不再开始新的 chunk，
+   但已经在跑的那个 chunk 会跑完才停。最坏延迟约等于一个 chunk 的时长
+   （实测 P50 2ms / P90 744ms）。这是设计选择，不是 bug。
+
+6. **进程 cwd 必须是 GPT-SoVITS 根目录**  
+   `tts_infer.yaml` 里的权重路径、参考音频路径全��相对路径。
+   `python -m tts_service` 会在进程入口 chdir 到仓库根 —— 这不是 `engine.load()`
+   在后台线程里做的（那种做法会让「哪个线程碰文件系统」变成不确定行为）。
+
 ---
 
 ## 9. 排查清单
@@ -156,6 +200,8 @@ TextPreprocessor  →  AR 文本到语义 token  →  vits/vocoder 生成音频
 | 合成很慢 | GPU 被占满或串行队列过长 |
 | 音频有金属音 | v3 已知问题，建议换 v4 |
 | 收到 400 ASCII 错误 | 文本里有英文字母，去掉或替换成中文 |
+| 收到 400 `round_id_mismatch` | `/v2` 的 `X-Request-ID` 与 `body.round_id` 不一致 |
+| 收到 503 `queue_wait_timeout` | 前一个回合还在跑；等它结束或先 cancel |
 
 ---
 
@@ -167,4 +213,23 @@ TextPreprocessor  →  AR 文本到语义 token  →  vits/vocoder 生成音频
 # 停掉正在跑的 python -m tts_service 进程即可
 ```
 
-如果你的主服务要换回内置模式，把 `TTS_MODE` 环境变量改成 `local`。
+如果你的主服务要换回内置模式，把 `TTS_MODE` 环境变量改成 `local`
+（此时主服务走 CosyVoice sidecar，不经过本文档这套接口）。
+
+---
+
+## 11. benchmark
+
+埋点默认关闭。开启后事件落 `temp/bench/*.jsonl`：
+
+```powershell
+# 服务侧
+$env:TTS_BENCH=1; python -m tts_service
+
+# 打流并聚合
+python temp/bench_tts.py --scenario multi --n 20 --rounds 3
+python temp/bench_compare.py            # 拼时间线 + 出 bench_compare.md
+```
+
+事件名是冻结契约，两端（服务 / 主服务 / 浏览器）必须逐字相同，
+否则拼不出跨进程时间线。最近一次完整结果见 `temp/BENCH_REPORT.md`。

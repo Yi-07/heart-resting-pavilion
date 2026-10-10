@@ -81,13 +81,23 @@ export interface TextDelta {
   final: boolean
 }
 
+/** 音频编码;决定前端走哪条播放链路(见 audio/index.ts 的分派) */
+export type AudioFormat = 'wav' | 'pcm_s16le'
+
 /** TTS 音频块(base64) */
 export interface AudioChunk {
   type: 'audio_chunk'
   seq: number
-  format: string
+  format: AudioFormat
   data: string
   final: boolean
+  /** TTS round_id;PCM 流式下用于回合隔离,旧 round 的迟到帧直接丢 */
+  round_id?: string
+  /** round 内单调递增的块序号;PCM 流式下用于保序,不跨句重置 */
+  audio_seq?: number
+  /** PCM 采样率(Hz);缺省表示该帧不是 PCM(旧帧不含此字段) */
+  sample_rate?: number
+  channels?: number
 }
 
 /** 回合结束;session_id 随 first_frame/done 带回(§1) */

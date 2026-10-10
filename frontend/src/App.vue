@@ -10,7 +10,8 @@ import type { S2CMsg } from './ws/messages'
 import { useRoundStore } from './state/round'
 import { chat } from './chat/messages'
 import { loadPersistedSession } from './ws/client'
-import { AudioQueue } from './audio/queue'
+import { AudioHub } from './audio'
+import { configureBench } from './audio/bench'
 import { MoodSelector } from './mood/selector'
 import { avatarSvg, expressionFor } from './l2d/placeholder'
 import { createLive2D, disposeLive2D, type Live2DController } from './l2d/live2d'
@@ -39,7 +40,12 @@ const client = new WSClient(WS_URL)
 const persistedSession = loadPersistedSession()
 if (persistedSession !== null) client.restoreSession(persistedSession)
 bindStation(() => client) // 补给站 REST 读 session_id(重连不变)
-const audio = new AudioQueue()
+// AudioHub 按 audio_chunk.format 分派:PCM 走 Web Audio 流式,整句 wav 走 legacy 队列。
+// TTS_PCM_BUFFER_MS 决定 PCM 目标缓冲深度(plan §22 的 80/120/200ms 由 benchmark 定,
+// 不在此预锁最佳值 —— 默认 120ms,可用环境变量覆盖做 A/B)。
+const pcmBufferMs = Number(import.meta.env.VITE_TTS_PCM_BUFFER_MS ?? 120)
+const audio = new AudioHub({ targetBufferSeconds: pcmBufferMs / 1000 })
+if (import.meta.env.VITE_TTS_BENCH === '1') configureBench({ enabled: true })
 const mood = new MoodSelector({ round, send: (m) => client.send(m) })
 
 const boardRef = ref<InstanceType<typeof BoardCanvas> | null>(null)
@@ -175,7 +181,10 @@ onMounted(() => {
   void loadL2d()
 
   track('first_frame', (m) => {
-    audio.stopAndFade()
+    // 新回合 = 旧回合音频全部作废(cancel → flush)。直接 flush 而不是设新
+    // round_id:回合 id 由第一块 PCM 自认领(answer 路不发 first_frame,不能
+    // 靠这里预置),这里只负责把旧声音立刻掐掉。
+    audio.flush()
     round.transition({ kind: 'frame', msg: m })
     boardRef.value?.clear()
     lastTemplate.value = m.template
