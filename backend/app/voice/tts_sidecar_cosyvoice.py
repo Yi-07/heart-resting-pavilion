@@ -1,5 +1,10 @@
-"""CosyVoice2 TTS sidecar —— 在 models/voices/CosyVoice 自备 venv(Python 3.10)下
-运行的独立 HTTP 服务,与 backend venv 进程隔离(两套 torch 版本互不兼容)。
+"""CosyVoice2 TTS sidecar —— **legacy / deprecated**(plan §9.2)。
+
+保留不删除,但已不是 active path:默认 `TTS_MODE=remote`,语音走 GPT-SoVITS
+远程服务(9001)。只有显式设 `TTS_MODE=local` 才会用到本文件。
+
+在 models/voices/CosyVoice 自备 venv(Python 3.10)下运行的独立 HTTP 服务,
+与 backend venv 进程隔离(两套 torch 版本互不兼容)。
 
 - stdlib http.server,零框架依赖;POST /tts_stream {"text": ...} → NDJSON 逐句
   出料(每行 {"wav": "<b64>"} 一句);GET /health → {"ready","error","version"}
@@ -9,7 +14,12 @@
 - 音色:零样本模式,固定用仓库自带 asset/zero_shot_prompt.wav(+ 配套提示文本),
   保证与 fillers 预生成同音色
 - 启动方式:backend 主进程 lifespan 自动拉起(也可手动:
-  models/voices/CosyVoice/.venv/Scripts/python.exe backend/app/voice/tts_sidecar.py)
+  models/voices/CosyVoice/.venv/Scripts/python.exe
+  backend/app/voice/tts_sidecar_cosyvoice.py)
+
+注意:分句规则来自 `sidecar_protocol`(它再导出 app.voice.sentence_split),
+所以本文件与 backend 共享同一份分句规则,但**不** import backend 的包 ——
+CosyVoice venv 拿不到 backend 依赖。
 """
 
 from __future__ import annotations
@@ -122,6 +132,8 @@ def _patch_load_wav() -> None:
 def _load_model() -> None:
     try:
         sys.path.insert(0, str(REPO))
+        # matcha lives in CosyVoice/third_party/Matcha-TTS, not at repo root
+        sys.path.insert(0, str(REPO / "third_party" / "Matcha-TTS"))
         _patch_load_wav()
         from cosyvoice.cli.cosyvoice import CosyVoice2
 

@@ -7,8 +7,10 @@
 
 import asyncio
 import json
+from collections.abc import Iterator
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import config
@@ -19,6 +21,55 @@ from app.main import app
 from app.rag.corpus import RagLibrary, Ref
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _no_answer_voice(monkeypatch):
+    """本文件的用例测的是帧序/黑板/seq/危机,不是语音。
+
+    两件事都要钉死,否则测试结果取决于"这台机器上 TTS 服务开没开":
+      1. 关掉 answer 语音 —— 它并发跑 TTS,给事件循环加负载;
+         batched_chunks 的攒批窗口是 100ms 墙钟,负载一变批次切分就变,
+         而这些用例断言精确帧数,会变成时序脆弱的测试。
+      2. TTS 桩成"不产出任何音频" —— 危机路径本来就会调 TTS,
+         真服务在跑时会多出 audio_chunk 帧,把帧序断言打乱。
+
+    语音链路本身由 tests/test_ws_streaming_e2e.py 覆盖(真服务 + 真 HTTP),
+    需要音频帧的用例自己覆写这个桩(见 test_crisis_speaks_hotline)。
+    """
+    monkeypatch.setattr(config, "TTS_ANSWER_VOICE", False)
+    # 两条链路都静音:gateway 按 STREAM_MODE 选链路,只静音一条等于没静音
+    monkeypatch.setattr(
+        "app.voice.tts.synthesize_stream",
+        lambda text, **kw: iter(()),
+    )
+    monkeypatch.setattr(
+        "app.voice.tts.synthesize_pcm_stream",
+        lambda text, **kw: iter(()),
+    )
+
+
+def _silent_stream(text: str, **kw: Any) -> Iterator[bytes]:
+    return iter((b"WAVSTUB",))
+
+
+def _silent_pcm_stream(text: str, **kw: Any) -> Iterator[Any]:
+    """realtime 链路的静默桩:产出一块可辨识的 PCM(plan §4 目标链路)。"""
+    from app.voice.tts_client import PcmChunk
+
+    return iter(
+        (
+            PcmChunk(
+                round_id=kw.get("request_id") or "",
+                seq=0,
+                sentence_index=0,
+                sample_rate=32000,
+                channels=1,
+                format="pcm_s16le",
+                pcm=b"PCMSTUB",
+            ),
+        )
+    )
 
 
 def _recv(ws: Any) -> dict:
@@ -199,11 +250,46 @@ def test_legacy_audio_input_rejected():
 
 
 def test_crisis_speaks_hotline(monkeypatch):
-    """危机热线 TTS:text → audio_chunk(wav·final·seq 递增)→ done。"""
+    """危机热线 TTS(text → audio_chunk → done)在 realtime 链路下收 PCM 块。"""
     import base64 as b64mod
 
+    # STREAM_MODE=pcm 是默认路径;这里钉的是"默认走 PCM"这件事本身
+    monkeypatch.setattr("app.voice.tts.synthesize_pcm_stream", _silent_pcm_stream)
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "我不想活了")
+        assert _recv(ws)["type"] == "first_frame"
+        assert _recv(ws)["type"] == "draw"
+        text = _recv(ws)
+        assert text["type"] == "text_delta"
+
+        audio = _recv(ws)
+        assert audio["type"] == "audio_chunk"
+        assert audio["format"] == "pcm_s16le"
+        # PCM 四字段必填(ws-contract §3.4)
+        assert audio["round_id"] == "tts-0"
+        assert audio["audio_seq"] == 0
+        assert audio["sample_rate"] == 32000
+        assert audio["channels"] == 1
+        assert b64mod.b64decode(audio["data"]) == b"PCMSTUB"
+        assert audio["seq"] == text["seq"] + 1
+
+        done = _recv(ws)
+        assert done["type"] == "done"
+        assert done["seq"] == audio["seq"] + 1
+
+
+def test_crisis_speaks_hotline_legacy_wav(monkeypatch):
+    """STREAM_MODE=wav(legacy,sidecar/CosyVoice)下仍是整句 wav + final=True。
+
+    与上一条同构但反向:证明两条链路都在,且 legacy 契约没被 realtime 改动带坏。
+    """
+    import base64 as b64mod
+
+    monkeypatch.setattr("app.voice.tts.STREAM_MODE", "wav", raising=False)
     monkeypatch.setattr(
-        "app.voice.tts.synthesize_stream", lambda text: iter((b"WAVDATA",))
+        # 收 request_id:_speak_stream 会带上回合 id(为了能穿透打断到服务)
+        "app.voice.tts.synthesize_stream",
+        lambda text, **kw: iter((b"WAVDATA",)),
     )
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "我不想活了")

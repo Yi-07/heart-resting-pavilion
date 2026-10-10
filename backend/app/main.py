@@ -17,6 +17,7 @@ from app import logger as app_logger
 from app.logger import setup_logger
 from app.memory import get_memory
 from app.station import router as station_router
+from app.voice.bench_routes import router as tts_bench_router
 from app.voice.routes import router as asr_router
 from app.ws_gateway import handle_connection
 
@@ -45,6 +46,29 @@ async def _warm_sidecar() -> None:
         _logger.warning(
             "tts_sidecar_warm_failed · TTS sidecar 未就绪",
             port=config.TTS_SIDECAR_PORT,
+            elapsed_s=elapsed,
+        )
+
+
+async def _check_tts_ready() -> None:
+    """远程 TTS 就绪检查:等待远程服务模型加载完成;失败只 WARN,TTS 降级。"""
+    from app.voice import tts_client
+
+    _logger.info(f"tts_remote_warm_begin · 正在检查远程 TTS ({config.TTS_SERVICE_URL})")
+    t0 = time.perf_counter()
+    try:
+        ok = await asyncio.to_thread(tts_client.wait_ready, 60.0)
+    except Exception as exc:  # noqa: BLE001
+        _logger.warning("tts_remote_warm_error · 远程 TTS 检查异常",
+                        detail=str(exc)[:160])
+        return
+    elapsed = round(time.perf_counter() - t0, 1)
+    if ok:
+        _logger.info(f"tts_remote_warm_ready · 远程 TTS 已就绪({config.TTS_SERVICE_URL}, {elapsed}s)")
+    else:
+        _logger.warning(
+            "tts_remote_warm_failed · 远程 TTS 未就绪",
+            url=config.TTS_SERVICE_URL,
             elapsed_s=elapsed,
         )
 
@@ -88,7 +112,11 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
         _logger.info("memory_ready · Redis 连接正常")
     else:
         _logger.warning("memory_ping_failed · Redis 连接失败")
-    warm = asyncio.create_task(_warm_sidecar())
+    # TTS: remote 模式检查远程服务就绪;local 模式拉起 sidecar
+    if config.TTS_MODE == "remote":
+        warm = asyncio.create_task(_check_tts_ready())
+    else:
+        warm = asyncio.create_task(_warm_sidecar())
     rag_warm = asyncio.create_task(_warm_rag())
     watchdog = asyncio.create_task(_loop_watchdog())
     _logger.info("startup_ready · 文字链路已就绪")
@@ -96,9 +124,11 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     warm.cancel()  # 没就绪就退了:不再等
     rag_warm.cancel()
     watchdog.cancel()
-    from app.voice import tts  # 懒加载(同 warmup)
+    # local 模式才关停 sidecar;remote 模式不持有子进程
+    if config.TTS_MODE != "remote":
+        from app.voice import tts  # 懒加载(同 warmup)
 
-    tts.shutdown_spawned()
+        tts.shutdown_spawned()
 
 
 app = FastAPI(title="心栖阁 backend", version="0.1.0", lifespan=_lifespan)
@@ -111,6 +141,7 @@ app.add_middleware(
 app.include_router(station_router)
 app.include_router(admin.router)
 app.include_router(asr_router)
+app.include_router(tts_bench_router)
 
 
 @app.websocket("/ws")

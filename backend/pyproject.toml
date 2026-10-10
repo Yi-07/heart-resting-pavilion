@@ -12,6 +12,7 @@ dependencies = [
     "loguru>=0.7.3",
     "onnxruntime<1.24",
     "openai>=3.6.0",
+    "prometheus-client>=0.21.0",
     "python-dotenv>=1.2.3",
     "rank-bm25>=0.2.2",
     "redis>=8.1.0",
@@ -48,6 +49,10 @@ overrides = [
   # funasr 无 py.typed;torchaudio/cosyvoice 只在 CosyVoice sidecar venv 存在
   { module = ["funasr", "funasr.*"], ignore_missing_imports = true },
   { module = ["torchaudio", "torchaudio.*", "cosyvoice.*"], ignore_missing_imports = true },
-  # sidecar_protocol 以脚本目录顶层导入(tts_sidecar.py 无包上下文运行)
+  # sidecar_protocol 以脚本目录顶层导入(tts_sidecar_cosyvoice.py 无包上下文运行)
   { module = ["sidecar_protocol"], ignore_missing_imports = true },
+  # TTS standalone service: cosyvoice/torch 只在 CosyVoice venv 存在
+  { module = ["app.voice.tts_service.*"], ignore_missing_imports = true },
+  # ASR standalone service: funasr 可能不在主服务 venv
+  { module = ["app.voice.asr_service.*"], ignore_missing_imports = true },
 ]

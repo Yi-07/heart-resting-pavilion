@@ -86,7 +86,7 @@ class RagEngine:
         from sentence_transformers import SentenceTransformer
 
         if self._embedder is None:
-            self._embedder = SentenceTransformer(_EMBED_MODEL)
+            self._embedder = SentenceTransformer(_EMBED_MODEL, device="cuda")
         return self._embedder
 
     def _ensure_reranker(self) -> CrossEncoder | None:
@@ -94,7 +94,7 @@ class RagEngine:
 
         if self._reranker is None and not self._reranker_failed:
             try:
-                self._reranker = CrossEncoder(_RERANK_MODEL, max_length=512)
+                self._reranker = CrossEncoder(_RERANK_MODEL, max_length=512, device="cuda")
             except Exception:  # noqa: BLE001 — 任意加载失败都降级到 RRF 序,不致命
                 self._reranker_failed = True
                 logger.warning("reranker 加载失败,检索按 RRF 序降级")
@@ -161,36 +161,49 @@ class RagEngine:
         import jieba
         import numpy as np
 
+        from app import diag
+
+        diag.mark("eng_enter", library=library.value, q_len=len(query), k=k)
         top_k = k if k is not None else config.RAG_TOP_K
         collection = self._ensure_store(library)
-        if collection.count() == 0:
+        n_docs = collection.count()
+        diag.mark("eng_store", n_docs=n_docs)
+        if n_docs == 0:
             return []
         bm25 = self._ensure_bm25(library)  # 先建索引(填充 _bm25_refs[library]),再读 refs
+        diag.mark("eng_bm25_ready", cached=library in self._bm25)
         refs = self._bm25_refs[library]
         by_id = {r.id: r for r in refs}
 
-        recall_n = min(_RECALL_FACTOR * top_k, collection.count())
+        recall_n = min(_RECALL_FACTOR * top_k, n_docs)
         vec = self._ensure_embedder().encode(
             [_QUERY_PREFIX + query], normalize_embeddings=True
         )
+        diag.mark("eng_embed_done", dim=len(vec[0]))
         vec_hits: list[str] = collection.query(
             query_embeddings=np.asarray(vec).tolist(), n_results=recall_n
         )["ids"][0]
+        diag.mark("eng_chroma_done", recall_n=recall_n, hits=len(vec_hits))
 
         scores = bm25.get_scores(list(jieba.lcut(query)))
         bm25_ranked = [
             refs[i].id for i in np.argsort(scores)[::-1][:recall_n] if scores[i] > 0
         ]
+        diag.mark("eng_bm25_score_done", hits=len(bm25_ranked))
 
         fused = _rrf_fuse(vec_hits, bm25_ranked, k=_RRF_K)
         candidates = sorted(fused, key=lambda c: fused[c], reverse=True)
+        diag.mark("eng_fused", candidates=len(candidates))
 
         reranker = self._ensure_reranker()
         if reranker is None or not candidates:
+            diag.mark("eng_done", reranked=False, n=len(candidates[:top_k]))
             return [by_id[c].model_copy(update={"score": fused[c]}) for c in candidates[:top_k]]
         pairs = [(query, f"{by_id[c].question}\n{by_id[c].answer}") for c in candidates]
         ce_scores = reranker.predict(pairs)
+        diag.mark("eng_rerank_done", pairs=len(pairs))
         ranked = sorted(zip(candidates, ce_scores, strict=True), key=lambda p: p[1], reverse=True)
+        diag.mark("eng_done", reranked=True, n=len(ranked[:top_k]))
         return [by_id[c].model_copy(update={"score": float(s)}) for c, s in ranked[:top_k]]
 
 

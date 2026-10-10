@@ -17,9 +17,17 @@ from app import config
 from app.voice import fillers, tts
 from app.voice.fillers import pick as _orig_pick
 from app.voice.sidecar_protocol import SIDECAR_VERSION
-from app.voice.tts import ensure_sidecar as _orig_ensure_sidecar
-from app.voice.tts import synthesize as _orig_synthesize
-from app.voice.tts import synthesize_stream as _orig_synthesize_stream
+
+# local-mode symbols only exist when TTS_MODE=local
+if config.TTS_MODE == "local":
+    from app.voice.tts import ensure_sidecar as _orig_ensure_sidecar
+    from app.voice.tts import synthesize as _orig_synthesize
+    from app.voice.tts import synthesize_stream as _orig_synthesize_stream
+else:
+    # remote 模式:测试本地 sidecar 需要临时切换到 local 模式
+    _orig_ensure_sidecar = None  # type: ignore[assignment]
+    _orig_synthesize = None  # type: ignore[assignment]
+    _orig_synthesize_stream = None  # type: ignore[assignment]
 
 
 class _FakeSidecar(BaseHTTPRequestHandler):
@@ -53,12 +61,13 @@ def _real_voice(monkeypatch: pytest.MonkeyPatch):
     """本文件测真 voice 客户端:恢复 conftest 静音桩之前的原函数
     (须在模块导入期捕获——fixture 里现取会拿到已打桩的假货);
     进程编排状态(_stopping/_spawned)一并复位。"""
-    monkeypatch.setattr("app.voice.tts.synthesize", _orig_synthesize)
-    monkeypatch.setattr("app.voice.tts.synthesize_stream", _orig_synthesize_stream)
-    monkeypatch.setattr("app.voice.tts.ensure_sidecar", _orig_ensure_sidecar)
+    if config.TTS_MODE == "local" and _orig_ensure_sidecar is not None:
+        monkeypatch.setattr("app.voice.tts.synthesize", _orig_synthesize)
+        monkeypatch.setattr("app.voice.tts.synthesize_stream", _orig_synthesize_stream)
+        monkeypatch.setattr("app.voice.tts.ensure_sidecar", _orig_ensure_sidecar)
+        monkeypatch.setattr(tts, "_stopping", False)
+        monkeypatch.setattr(tts, "_spawned", None)
     monkeypatch.setattr("app.voice.fillers.pick", _orig_pick)
-    monkeypatch.setattr(tts, "_stopping", False)
-    monkeypatch.setattr(tts, "_spawned", None)
 
 
 @pytest.fixture()
@@ -72,6 +81,7 @@ def fake_sidecar(monkeypatch: pytest.MonkeyPatch):
     server.shutdown()
 
 
+@pytest.mark.skipif(config.TTS_MODE == "remote", reason="sidecar tests require local mode")
 def test_synthesize_stream_roundtrip_against_fake_sidecar(fake_sidecar):
     """流式:逐句 NDJSON → 按序产出两个分句块。"""
     chunks = list(tts.synthesize_stream("你好呀"))
@@ -80,6 +90,7 @@ def test_synthesize_stream_roundtrip_against_fake_sidecar(fake_sidecar):
     assert chunks[1][12:14] == b"#1"
 
 
+@pytest.mark.skipif(config.TTS_MODE == "remote", reason="sidecar tests require local mode")
 def test_synthesize_roundtrip_against_fake_sidecar(fake_sidecar):
     """整段包装:流式块按序拼接(fillers 离线生成路径)。"""
     wav = tts.synthesize("你好呀")
@@ -88,6 +99,7 @@ def test_synthesize_roundtrip_against_fake_sidecar(fake_sidecar):
     assert b"#1" in wav
 
 
+@pytest.mark.skipif(config.TTS_MODE == "remote", reason="sidecar tests require local mode")
 def test_synthesize_degrades_when_sidecar_down(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "TTS_SIDECAR_PORT", 59999)  # 无人监听
     monkeypatch.setattr(

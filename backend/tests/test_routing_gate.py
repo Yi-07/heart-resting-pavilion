@@ -18,12 +18,21 @@ from test_gateway import (
     client,
 )
 
+from app import config
 from app.rag.corpus import Ref
 
 
 @pytest.fixture(autouse=True)
 def _gate_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
-    """collect 图 LLM 脚本化 + 概念短答流 stub + RAG stub(真引擎加载秒级,单测不背)。"""
+    """collect 图 LLM 脚本化 + 概念短答流 stub + RAG stub(真引擎加载秒级,单测不背)。
+
+    还要钉死两件事,否则用例结果取决于"这台机器上有没有跑 TTS 服务":
+      1. answer 语音关掉 —— 它并发跑 TTS 给事件循环加负载,而 batched_chunks
+         的攒批窗口是 100ms 墙钟,负载一变批次切分就变,精确帧数断言会飘。
+      2. TTS 桩成不产出音频 —— 危机路径本来就会调 TTS,真服务可达时会多出
+         audio_chunk 帧,把 `text_delta → done` 这种帧序断言打乱。
+    语音链路本身由 tests/test_ws_streaming_e2e.py 覆盖(真服务 + 真 HTTP)。
+    """
 
     _patch_llm(monkeypatch, _ScriptedProvider())  # 提取恒成功,答复均入格
     monkeypatch.setattr(
@@ -35,6 +44,19 @@ def _gate_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda: _RagStub(
             [Ref(id="mindfulness-01", question="什么是正念?", answer="正念是觉察练习")]
         ),
+    )
+    monkeypatch.setattr(config, "TTS_ANSWER_VOICE", False)
+    # 两条链路都要静音(plan §4:gateway 按 tts.STREAM_MODE 选链路,只静音一条
+    # 等于没静音 —— PCM 那条会真的去打 TTS 服务,给事件循环加负载,而
+    # batched_chunks 的攒批窗口是 100ms 墙钟,负载一变批次切分就变,
+    # 精确帧数断言会飘;危机路径还会多出 audio_chunk 帧,打乱帧序断言)
+    monkeypatch.setattr(
+        "app.voice.tts.synthesize_stream",
+        lambda text, **kw: iter(()),
+    )
+    monkeypatch.setattr(
+        "app.voice.tts.synthesize_pcm_stream",
+        lambda text, **kw: iter(()),
     )
 
 

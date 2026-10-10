@@ -122,11 +122,30 @@
 ### 3.4 audio_chunk
 
 ```json
-{ "type": "audio_chunk", "seq": 6, "format": "mp3", "data": "<base64>", "final": false }
+{ "type": "audio_chunk", "seq": 6, "format": "wav", "data": "<base64>", "final": false }
 ```
 
-- **可多帧**:TTS 按句合成,一段语音 = 多个 audio_chunk(seq 单调递增),前端按序连播
-- **时序例外**:总结语音与安抚语异步流出,可在 `done` 之后到达(见 §6.2);前端播放队列独立于回合状态,下一回合 `first_frame` 清队(音频打断由 AudioQueue 承担)
+```json
+{
+  "type": "audio_chunk", "seq": 6, "format": "pcm_s16le", "data": "<base64>",
+  "final": false, "round_id": "tts-7", "audio_seq": 3,
+  "sample_rate": 32000, "channels": 1
+}
+```
+
+- **format 二选一**:`wav` = 整句 wav(base64 的完整文件);`pcm_s16le` = 一块裸 PCM16
+  (base64,小端,交错,无文件头)。前端按 `format` 分派到两条播放链路
+  (`AudioHub`:`wav`→`AudioQueue`,`pcm_s16le`→`PcmPlayer`)
+- **PCM 四字段**:`format=pcm_s16le` 时 `round_id`/`audio_seq`/`sample_rate`/`channels`
+  **必填**;`format=wav` 时只有 `round_id` 可能出现,其余省略
+- **可多帧**:TTS 分块合成,一段语音 = 多个 audio_chunk(seq 单调递增),前端按序连播
+- **round_id 一致性**:同一回合的所有帧 `round_id` 相同,由后端从 TTS 服务原样透传。
+  前端只接受 `round_id == currentRoundId` 的帧;旧回合的迟到帧直接丢(可观测)
+- **audio_seq**:回合内单调递增的音频块序号,**跨句连续、不重置**。与外层 `seq`
+  是两套号:`seq` 是本连接全局发帧序号,`audio_seq` 是回合内音频块序
+- **final 语义**:`true` 标记本回合最后一块(单发路径如安抚语恒 true;流式路径恒 false)。
+  前端当前不读该字段,不依赖它也能播
+- **时序例外**:总结语音与安抚语异步流出,可在 `done` 之后到达(见 §6.2);前端播放队列独立于回合状态,下一回合 `first_frame` 清队(音频打断由 AudioQueue/PcmPlayer 承担)
 
 ### 3.5 done
 
@@ -235,8 +254,14 @@
 ```
 C→S  user_input
 S→C  text_delta ×N   (流式;知识型走 RAG 后同)
+     S→C  audio_chunk ×N (逐句语音,与 text_delta 交错,可选)
 S→C  done
 ```
+
+- **语音与文字交错**:句子泵把 LLM 流增量切句,凑够一句就送 TTS,
+  出声不等全文生成完。两者共用 seq 计数,顺序以到达为准
+- **文字不被音频拖住**:LLM 出字比合成快一个量级,两条队列分开走
+- **语音缺席不杀回合**:TTS 失败只记 degraded,文字链路照常
 
 ### 6.2 collect(多轮采集)
 

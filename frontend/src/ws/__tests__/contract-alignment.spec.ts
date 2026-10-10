@@ -11,8 +11,11 @@ import type {
   StageMapData,
 } from '../messages'
 
-// vitest 里 import.meta.url 被 vite 改写,走 cwd(测试恒从 frontend/ 跑)定位仓库根
-const CONTRACT_PATH = resolve(process.cwd(), '..', 'architecture', 'ws-contract.md')
+// vitest 里 import.meta.url 被 vite 改写,走 cwd(测试恒从 frontend/ 跑)定位仓库根。
+// 契约在 docs/architecture/ 下(cba6fa3 文档树迁移后;此前在 architecture/,
+// 这次迁移漏改了本文件的路径,于是测试一直在 ENOENT —— 与其改测试去迁就旧路径,
+// 不如让它指向契约的真位置,这样它才是真的在比对契约)
+const CONTRACT_PATH = resolve(process.cwd(), '..', 'docs', 'architecture', 'ws-contract.md')
 
 const FORMULATION_KEYS = {
   situation: true,
