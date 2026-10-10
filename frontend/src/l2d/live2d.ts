@@ -79,12 +79,9 @@ export async function createLive2D(
         antialias: true,
       })
       sharedCanvas = canvas
-    } else {
-      // 换模型:清旧模型与舞台(canvas/GL 不动)
-      currentModel?.destroy()
-      currentModel = null
-      sharedApp.stage.removeChildren()
     }
+    // 换模型时旧模型不清在这里:等新模型加载成功后统一替换,切换全程旧画面
+    // 保持可见,无空窗(canvas/GL 不动);加载失败走下方 throw,旧模型原样保留
 
     let model: Awaited<ReturnType<typeof Live2DModel.from>> | null = null
     let lastErr: unknown = null
@@ -98,8 +95,11 @@ export async function createLive2D(
       }
     }
     if (model === null) throw new Error(`模型载入失败(候选 ${modelUrls.length} 个): ${String(lastErr)}`)
+    const prevModel = currentModel
     sharedApp.stage.addChild(model)
     currentModel = model
+    // 新模型已入舞台,此刻才清旧模型:切换全程画面无空窗
+    prevModel?.destroy()
 
     let bw = 600
     let bh = 700

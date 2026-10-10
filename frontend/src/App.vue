@@ -46,6 +46,8 @@ const boardRef = ref<InstanceType<typeof BoardCanvas> | null>(null)
 const l2dStageEl = ref<HTMLElement | null>(null)
 const l2dCanvasEl = ref<HTMLCanvasElement | null>(null)
 const l2dReady = ref(false)
+// 加载中/失败分离:加载中显示呼吸光斑占位,只有失败才落回 SVG 手绘兜底
+const l2dFailed = ref(false)
 const l2dModelLabel = ref('')
 const l2dBusy = ref(false)
 let l2d: Live2DController | null = null
@@ -145,6 +147,24 @@ function track<T extends S2CMsg['type']>(
 
 // ── Live2D 载入/切换(目录=本地 vendor,缺文件回退 CDN;切换=轮换+持久化) ──
 
+// 单次尝试超时(createLive2D 内 cubism core 等待 15s + 模型下载,20s 覆盖一次完整尝试);
+// 重试共 3 次,全部失败才落 SVG 兜底并出报错辐条
+const L2D_ATTEMPT_TIMEOUT_MS = 20_000
+const L2D_MAX_ATTEMPTS = 3
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(null), ms)
+    p.then((v) => {
+      window.clearTimeout(timer)
+      resolve(v)
+    }).catch(() => {
+      window.clearTimeout(timer)
+      resolve(null)
+    })
+  })
+}
+
 async function loadL2d(preferId?: string): Promise<void> {
   if (l2dStageEl.value === null || l2dCanvasEl.value === null) return
   l2dBusy.value = true
@@ -156,12 +176,30 @@ async function loadL2d(preferId?: string): Promise<void> {
         : loadSelection(list)
     persistSelection(l2dEntry.id)
     l2dModelLabel.value = l2dEntry.label
-    l2d?.destroy()
+    // 切换不提前销毁/降级:旧模型画面保持到新模型 addChild 完成(createLive2D
+    // 复用分支内换模型),避免空窗期露出兜底;加载期舞台保持空白,全部尝试
+    // 耗尽才销毁旧控制器、落 SVG 兜底并出报错辐条。
+    const wasReady = l2dReady.value
+    const prev = l2d
     l2d = null
-    l2dReady.value = false
-    const ctrl = await createLive2D(l2dStageEl.value, l2dCanvasEl.value, modelUrls(l2dEntry))
+    let ctrl: Live2DController | null = null
+    for (let attempt = 1; attempt <= L2D_MAX_ATTEMPTS; attempt++) {
+      ctrl = await withTimeout(
+        createLive2D(l2dStageEl.value, l2dCanvasEl.value, modelUrls(l2dEntry)),
+        L2D_ATTEMPT_TIMEOUT_MS,
+      )
+      if (ctrl !== null) break
+      logger.warn('l2d', `Live2D 第 ${attempt}/${L2D_MAX_ATTEMPTS} 次尝试失败(超时或加载错误)`)
+    }
+    if (ctrl === null) {
+      prev?.destroy()
+      l2dReady.value = false
+      l2dFailed.value = true
+    } else {
+      l2dFailed.value = false
+      if (!wasReady) l2dReady.value = true
+    }
     l2d = ctrl
-    l2dReady.value = ctrl !== null
     if (ctrl !== null) ctrl.setExpression(expressionFor(round.emotionLabel))
   } finally {
     l2dBusy.value = false
@@ -364,9 +402,9 @@ function toggleMic(): void {
         :warn="boardWarn"
       />
 
-      <!-- Live2D 立绘(真模型就绪渐显;未就绪/失败显示 SVG 手绘兜底;⇄=轮换内置立绘) -->
+      <!-- Live2D 立绘(加载期舞台空白,不闪 SVG;真模型就绪渐显;超时/重试耗尽才落 SVG 兜底+报错辐条;⇄=轮换内置立绘) -->
       <div ref="l2dStageEl" class="l2d-stage" :class="{ 'chat-open': chat.drawerOpen }" data-testid="l2d-stage">
-        <div class="char-svg" :style="{ opacity: l2dReady ? 0 : 1 }" v-html="avatar"></div>
+        <div v-if="l2dFailed" class="char-svg" v-html="avatar"></div>
         <canvas ref="l2dCanvasEl" class="l2d-canvas" :class="{ 'l2d-ready': l2dReady }"></canvas>
         <div class="l2d-name">
           小栖
@@ -432,6 +470,7 @@ function toggleMic(): void {
 
   <!-- 危机横幅 + 审计标签(后端规则硬判才出现,前端零判定逻辑) -->
   <div v-if="wsReconnecting" class="ws-banner" data-testid="ws-banner">连接断开了，正在重连…</div>
+  <div v-if="l2dFailed" class="ws-banner" data-testid="l2d-error-banner">立绘加载失败了，已启用备用形象，稍后可点「⇄」重试</div>
   <div v-if="round.crisis" class="crisis-banner" data-testid="crisis-banner">
     <span class="cb-ic">
       <svg viewBox="0 0 24 24">
