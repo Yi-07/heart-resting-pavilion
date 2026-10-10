@@ -17,6 +17,7 @@ from app import logger as app_logger
 from app.logger import setup_logger
 from app.memory import get_memory
 from app.station import router as station_router
+from app.voice.bench_routes import router as tts_bench_router
 from app.voice.routes import router as asr_router
 from app.ws_gateway import handle_connection
 
@@ -140,6 +141,7 @@ app.add_middleware(
 app.include_router(station_router)
 app.include_router(admin.router)
 app.include_router(asr_router)
+app.include_router(tts_bench_router)
 
 
 @app.websocket("/ws")

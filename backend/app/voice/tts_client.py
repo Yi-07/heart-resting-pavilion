@@ -29,20 +29,24 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 from app import config, diag
 from app import logger as app_logger
+from app.voice import tts_bench as bench
 from app.voice.tts_errors import TTSCancelled, TTSError
 
 logger = app_logger.logger.bind(service=app_logger.SERVICE, module="tts_client")
 
 __all__ = [
+    "PcmChunk",
     "TTSCancelled",
     "TTSError",
     "cancel",
     "health",
     "ready",
     "synthesize",
+    "synthesize_pcm_stream",
     "synthesize_stream",
     "synthesize_stream_detailed",
     "wait_ready",
@@ -150,6 +154,7 @@ def synthesize_stream_detailed(text: str, *, request_id: str | None = None) -> I
         method="POST",
     )
     try:
+        bench.mark(bench.P1, round_id=req_id, hanzi=len(text), endpoint="v1")
         diag.mark("http_open_begin", req_id=req_id, hanzi=len(text))
         with urllib.request.urlopen(req, timeout=config.TTS_SERVICE_TIMEOUT_S) as resp:
             diag.mark(
@@ -170,11 +175,13 @@ def synthesize_stream_detailed(text: str, *, request_id: str | None = None) -> I
                 for line in lines:
                     wav = _parse_line(line, req_id)
                     if wav is not None:
+                        bench.mark(bench.P7, round_id=req_id, nbytes=len(wav), endpoint="v1")
                         diag.mark("http_line_wav", req_id=req_id, nbytes=len(wav))
                         yield wav
             if buf.strip():
                 wav = _parse_line(buf, req_id)
                 if wav is not None:
+                    bench.mark(bench.P7, round_id=req_id, nbytes=len(wav), endpoint="v1")
                     diag.mark("http_line_wav", req_id=req_id, nbytes=len(wav))
                     yield wav
         diag.mark("http_done", req_id=req_id)
@@ -200,6 +207,131 @@ def synthesize_stream(text: str, *, request_id: str | None = None) -> Iterator[b
     yield from synthesize_stream_detailed(text, request_id=request_id)
 
 
+@dataclass(frozen=True)
+class PcmChunk:
+    """一块 realtime PCM16(plan §11)。
+
+    round_id 与 seq 都是**原样透传**服务端给的值:客户端不重新生成、不覆盖。
+    gateway 靠 round_id 做回合隔离、靠 seq 保序(plan §13/§15)。
+    """
+
+    round_id: str
+    seq: int
+    sentence_index: int
+    sample_rate: int
+    channels: int
+    format: str
+    pcm: bytes
+
+
+def _parse_pcm_line(raw: bytes, req_id: str, state: dict[str, int]) -> PcmChunk | str:
+    """一行 NDJSON → PcmChunk;返回 "sentence_end" / "end" 之类的控制标记。"""
+    text = raw.decode("utf-8", errors="replace").strip()
+    if not text:
+        return ""
+    piece = json.loads(text)
+
+    kind = piece.get("type")
+    if kind == "error":
+        raise TTSError(f"{piece.get('code', 'error')}: {str(piece.get('message', ''))[:160]}")
+    if kind == "cancelled":
+        raise TTSCancelled(f"round {req_id} 被打断")
+    if kind in ("end", "sentence_end"):
+        return kind
+
+    echoed = piece.get("round_id")
+    if echoed and echoed != req_id:
+        # plan §14.2:同一 request 内 round_id 不一致 = 协议错误,必须暴露。
+        # 与「旧 round 的迟到帧」严格区分:那种是本请求之外的 round,不是自相矛盾。
+        logger.error("tts_v2_round_id_mismatch", want=req_id, got=echoed)
+        raise TTSError(
+            f"protocol mismatch: frame round_id={echoed} != request round_id={req_id}"
+        )
+
+    pcm_b64 = piece.get("pcm")
+    if not pcm_b64:
+        return ""
+    seq = int(piece.get("seq", -1))
+    expect = state.get("seq", 0)
+    if seq != expect:
+        # plan §15:seq 在 round 内单调递增、不得跳号。跳号必须可见而不是被吞掉。
+        logger.error("tts_v2_seq_gap", want=expect, got=seq, round_id=req_id)
+        raise TTSError(f"seq gap: expected {expect}, got {seq}")
+    state["seq"] = seq + 1
+    return PcmChunk(
+        round_id=echoed or req_id,
+        seq=seq,
+        sentence_index=int(piece.get("sentence_index", 0)),
+        sample_rate=int(piece.get("sample_rate", 32000)),
+        channels=int(piece.get("channels", 1)),
+        format=str(piece.get("format", "pcm_s16le")),
+        pcm=base64.b64decode(pcm_b64),
+    )
+
+
+def synthesize_pcm_stream(text: str, *, request_id: str | None = None) -> Iterator[PcmChunk]:
+    """文本 → 逐块 PCM16(plan §10.2 / §11),走 `/v2/tts/stream`。
+
+    与 synthesize_stream_detailed 的关键差别:
+        - 请求体带 round_id,且必须与 X-Request-ID 一致(不一致服务端 400,
+          本函数把 400 翻译成 TTSError,绝不退化成 WAV);
+        - 产出的不再是整句 wav,而是一块块 pcm_s16le。
+
+    未知字段必须忽略:服务端可能在同一帧加新字段(向后兼容),多一个键不能炸。
+    """
+    if not text.strip():
+        return
+    rid = request_id or f"req_{int(time.time() * 1000)}"
+    req = urllib.request.Request(
+        f"{_base()}/v2/tts/stream",
+        data=json.dumps({"text": text, "voice": "", "round_id": rid}).encode(),
+        headers=_headers(rid),
+        method="POST",
+    )
+    state = {"seq": 0}
+    try:
+        bench.mark(bench.P1, round_id=rid, hanzi=len(text))
+        with urllib.request.urlopen(req, timeout=config.TTS_SERVICE_TIMEOUT_S) as resp:
+            read_chunk = getattr(resp, "read1", None) or resp.read
+            buf = b""
+            first = True
+            while True:
+                chunk = read_chunk(_READ_BLOCK)
+                if not chunk:
+                    break
+                buf += chunk
+                if b"\n" not in buf:
+                    continue
+                *lines, buf = buf.split(b"\n")
+                for line in lines:
+                    item = _parse_pcm_line(line, rid, state)
+                    if isinstance(item, PcmChunk):
+                        if first:
+                            first = False
+                            bench.mark(bench.P7, round_id=rid, seq=item.seq)
+                        yield item
+                    elif item in ("end", "sentence_end"):
+                        bench.mark("v2_" + item, round_id=rid)
+            if buf.strip():
+                item = _parse_pcm_line(buf, rid, state)
+                if isinstance(item, PcmChunk):
+                    if first:
+                        first = False
+                        bench.mark(bench.P7, round_id=rid, seq=item.seq)
+                    yield item
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode()[:200]
+        except Exception:  # noqa: BLE001, S110
+            pass
+        raise TTSError(f"HTTP {exc.code}: {body}") from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise TTSError(f"连接失败: {exc}") from exc
+    except (ValueError, KeyError) as exc:
+        raise TTSError(f"响应解析失败: {exc}") from exc
+
+
 def cancel(request_id: str, *, cascade: bool = True) -> dict:
     """打断一个回合。返回服务侧的处置结果;不可达/失败不抛(抢占路径不能被它拖挂)。
 
@@ -207,6 +339,8 @@ def cancel(request_id: str, *, cascade: bool = True) -> dict:
     主程序取消后必须立刻把队列清空,不能让旧回合接着出声。
     """
     payload = json.dumps({"round_id": request_id, "cascade": cascade}).encode()
+    # T1 = cancel 请求真正发出的时刻(与 T0 用户点击分开)
+    bench.mark(bench.T1, round_id=request_id, cascade=cascade)
     try:
         req = urllib.request.Request(
             f"{_base()}/v1/tts/cancel",

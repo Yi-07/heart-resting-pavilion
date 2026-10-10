@@ -46,8 +46,16 @@ def _gate_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(config, "TTS_ANSWER_VOICE", False)
+    # 两条链路都要静音(plan §4:gateway 按 tts.STREAM_MODE 选链路,只静音一条
+    # 等于没静音 —— PCM 那条会真的去打 TTS 服务,给事件循环加负载,而
+    # batched_chunks 的攒批窗口是 100ms 墙钟,负载一变批次切分就变,
+    # 精确帧数断言会飘;危机路径还会多出 audio_chunk 帧,打乱帧序断言)
     monkeypatch.setattr(
         "app.voice.tts.synthesize_stream",
+        lambda text, **kw: iter(()),
+    )
+    monkeypatch.setattr(
+        "app.voice.tts.synthesize_pcm_stream",
         lambda text, **kw: iter(()),
     )
 

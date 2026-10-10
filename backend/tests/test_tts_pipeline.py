@@ -46,7 +46,8 @@ class FakeConn:
 
     def __init__(self, *, trace: int = 7) -> None:
         self._trace = trace
-        self.audio: list[tuple[bytes, bool]] = []   # (wav, final)
+        self.audio: list[tuple[bytes, bool]] = []   # (wav, final) legacy 链路
+        self.pcm: list[tuple[bytes, int]] = []      # (pcm, audio_seq) realtime 链路
         self.logs: list[tuple[str, str, dict[str, Any]]] = []
 
     @property
@@ -56,11 +57,28 @@ class FakeConn:
     def log(self, event: str, level: str = "INFO", **fields: Any) -> None:
         self.logs.append((event, level, fields))
 
-    async def send_audio(self, wav: bytes, *, final: bool = True) -> None:
+    async def send_audio(
+        self, wav: bytes, *, final: bool = True, round_id: str | None = None
+    ) -> None:
         self.audio.append((wav, final))
+
+    async def send_pcm(
+        self,
+        pcm: bytes,
+        *,
+        round_id: str,
+        audio_seq: int,
+        sample_rate: int,
+        channels: int = 1,
+        final: bool = False,
+    ) -> None:
+        self.pcm.append((pcm, audio_seq))
 
     def audio_wavs(self) -> list[bytes]:
         return [w for w, _ in self.audio]
+
+    def pcm_blocks(self) -> list[bytes]:
+        return [p for p, _ in self.pcm]
 
     def tts_round_id(self, trace: int | None = None) -> str:
         from app.ws_gateway.gateway import Connection
@@ -83,37 +101,72 @@ class FakeEmitter:
 
 
 class FakeTTS:
-    """记录收到的句子;每句 sleep(per_sentence_s) 后返回一段可辨识的 wav。"""
+    """记录收到的句子;每句 sleep(per_sentence_s) 后返回一段可辨识的 wav。
 
-    def __init__(self, *, per_sentence_s: float = 0.0) -> None:
+    同一个假同时提供 legacy(wav)与 realtime(PCM)两条链路的实现,并记录
+    两条链路各自被调用了多少次 —— gateway 按 tts.STREAM_MODE 选链路,
+    所以桩必须两条都齐,否则测试只能钉住其中一条(plan §4/§33)。
+    """
+
+    def __init__(self, *, per_sentence_s: float = 0.0, chunks_per_sentence: int = 2) -> None:
         self.per_sentence_s = per_sentence_s
+        self.chunks_per_sentence = chunks_per_sentence
         self.received: list[str] = []
         self.request_ids: list[str | None] = []
+        self.wav_calls = 0
+        self.pcm_calls = 0
 
     def synthesize_stream_detailed(self, text: str, *, request_id=None):
         self.received.append(text)
         self.request_ids.append(request_id)
+        self.wav_calls += 1
         if self.per_sentence_s:
             time.sleep(self.per_sentence_s)
         yield b"WAV:" + text.encode()
 
+    def synthesize_pcm_stream(self, text: str, *, request_id=None):
+        self.received.append(text)
+        self.request_ids.append(request_id)
+        self.pcm_calls += 1
+        if self.per_sentence_s:
+            time.sleep(self.per_sentence_s)
+        from app.voice.tts_client import PcmChunk
+
+        for i in range(self.chunks_per_sentence):
+            yield PcmChunk(
+                round_id=request_id or "",
+                seq=i,
+                sentence_index=0,
+                sample_rate=32000,
+                channels=1,
+                format="pcm_s16le",
+                pcm=b"PCM:" + text.encode(),
+            )
+
 
 @pytest.fixture
 def fake_tts_module(monkeypatch):
-    """把 tts 模块的 synthesize_stream_detailed 换成假实现,返回装填器。
+    """把 tts 模块的两条链路都换成假实现,返回装填器。
 
     gateway 里是 `from app.voice import tts` 的懒导入,所以只要换模块属性即可,
     不用 patch gateway 本身。
+
+    `stream_mode` 控制 gateway 走哪条链路("pcm" / "wav"),让同一个夹具既能
+    钉 realtime 路径,也能钉 legacy 路径。
     """
     import app.voice.tts as tts_mod
 
     holder: dict[str, FakeTTS] = {}
 
-    def _install(fake: FakeTTS) -> FakeTTS:
+    def _install(fake: FakeTTS, *, stream_mode: str = "pcm") -> FakeTTS:
         holder["tts"] = fake
         monkeypatch.setattr(
             tts_mod, "synthesize_stream_detailed", fake.synthesize_stream_detailed
         )
+        monkeypatch.setattr(
+            tts_mod, "synthesize_pcm_stream", fake.synthesize_pcm_stream
+        )
+        monkeypatch.setattr(tts_mod, "STREAM_MODE", stream_mode, raising=False)
         return fake
 
     return _install
@@ -166,8 +219,12 @@ class TestSentenceSplitter:
 # ---- 编排行为 ----
 
 
-class TestAnswerWithVoice:
-    """句子泵的编排承诺。这些是设计意图,不是实现细节 —— 改动会让用户感到延迟回归。"""
+class TestAnswerWithVoiceWav:
+    """句子泵的编排承诺(legacy wav 链路,STREAM_MODE=wav)。
+
+    这些是设计意图,不是实现细节 —— 改动会让用户感到延迟回归。
+    realtime(PCM)链路有同构的一组测试在 TestAnswerWithVoicePcm。
+    """
 
     @pytest.mark.asyncio
     async def test_first_sentence_does_not_wait_for_full_stream(self, fake_tts_module):
@@ -176,7 +233,7 @@ class TestAnswerWithVoice:
 
         conn = FakeConn(trace=7)
         emitter = FakeEmitter()
-        tts = fake_tts_module(FakeTTS(per_sentence_s=0.02))
+        tts = fake_tts_module(FakeTTS(per_sentence_s=0.02), stream_mode="wav")
 
         await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
 
@@ -196,7 +253,7 @@ class TestAnswerWithVoice:
 
         conn = FakeConn(trace=7)
         emitter = FakeEmitter()
-        fake_tts_module(FakeTTS())
+        fake_tts_module(FakeTTS(), stream_mode="wav")
 
         await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
 
@@ -210,7 +267,7 @@ class TestAnswerWithVoice:
 
         conn = FakeConn(trace=7)
         emitter = FakeEmitter()
-        tts = fake_tts_module(FakeTTS())
+        tts = fake_tts_module(FakeTTS(chunks_per_sentence=1), stream_mode="wav")
 
         # 只产出一句 → 收尾时只有一块。若实现是 hold-one,这块会一直压着
         async def one_sentence():
@@ -227,7 +284,7 @@ class TestAnswerWithVoice:
 
         conn = FakeConn(trace=7)
         emitter = FakeEmitter()
-        tts = fake_tts_module(FakeTTS())
+        tts = fake_tts_module(FakeTTS(), stream_mode="wav")
 
         await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
 
@@ -242,7 +299,7 @@ class TestAnswerWithVoice:
 
         conn = FakeConn(trace=7)
         emitter = FakeEmitter()
-        fake_tts_module(FakeTTS(per_sentence_s=0.15))   # 故意慢
+        fake_tts_module(FakeTTS(per_sentence_s=0.15), stream_mode="wav")   # 故意慢
 
         await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
 
@@ -256,7 +313,7 @@ class TestAnswerWithVoice:
 
         conn = FakeConn(trace=7)
         emitter = FakeEmitter()
-        tts = fake_tts_module(FakeTTS())
+        tts = fake_tts_module(FakeTTS(), stream_mode="wav")
 
         async def llm_then_preempt():
             yield "先"
@@ -281,6 +338,8 @@ class TestAnswerWithVoice:
         await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
 
         assert tts.request_ids and all(r == "tts-7" for r in tts.request_ids)
+        # realtime 链路必须真的被走到,否则这条断言只是"stub 没被换掉"
+        assert tts.pcm_calls > 0, "STREAM_MODE=pcm 时应走 synthesize_pcm_stream"
 
     @pytest.mark.asyncio
     async def test_tts_failure_does_not_kill_turn(self, fake_tts_module, monkeypatch):
@@ -293,7 +352,9 @@ class TestAnswerWithVoice:
             raise TTSError("合成失败")
             yield  # pragma: no cover — 让它看起来像生成器
 
+        # 两条链路都要炸:gateway 按 STREAM_MODE 选链路,只炸一条等于没炸
         monkeypatch.setattr(tts_mod, "synthesize_stream_detailed", _boom)
+        monkeypatch.setattr(tts_mod, "synthesize_pcm_stream", _boom)
 
         conn = FakeConn(trace=7)
         emitter = FakeEmitter()
@@ -301,6 +362,7 @@ class TestAnswerWithVoice:
         await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
 
         assert conn.audio_wavs() == []
+        assert conn.pcm_blocks() == []
         assert any(f for _, f in emitter.texts), "TTS 失败也要把文字说完"
         assert any(ev == "degraded" for ev, _, _ in conn.logs)
 
@@ -319,6 +381,128 @@ class TestAnswerWithVoice:
         await _answer_with_voice(conn, emitter, empty(), "tts-7", 7)  # type: ignore[arg-type]
 
         assert conn.audio_wavs() == []
+        assert tts.received == []
+
+
+class TestAnswerWithVoicePcm:
+    """realtime PCM 链路(STREAM_MODE=pcm)的编排承诺,与 wav 那组同构。
+
+    分开成两个类而不是加 if:两条链路的**交付粒度不同**(整句 vs 块),
+    混在一个类里会写出一堆 stream_mode 分支的断言,读起来看不出哪条在跑。
+    """
+
+    @pytest.mark.asyncio
+    async def test_pcm_blocks_reach_conn(self, fake_tts_module):
+        from app.ws_gateway.gateway import _answer_with_voice
+
+        conn = FakeConn(trace=7)
+        emitter = FakeEmitter()
+        tts = fake_tts_module(FakeTTS(chunks_per_sentence=2))
+
+        await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
+
+        assert tts.pcm_calls > 0, "应走 PCM 链路"
+        assert tts.wav_calls == 0, "PCM 模式下不应再走 legacy wav 链路"
+        assert len(conn.pcm) > 0, "至少要下发一块 PCM"
+        assert conn.audio == [], "PCM 模式下不发 wav 帧"
+
+    @pytest.mark.asyncio
+    async def test_pcm_round_id_and_seq_are_passed_through(self, fake_tts_module):
+        """round_id / audio_seq 原样透传,网关不重新编号(plan §13/§15)。"""
+        from app.ws_gateway.gateway import _answer_with_voice
+
+        conn = FakeConn(trace=7)
+        emitter = FakeEmitter()
+        fake_tts_module(FakeTTS(chunks_per_sentence=3))
+
+        await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
+
+        seqs = [s for _, s in conn.pcm]
+        assert seqs == sorted(seqs), f"audio_seq 必须保序,实际 {seqs}"
+        assert len(set(seqs)) == len(seqs), f"audio_seq 不得重复,实际 {seqs}"
+
+    @pytest.mark.asyncio
+    async def test_pcm_text_not_blocked_by_slow_tts(self, fake_tts_module):
+        """慢 TTS 不拖住文字帧 —— realtime 链路同样成立。"""
+        from app.ws_gateway.gateway import _answer_with_voice
+
+        conn = FakeConn(trace=7)
+        emitter = FakeEmitter()
+        fake_tts_module(FakeTTS(per_sentence_s=0.15))
+
+        await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
+
+        assert "".join(t for t, _ in emitter.texts) == CHARS
+
+    @pytest.mark.asyncio
+    async def test_pcm_preempt_stops_emitting(self, fake_tts_module):
+        """抢占后不再下发 PCM 块。"""
+        from app.ws_gateway.gateway import _answer_with_voice
+
+        conn = FakeConn(trace=7)
+        emitter = FakeEmitter()
+        tts = fake_tts_module(FakeTTS(chunks_per_sentence=4))
+
+        async def llm_then_preempt():
+            yield "先"
+            conn._trace = 8
+            for ch in CHARS[1:]:
+                yield ch
+
+        await _answer_with_voice(conn, emitter, llm_then_preempt(), "tts-7", 7)  # type: ignore[arg-type]
+
+        assert len(conn.pcm) <= 4, f"抢占后不该再下发,实际 {len(conn.pcm)}"
+        assert len(tts.received) <= 2
+
+    @pytest.mark.asyncio
+    async def test_pcm_round_id_mismatch_is_reported(self, fake_tts_module):
+        """frame.round_id 与 request 不一致 → 记错误,不静默下发(plan §14.2)。"""
+        from app.voice.tts_client import PcmChunk
+        from app.ws_gateway.gateway import _answer_with_voice
+
+        conn = FakeConn(trace=7)
+        emitter = FakeEmitter()
+
+        class _MismatchTTS(FakeTTS):
+            def synthesize_pcm_stream(self, text, *, request_id=None):
+                self.received.append(text)
+                self.pcm_calls += 1
+                yield PcmChunk(
+                    round_id="tts-OTHER",
+                    seq=0,
+                    sentence_index=0,
+                    sample_rate=32000,
+                    channels=1,
+                    format="pcm_s16le",
+                    pcm=b"PCM:bad",
+                )
+
+        fake_tts_module(_MismatchTTS())
+
+        await _answer_with_voice(conn, emitter, fake_llm(CHARS), "tts-7", 7)  # type: ignore[arg-type]
+
+        # round_id 不一致的块绝不能下发到前端
+        assert conn.pcm == [], "round_id 不一致的块绝不能下发到前端"
+        # 必须留下可观测痕迹:统计计入 errors + 日志里有 WARN/ERROR 级别事件
+        assert any(ev in ("degraded", "error") for ev, _, _ in conn.logs), (
+            f"round_id 不一致必须留下可观测记录,实际日志 {conn.logs}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_pcm_empty_llm_stream_sends_nothing(self, fake_tts_module):
+        from app.ws_gateway.gateway import _answer_with_voice
+
+        conn = FakeConn(trace=7)
+        emitter = FakeEmitter()
+        tts = fake_tts_module(FakeTTS())
+
+        async def empty():
+            if False:
+                yield ""
+
+        await _answer_with_voice(conn, emitter, empty(), "tts-7", 7)  # type: ignore[arg-type]
+
+        assert conn.pcm == []
         assert tts.received == []
 
 

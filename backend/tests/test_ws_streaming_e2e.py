@@ -70,6 +70,22 @@ def _tts_ready() -> bool:
 
 
 @pytest.fixture
+def real_tts(monkeypatch):
+    """恢复真 TTS 链路(conftest 默认把两条链路都静音了)。
+
+    这一组用例的意义就是打真服务(plan §41 的语音部分由 tests/test_tts_pcm_contract.py
+    覆盖,这里覆盖的是**网关编排**:切句 → 合成 → 发帧的交错与保序)。
+    只恢复 synthesize_pcm_stream —— legacy 那条由 test_gateway 单独钉。
+    """
+    # 从**定义处**取原函数,不能从 app.voice.tts 上取:conftest 的 autouse 夹具
+    # 已经把 tts 模块的属性换掉了,从那里取只会把桩再赋回去(等于没恢复)。
+    from app.voice.tts_client import synthesize_pcm_stream as real
+
+    monkeypatch.setattr("app.voice.tts.synthesize_pcm_stream", real)
+    return True
+
+
+@pytest.fixture
 def fake_llm(monkeypatch):
     """桩掉网关手里的 get_provider。
 
@@ -117,8 +133,14 @@ class FakeLLM:
 
 
 class TestAnswerStreaming:
-    async def test_answer_emits_text_and_audio_interleaved(self, conn_rec, fake_llm):
-        """answer 回合:text_delta 与 audio_chunk 都要有,且音频不排在文字之后。"""
+    async def test_answer_emits_text_and_audio_interleaved(
+        self, conn_rec, fake_llm, real_tts
+    ):
+        """answer 回合:text_delta 与 audio_chunk 都要有,且音频不排在文字之后。
+
+        `real_tts` 是必需的:conftest 默认把 PCM 链路静音了(见那里的理由),
+        不恢复的话这里测的是"网关在没有音频的情况下怎么编排",毫无意义。
+        """
         conn, rec = conn_rec
         from app.router.classifier import Classification
         from app.ws_gateway.gateway import _answer_sequence
@@ -149,8 +171,22 @@ class TestAnswerStreaming:
         assert max(i for i, k in enumerate(kinds) if k == "audio_chunk") < kinds.index("done")
 
         audio = [f for f in frames if f["type"] == "audio_chunk"]
-        assert all(f["format"] == "wav" for f in audio)
+        # 默认链路是 realtime PCM(plan §4);legacy wav 由 test_gateway 单独钉
+        assert all(f["format"] == "pcm_s16le" for f in audio), (
+            f"默认应走 PCM 流式,实际 {[f['format'] for f in audio]}"
+        )
         assert all(len(f["data"]) > 0 for f in audio)
+        # PCM 四字段必填,且 round_id 全程一致(plan §13/§15)
+        assert all(f["round_id"] for f in audio), "PCM 帧必须带 round_id"
+        assert len({f["round_id"] for f in audio}) == 1, (
+            f"一个回合内 round_id 必须一致: {sorted({f['round_id'] for f in audio})}"
+        )
+        assert all(f["sample_rate"] == 32000 for f in audio), "PCM 采样率应恒为 32000"
+        assert all(f["channels"] == 1 for f in audio), "PCM 声道数应恒为 1"
+        # audio_seq 回合内单调递增、跨句连续、不重置
+        aseq = [f["audio_seq"] for f in audio]
+        assert aseq == sorted(aseq), f"audio_seq 必须单调递增: {aseq}"
+        assert len(set(aseq)) == len(aseq), f"audio_seq 不得重复: {aseq}"
 
         seqs = [f["seq"] for f in frames if "seq" in f]
         assert seqs == sorted(seqs), f"seq 必须单调递增: {seqs}"
