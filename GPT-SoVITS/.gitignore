@@ -1,195 +1,64 @@
-﻿.DS_Store
-.vscode
-__pycache__
-*.pyc
-env
-runtime
-.idea
-output
-logs
-SoVITS_weights*/
-GPT_weights*/
-TEMP
-weight.json
-ffmpeg*
-ffprobe*
-cfg.json
-speakers.json
-ref_audios
-tools/AP_BWE_main/24kto48k/*
-!tools/AP_BWE_main/24kto48k/readme.txt
+﻿# 本仓库(.gitignore)的排除规则 —— 只作用�� GPT-SoVITS/ 这个独立仓库
+#
+# 重要:本文件**不是**主仓 D:/aic-project/heart-resting-pavilion/.gitignore 的副本,
+# 也不会影响主仓。两份文件各管各的目录。
+#
+# 排除原则:只排"可由声明物重建、非项目源码"的三类。其余一律跟踪 ——
+# 包括 reference/*.wav(音色参考音频,35 MB)与 temp/(基准与审计产物),
+# 因为它们是本项目的实际内容,删掉就无法复核。
 
-# Byte-compiled / optimized / DLL files
+# ---- 1. 本地虚拟环境 ----
+# 43528 文件 / 6.25 GB。由 pyproject.toml + uv sync 重建,不是源码。
+# 纳入它会让仓库无法审阅(review 一个 diff 要先下载 6 GB 二进制)。
+.venv/
+venv/
+env/
+
+# ---- 2. 模型权重 ----
+# 约 5.1 GB。上游权重文件,随上游发布版本走,不由本项目修改。
+# 任务书明确:新仓库不需要成为"包含全部模型权重的完整可部署副本"。
+GPT_SoVITS/pretrained_models/
+# G2PWModel 的 onnx 与 zip:上游文本前端模型的二进制打包,同样是权重。
+GPT_SoVITS/text/G2PWModel/
+GPT_SoVITS/text/G2PWModel_1.1.zip
+
+# ---- 3. 编译产物 ----
+# 1082 个目录。Python 字节码,由源码自动再生;跟踪它只会让每次运行都产生
+# 无意义的二进制 diff。
 __pycache__/
 *.py[cod]
-*$py.class
 
-# C extensions
-*.so
+# ---- 4. 运行时产物 ----
+# 上游 GPT-SoVITS 自带的本地状态目录(onnx 缓存/中间文件等)。
+GPT_SoVITS/output/
+GPT_SoVITS/runtime/
+GPT_SoVITS/logs/
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# ---- 5. 本项目的临时产物 ----
+# temp/ 现已排除(原为不排除)。理由变更:复核证据改由正式文档与测试承担,
+# 压测中间产物(WAV/JSON/PID/服务日志)不适合长期跟踪。
+# 已跟踪文件用 `git rm -r --cached temp/` 移出索引(磁盘文件保留)。
+temp/
+# 服务运行日志(由 tts_service/logger.py 产出,按日期滚动)
+logs/
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+# ---- 6. 过程文档(可重新生成,不属于交付物)----
+# MANIFEST.md : 文件清单,由 temp/gen_manifest.py 生成(该脚本本身已随 temp/ 排除)
+# TEST_RESULTS.md : 阶段交接记录
+MANIFEST.md
+TEST_RESULTS.md
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# ---- 7. 放行被主仓 `models/` 规则误伤的**源码**目录 ----
+# 主仓 .gitignore 第 15 行的裸 `models/` 会命中任意层级的 models 目录。
+# 主仓根 models/ 是 11.29 GB 的模型下载目录,确实该排除;但本目录下的
+# models/ 是**模型定义源码**,漏掉会导致 TTS 无法从仓库还原。
+!GPT_SoVITS/AR/models/
+!tools/AP_BWE_main/models/
+!tools/asr/models/
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
-.pdm.toml
-.pdm-python
-.pdm-build/
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
+# 注意:GPT_SoVITS/configs/ **纳入跟踪**。其中的 tts_infer.yaml 是
+# tts_service/config.yaml 里 model.tts_config 指向的推理配置,
+# 里面的权重路径全在这里 —— 不跟踪它,换机重建时配置就丢了。
+# 上游在 GPT_SoVITS/configs/.gitignore 写了 `*.yaml`,靠根目录否定规则覆盖:
+!GPT_SoVITS/configs/*.yaml
+!GPT_SoVITS/configs/*.json

@@ -146,6 +146,33 @@ class NO_PROMPT_ERROR(Exception):
     pass
 
 
+_bench_first_semantic_hook = None
+"""首包埋点钩子(plan §27 P3 = first semantic)。由 tts_service.engine 在 load() 里注册。"""
+
+
+def _bench_wrap_semantic(gen):
+    """透传 semantic_token_generator,**只在第一次吐出时**打点。
+
+    两个坑都在这里挡掉:
+    1. 不能在消费循环里判标志 —— 循环同时处理 `semantic_tokens is None` 的收尾
+       分支,标志会被误触发;
+    2. 不能每次 yield 都打 —— 一次 run() 会吐很多块,P3 的定义是「AR 第一个
+       semantic token 块」,重复打点会把首包坐标淹掉。
+    未注册钩子时是纯 yield from,零额外开销。
+    """
+    hook = _bench_first_semantic_hook
+    if hook is None:
+        yield from gen
+        return
+    for i, item in enumerate(gen):
+        if i == 0:
+            try:
+                hook()
+            except Exception:
+                pass  # 埋点绝不能影响推理
+        yield item
+
+
 # configs/tts_infer.yaml
 """
 custom:
@@ -1062,6 +1089,15 @@ class TTS:
         """
         self.stop_flag = True
 
+    def set_bench_hook(self, fn) -> None:
+        """注册首包埋点回调;传 None 取消(plan §27 P3 = first semantic)。
+
+        与 stop_flag 无关,是纯观测钩子:tts_service.engine 在 load() 里注册一次。
+        未注册时下面 _bench_mark_first_semantic 只是一次 None 判空,零开销。
+        """
+        global _bench_first_semantic_hook
+        _bench_first_semantic_hook = fn
+
     @torch.no_grad()
     def run(self, inputs: dict):
         """
@@ -1462,7 +1498,9 @@ class TTS:
                     previous_tokens = []
                     overlap_len = overlap_length
                     overlap_size = math.ceil(overlap_length * upsample_rate)
-                    for semantic_tokens, is_final in semantic_token_generator:
+                    for semantic_tokens, is_final in _bench_wrap_semantic(semantic_token_generator):
+                        # plan §27 P3 = first semantic(AR 第一个 token 块产出)。
+                        # 与 P4(第一个 PCM)、P5(engine 第一次 yield)是两个不同时间点。
                         if semantic_tokens is None and last_audio_chunk is not None:
                             yield self.audio_postprocess(
                                 [[last_audio_chunk[-overlap_size:]]],

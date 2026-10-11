@@ -1,0 +1,55 @@
+# TTS 服务配置主源(plan §36 H1)
+#
+# 优先级:CLI > ENV > YAML(本文件) > 代码里的 default
+# 完整字段表与 ENV 变量名见 settings.py 的 FIELDS —— 本文件只写**本机标定值**,
+# 改这个文件不需要改代码。缺文件也能起(全用 default)。
+#
+# 路径:默认 tts_service/config.yaml;可用 GPT_SOVITS_SERVICE_CONFIG 指向别的文件
+#       (便于并行跑两套标定值做对照,而不动仓库里的文件)。
+#
+# 注意:model.tts_config 指的是**上游推理配置**(GPT_SoVITS/configs/tts_infer.yaml,
+#       权重路径全在里面,相对仓库根),与本文件不是一回事。
+
+service:
+  host: 127.0.0.1
+  port: 9001
+  log_level: INFO
+  # 日志文件目录;相对路径锚定 GPT-SoVITS 仓库根(与启动目录无关)
+  log_dir: logs
+  # 文件日志级别独立于终端。DEBUG 会把 torio/asyncio 等第三方噪声写进文件
+  log_file_level: INFO
+  log_rotation: 10 MB
+  log_retention: 30 days
+  # 后台 GPU 轮询。health 只读缓存,所以开着不占请求路径;10s 一次 nvidia-smi。
+  # 置 false 是 A/B 的 off 档(plan §36 F1)—— nvidia-smi 完全不执行。
+  gpu_poll_enabled: true
+  # auth_token 留空 = 不校验。跨机部署时用 ENV(SERVICE_AUTH_TOKEN)注入,别写进文件。
+
+model:
+  version: v2
+  voice: beidou          # 对应 reference/beidou.wav;留空则读 reference/my_voice.txt
+  # ref_audio_path / prompt_text 留空 → 由 voice 推导:
+  #   reference/<voice>.wav 与 reference/voice_list.json[voice]
+  prompt_lang: zh
+
+inference:
+  text_lang: zh
+  text_split_method: cut5
+  streaming_mode: true
+  min_chunk_length: 16
+  overlap_length: 2
+  seed: 42
+  parallel_infer: true
+  repetition_penalty: 1.35
+  speed_factor: 1.0
+  fragment_interval: 0.3
+  top_k: 5
+  top_p: 1.0
+  temperature: 1.0
+
+guard:
+  max_text_len: 2000
+  max_sentences: 60
+  max_audio_bytes: 8388608
+  max_sentence_chars: 30
+  queue_wait_timeout_s: 120.0

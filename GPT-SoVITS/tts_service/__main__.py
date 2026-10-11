@@ -9,10 +9,56 @@
 from __future__ import annotations
 
 import argparse
-import logging
+import os
 import sys
 
-from .settings import get_settings
+from .settings import FIELDS, ROOT, build_settings
+
+
+def _print_config(cfg) -> int:
+    """打印最终配置 + 每一项来自哪一级(cli/env/yaml/default)。
+
+    配置问题最费时间的从来不是"值不对",而是"我改了为什么没生效"。
+    这张表一眼就能看出该项是被更高优先级盖住了,还是根本没读到。
+    """
+    print("=" * 72)
+    print("最终配置(值 / 来源)")
+    print("=" * 72)
+    print(f"{'字段':<24}{'来源':<9}{'值'}")
+    print("-" * 72)
+    for f in FIELDS:
+        src = cfg.config_sources.get(f.name, "?")
+        val = getattr(cfg, f.name)
+        if isinstance(val, str) and len(val) > 34:
+            val = val[:31] + "..."
+        print(f"{f.name:<24}{src:<9}{val}")
+    print("-" * 72)
+    print(f"auth_token: {'(已设置)' if cfg.auth_token else '(空,不校验)'}")
+    print(f"voices: {len(cfg.voices)} 个(只读映射)")
+    print("=" * 72)
+    return 0
+
+
+def _prepare_process_env() -> None:
+    """进程入口设置 cwd 与 sys.path(plan §7)。
+
+    **必须在进程入口做,不能在 engine.load() 里做。**
+    cwd 是进程级状态:engine.load() 跑在后台线程,在那里 os.chdir() 会让
+    「哪个线程碰文件系统」变成不确定行为,而且这段代码是复制的上游惯例。
+
+    cwd = GPT-SoVITS 根是硬需求,不是风格问题:
+        - tts_infer.yaml 里的权重路径全��相对路径("GPT_SoVITS/pretrained_models/...");
+        - 参考音频是 "reference/<voice>.wav";
+        - TTS_Config 构造时还会 os.makedirs("GPT_SoVITS/configs/")。
+    三者都相对 cwd,进程从别处启动就会静默走到错误路径或直接崩。
+
+    显式校验并快速失败:cwd 不对时给出可操作的提示,而不是让模型加载到一半
+    才报一个看不懂的 FileNotFoundError。
+    """
+    os.chdir(ROOT)
+    for p in (str(ROOT), str(ROOT / "GPT_SoVITS")):
+        if p not in sys.path:
+            sys.path.insert(0, p)
 
 
 def _self_check() -> int:
@@ -23,7 +69,7 @@ def _self_check() -> int:
     """
     from .engine import GuardError, TTSEngine
 
-    engine = TTSEngine(get_settings())
+    engine = TTSEngine(build_settings())
     cases: list[tuple[str, str, bool]] = [
         ("正常中文", "我们先不急着解决什么，就从今晚开始，选一件最小的事做一做。", True),
         ("短句", "我在的。", True),
@@ -64,6 +110,16 @@ def main() -> int:
     parser.add_argument("-c", "--config", default=None, help="tts_infer.yaml 路径")
     parser.add_argument("--voice", default=None, help="音色名,对应 reference/<name>.wav")
     parser.add_argument(
+        "--service-config",
+        default=None,
+        help="本服务 YAML 配置路径(默认 tts_service/config.yaml)",
+    )
+    parser.add_argument(
+        "--print-config",
+        action="store_true",
+        help="打印最终配置与每一项的来源(cli/env/yaml/default)后退出,不加载模型",
+    )
+    parser.add_argument(
         "--check", action="store_true", help="只跑输入守卫自检后退出"
     )
     args = parser.parse_args()
@@ -71,37 +127,40 @@ def main() -> int:
     if args.check:
         return _self_check()
 
+    # CLI 是最高优先级,但**不写回 os.environ**:写回去就分不清"是 CLI 给的"还是
+    # "ENV 本来就有",config_sources 的来源表会失去意义(见 settings.py)。
+    cli: dict[str, object] = {}
     if args.host:
-        import os
-
-        os.environ["TTS_SERVICE_HOST"] = args.host
+        cli["host"] = args.host
     if args.port:
-        import os
-
-        os.environ["TTS_SERVICE_PORT"] = str(args.port)
+        cli["port"] = args.port
     if args.config:
-        import os
-
-        os.environ["GPT_SOVITS_CONFIG"] = args.config
+        cli["tts_config"] = args.config
     if args.voice:
-        import os
+        cli["voice"] = args.voice
+    if args.service_config:
+        os.environ["GPT_SOVITS_SERVICE_CONFIG"] = args.service_config
 
-        os.environ["GPT_SOVITS_VOICE"] = args.voice
+    from .logger import logger
 
-    cfg = get_settings()
-    logging.basicConfig(
-        level=getattr(logging, cfg.log_level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    cfg = build_settings(cli)
+
+    if args.print_config:
+        _print_config(cfg)
+        return 0
+
+    # 日志不在这里初始化:server 模块是唯一初始化点(见 server.py 顶部注释)。
+    # uvicorn.run 会导入 tts_service.server,届时一次性装配,两条启动路径共用。
+    # 顺序上必须先 chdir —— engine.load 的权重路径是相对 cwd 的。
+    _prepare_process_env()
 
     import uvicorn
 
     # workers 必须为 1:多进程会各加载一份模型,单卡 8GB 装不下两份
     # (实测单实例独占约 3.8~4.4 GiB 显存),而且会破坏引擎内的串行保证。
-    logger = logging.getLogger("tts_service")
     logger.info(
-        "starting · %s on %s:%s  voice=%s model=%s",
-        SERVICE_LABEL, cfg.host, cfg.port, cfg.voice or "(未指定)", cfg.version,
+        f"starting · {SERVICE_LABEL} on {cfg.host}:{cfg.port}  "
+        f"voice={cfg.voice or '(未指定)'} model={cfg.version}"
     )
     uvicorn.run(
         "tts_service.server:app",

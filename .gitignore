@@ -46,7 +46,5 @@ docs/task-kanbans/yxw/
 # 测试语音素材(安全红线 §7:音频绝不落库;B2 本地自备,路径见 handoff §2)
 backend/tests/voices/
 
-# GPT-SoVITS 引擎独立交付件(环境、模型等组件不入库)
-GPT-SoVITS/.venv
-GPT-SoVITS/GPT_SoVITS/pretrained_models
-GPT-SoVITS/GPT_SoVITS/text/G2PWModel
+# 注:GPT-SoVITS/ 为项目内 TTS 组件,源码与推理配置入库;排除规则
+# (.venv、pretrained_models、G2PWModel 等权重与环境)由 GPT-SoVITS/.gitignore 承接
