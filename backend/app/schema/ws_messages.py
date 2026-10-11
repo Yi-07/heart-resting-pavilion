@@ -53,13 +53,25 @@ class TextDelta(BaseModel):
 
 
 class AudioChunk(BaseModel):
-    """§3.4 TTS 音频块(base64)"""
+    """§3.4 TTS 音频块（base64）
+
+    format=wav 时只有前四个字段有意义（legacy 整句路径）；
+    format=pcm_s16le 时额外四字段必填，供前端 Web Audio 分块播放。
+    """
 
     type: Literal["audio_chunk"] = "audio_chunk"
     seq: int
-    format: str
+    format: Literal["wav", "pcm_s16le"] = "wav"
     data: str
     final: bool = False
+    round_id: str | None = None
+    """TTS round_id；PCM 流式下用于回合隔离（旧 round 的迟到帧前端直接丢）"""
+    audio_seq: int | None = None
+    """round 内单调递增的块序号；PCM 流式下用于保序，不跨句重置"""
+    sample_rate: int | None = None
+    """PCM 采样率（Hz）；缺省表示该帧不是 PCM"""
+    channels: int | None = None
+    """声道数；PCM 流式下恒为 1"""
 
 
 class Done(BaseModel):
