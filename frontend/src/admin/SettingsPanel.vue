@@ -56,11 +56,11 @@ const confirmEnabled = computed(() => confirmMatches(settings.confirmInput))
         </div>
         <div class="f">
           <span>模型</span>
-          <input v-model="settings.model" data-testid="cfg-model" placeholder="model" />
+          <input v-model="settings.model" data-testid="cfg-model" placeholder="模型名称" />
         </div>
         <div class="f">
           <span>API 地址</span>
-          <input v-model="settings.baseUrl" data-testid="cfg-base" placeholder="base_url" />
+          <input v-model="settings.baseUrl" data-testid="cfg-base" placeholder="服务地址" />
         </div>
         <div class="f">
           <span>API Key</span>
@@ -88,13 +88,12 @@ const confirmEnabled = computed(() => confirmMatches(settings.confirmInput))
 
       <!-- 记忆治理 -->
       <div class="sec">
-        <div class="g-t">记忆治理</div>
+        <div class="g-t">记忆</div>
         <div class="trends" data-testid="trends">
           <p v-if="settings.trends.length === 0" class="muted">暂无情绪记录。</p>
           <div v-for="(t, i) in settings.trends" :key="`${t.date}-${i}`" class="t-row">
             <span class="t-d">{{ t.date }}</span>
             <span class="t-l">{{ t.mood_label }}</span>
-            <span class="t-s">{{ t.source }}</span>
           </div>
         </div>
         <button
@@ -482,11 +481,6 @@ const confirmEnabled = computed(() => confirmMatches(settings.confirmInput))
 .t-l {
   font-weight: 700;
   color: var(--primary-deep);
-}
-.t-s {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 10px;
 }
 /* 确认层:文字与按钮居中(高危两步) */
 .confirm {

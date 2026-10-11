@@ -62,6 +62,7 @@ const wsReconnecting = ref(false)
 const draft = ref('')
 const lastTemplate = ref<string | null>(null)
 const protoOpen = ref(false)
+const isDev = import.meta.env.DEV
 const frames = ref<{ kind: string; brief: string }[]>([])
 
 const avatar = computed(() => avatarSvg(expressionFor(round.emotionLabel)))
@@ -116,7 +117,6 @@ const boardNote = computed(() => {
   if (lastTemplate.value === null) return '等一句你的话,我在听。'
   return '小栖在听,黑板会慢慢长出来'
 })
-const boardStatus = computed(() => (round.crisis ? '危机通道 · 规则硬判' : ''))
 const boardWarn = computed(() => round.crisis)
 
 function brief(msg: S2CMsg): string {
@@ -377,7 +377,7 @@ function toggleMic(): void {
     <header class="toolbar glass">
       <div class="logo">
         <svg class="mark-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M12 5 9.04 7.96a2.17 2.17 0 0 0 0 3.08c.82.82 2.13.85 3 .07l2.07-1.9a2.82 2.82 0 0 1 3.79 0l2.96 2.66"/><path d="M18 15l-2-2"/><path d="m15 18-2-2"/></svg>
-        心栖阁<span class="tag">技术原型</span>
+        心栖阁
       </div>
       <button
         class="chip"
@@ -393,7 +393,7 @@ function toggleMic(): void {
       <button class="tb" type="button" data-testid="station-entry" @click="openStation()">心灵补给站</button>
       <button class="tb" type="button" disabled title="二期">心灵练习</button>
       <button class="tb" type="button" disabled title="二期">留言墙</button>
-      <button class="tb" type="button" title="模型配置 · 记忆治理" data-testid="settings-entry" @click="openSettings()">设置</button>
+      <button class="tb" type="button" title="模型配置与记忆" data-testid="settings-entry" @click="openSettings()">设置</button>
       <span class="sp"></span>
       <button class="mood-pill" type="button" data-testid="mood-pill" @click="mood.show()">
         {{ moodPillText }}
@@ -406,7 +406,6 @@ function toggleMic(): void {
         ref="boardRef"
         :title="boardTitle"
         :note="boardNote"
-        :status="boardStatus"
         :warn="boardWarn"
       />
 
@@ -494,8 +493,8 @@ function toggleMic(): void {
     </div>
   </div>
 
-  <!-- 协议帧控制台(演示验帧用) -->
-  <button class="proto-toggle" type="button" @click="protoOpen = !protoOpen">协议帧 WS</button>
+  <!-- 协议帧控制台(演示验帧用;仅 dev 构建渲染,生产不出现) -->
+  <button v-if="isDev" class="proto-toggle" type="button" @click="protoOpen = !protoOpen">协议帧 WS</button>
   <div class="proto glass" :class="{ open: protoOpen }">
     <div class="p-h">WebSocket 帧流(对齐 ws-contract · 9 消息)</div>
     <div class="p-body" data-testid="frame-log">
@@ -541,16 +540,6 @@ function toggleMic(): void {
   width: 17px;
   height: 17px;
   color: var(--primary-deep);
-}
-.logo .tag {
-  font-size: 10px;
-  color: var(--muted);
-  font-weight: 400;
-  font-family: var(--sans);
-  background: rgba(255, 255, 255, 0.6);
-  padding: 2px 8px;
-  border-radius: 999px;
-  margin-left: 2px;
 }
 /* ── 状态 chip(ui-taste 定稿):图标+英文链路+灯点;边缘流光 hover 显形;三部分同步切换 ── */
 .chip {
