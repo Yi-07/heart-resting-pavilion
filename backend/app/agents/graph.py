@@ -339,7 +339,7 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
     summary_parts: list[str] = []
 
     async def _tapped() -> AsyncIterator[str]:
-        async for chunk in analysis.summary_stream(cs, refs):
+        async for chunk in analysis.summary_stream(cs, refs, cs.recalled_memories):
             summary_parts.append(chunk)
             yield chunk
 

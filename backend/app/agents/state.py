@@ -6,7 +6,7 @@ where_next 纯函数从字段算出)。脱敏:state 含用户原文,只活连接
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.schema import Formulation, MoodKey, TemplateId
 
@@ -81,6 +81,8 @@ class CollectState:
     """黑板选材状态机(白名单+熔断);None=选材关闭(测试/降级)。"""
     pending_assets: dict[str, str] | None = None
     """最近一轮 extract 的原始选材输出(待校验);每轮重置,只活单次图调用。"""
+    recalled_memories: list[dict[str, Any]] = field(default_factory=list)
+    """回合内已召回的语义记忆条目(注入点暂存;笔记 LLM 状态闭环语境,回合末消费后随态弃)。"""
 
 
 # ---- 图出口事件(§3.4;网关按事件收尾,不读 state 内部) ----

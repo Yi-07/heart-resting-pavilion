@@ -39,9 +39,16 @@ def test_clear_memory_clears_all_three(fake_memory: Any, tmp_reports: Any):
     tmp_reports.upsert("s", "ready", "# 稿")
     res = client.post("/admin/clear_memory")
     assert res.status_code == 200
-    assert res.json() == {"ok": True, "redis_keys": 2, "mood_rows": 3, "reports": 1}
+    assert res.json() == {
+        "ok": True,
+        "redis_keys": 2,
+        "mood_rows": 3,
+        "reports": 1,
+        "semantic": 0,
+    }
     assert tmp_reports.get("s") is None
     assert ("clear_all", {}) in fake_memory.calls
+    assert ("clear_all", {}) in fake_memory.semantic.calls  # 语义层一并清除
 
 
 def test_clear_memory_failure_503(

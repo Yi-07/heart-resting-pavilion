@@ -130,7 +130,8 @@ class Memory:
         ]
 
     async def clear_all(self) -> dict[str, int]:
-        """治理一键清除(admin/clear_memory):Redis 全部 hrp:v1 键 + 冷层心情表。
+        """治理一键清除(admin/clear_memory):Redis 全部 hrp:v1 键 + 冷层心情表
+        + 语义记忆库(spec L7「语义」层;治理不降级例外覆盖语义层)。
 
         刻意**不降级**——治理失败必须让用户知道(路由层 503 上报),
         与其余记忆方法「异常吞掉、保证回合进行」的默认行为相反,属有意例外。
@@ -143,6 +144,7 @@ class Memory:
         with sqlite3.connect(self._db_path) as conn:
             cur = conn.execute("DELETE FROM mood_daily")
             cleared["mood_rows"] = cur.rowcount or 0
+        # 语义层由调用方汇入(admin 路由持 get_semantic);本方法保持 Redis/SQLite 职责
         return cleared
 
     # ---- 热/温层 ----

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -49,9 +49,12 @@ async def review_emotion(cs: CollectState) -> Emotion:
     return Emotion(label=out.label, intensity=min(max(out.intensity, 0.0), 1.0))
 
 
-def summary_messages(cs: CollectState, refs: list[Ref]) -> list[Message]:
+def summary_messages(
+    cs: CollectState, refs: list[Ref], memories: list[dict[str, Any]] | None = None
+) -> list[Message]:
     """总结 prompt:人话总结 formulation + RAG 引用建议(资料没有的不编造);
-    带热层历史摘要时先交代上回语境(跨回合连续性,唯一 prompt 侧消费点)。"""
+    带热层历史摘要时先交代上回语境(跨回合连续性,唯一 prompt 侧消费点);
+    语义记忆条目注入(「想起」非翻旧账——LLM 临场取舍,PRD 防线设计)。"""
     context = ""
     if refs:
         context = (
@@ -62,17 +65,56 @@ def summary_messages(cs: CollectState, refs: list[Ref]) -> list[Message]:
     if cs.session_context.history_summary:
         clipped = cs.session_context.history_summary[:200]
         history = f"\n\n用户这轮之前还有一次梳理,摘要是:{clipped}"
+    mem_note = ""
+    if memories:
+        mem_desc = "\n".join(f"- {m['text']}" for m in memories)
+        mem_note = (
+            "\n\n用户之前还聊过这些(与本轮相关时自然呼应一句即可,"
+            "用户没主动提就别展开翻旧账):\n" + mem_desc
+        )
     system = (
         "你是心栖阁的共情陪伴者。基于认知概念化表格,用人话帮用户回看这次梳理:"
         "先温柔地照见情境与情绪,再点出想法-行为之间的联系,最后给 1~2 条贴合的"
         f"小建议(建议式非命令式,不做医疗诊断)。温暖口语,250 字内,不用列表。{context}"
     )
-    user = cs.formulation.model_dump_json(by_alias=True) + history
+    user = cs.formulation.model_dump_json(by_alias=True) + history + mem_note
     return [Message("system", system), Message("user", user)]
 
 
-async def summary_stream(cs: CollectState, refs: list[Ref]) -> AsyncIterator[str]:
+async def summary_stream(
+    cs: CollectState, refs: list[Ref], memories: list[dict[str, Any]] | None = None
+) -> AsyncIterator[str]:
     """总结流式;LLMError 甩给调用方降级(话术库兜底)。"""
-    chunks = get_provider().stream(summary_messages(cs, refs))
+    chunks = get_provider().stream(summary_messages(cs, refs, memories))
     async for chunk in chunks:
         yield chunk
+
+
+_NOTE_SYSTEM = (
+    "你是记忆归档员。把这次梳理压成给未来检索用的短笔记。"
+    "只输出 JSON:{\"new\":[\"30~60字笔记,只留主题+关键线索,不写建议不写客套\"],"
+    "\"settled\":[\"本轮已化解的旧条目id\"]}。笔记是转述,绝不引用用户原话。"
+)
+
+_NOTE_USER_TEMPLATE = (
+    "本次表格:{formulation}\n"
+    "本次召回的历史记忆:{recalled}\n"
+    "若其中某条与本次话题相关且本次已化解/推进,把它的 id 放进 settled;没有则空数组。"
+)
+
+
+def note_messages(cs: CollectState, recalled: list[dict[str, Any]]) -> list[Message]:
+    """检索笔记 prompt:笔记 + 状态闭环一并产出(回合末异步,不碰回合时延)。"""
+    recalled_desc = (
+        "\n".join(f"- {r['id']}: {r['text']}" for r in recalled) if recalled else "无"
+    )
+    user = _NOTE_USER_TEMPLATE.format(
+        formulation=cs.formulation.model_dump_json(by_alias=True)[:600],
+        recalled=recalled_desc,
+    )
+    return [Message("system", _NOTE_SYSTEM), Message("user", user)]
+
+
+async def generate_note_raw(cs: CollectState, recalled: list[dict[str, Any]]) -> str:
+    """检索笔记 LLM 输出原文(非流式);LLMError 上抛由网关降级为确定性拼接。"""
+    return await get_provider().chat(note_messages(cs, recalled))

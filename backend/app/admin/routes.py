@@ -1,7 +1,8 @@
 """管理通道 REST(端点单源=ws-contract §1):治理查看/一键清除/模型配置,不进 WS。
 
-- POST /admin/clear_memory — 一键清除用户记忆(Redis 全键+冷层心情+方案书)。
+- POST /admin/clear_memory — 一键清除用户记忆(Redis 全键+冷层心情+方案书+语义库)。
   治理操作不降级:失败如实 503,不误报「已清除」(与记忆层「异常吞掉、保证回合进行」的默认行为相反,有意例外)
+- GET /admin/memories — 语义记忆列表;DELETE /admin/memories/{id} — 单条删除(同治理纪律)
 - GET /admin/trends?days=7 — 情绪趋势(冷层每日心情,日期降序)
 - POST /admin/config — LLM 引擎配置:落库(api_key AES-GCM)+进程内即时应用;
   响应永不回显密钥(前端零密钥,spec §4 L7)
@@ -22,7 +23,7 @@ from app.admin.config_store import (
     apply_llm_config,
     get_config_store,
 )
-from app.memory import get_memory
+from app.memory import get_memory, get_semantic
 from app.station.reports import get_reports
 
 logger = app_logger.logger.bind(service=app_logger.SERVICE, module="admin")
@@ -44,11 +45,35 @@ async def clear_memory() -> dict[str, Any]:
     try:
         counts = await get_memory().clear_all()
         counts["reports"] = get_reports().clear_all()
+        counts["semantic"] = get_semantic().clear_all()
     except Exception as exc:
         logger.error("memory_clear_failed", reason=str(exc)[:120])
         raise HTTPException(status_code=503, detail="清除没有完成,请稍后再试一次。") from exc
     logger.info("memory_cleared", **counts)
     return {"ok": True, **counts}
+
+
+@router.get("/memories")
+async def list_memories(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+    """语义记忆列表(治理「用户可查看」;异常上抛→503,治理不降级)。"""
+    try:
+        items = get_semantic().list_items(limit)
+    except Exception as exc:
+        logger.error("semantic_list_failed", reason=str(exc)[:120])
+        raise HTTPException(status_code=503, detail="记忆列表暂时读不出来,稍后再试一次。") from exc
+    return {"items": items}
+
+
+@router.delete("/memories/{memory_id}")
+async def delete_memory(memory_id: str) -> dict[str, Any]:
+    """语义记忆单条删除(治理;id 不存在幂等删除,返回现状计数)。"""
+    try:
+        get_semantic().delete_items([memory_id])
+    except Exception as exc:
+        logger.error("semantic_delete_failed", reason=str(exc)[:120])
+        raise HTTPException(status_code=503, detail="删除没有完成,请稍后再试一次。") from exc
+    logger.info("semantic_deleted", memory_id=memory_id)
+    return {"ok": True}
 
 
 @router.get("/trends")

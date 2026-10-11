@@ -91,6 +91,26 @@ MEMORY_DB_PATH = os.path.join(_BACKEND_DIR, "data", "profile.db")
 MOOD_RECENT_CAP = 5
 """热层 mood_recent 滚动上限(喂 snapshot/Live2D 语境)"""
 
+# ---- 语义记忆(spec §4 L7「语义」层;PRD docs/prds/semantic-memory.md) ----
+
+SEMANTIC_MEM_STORE_PATH = os.path.join(_BACKEND_DIR, ".mem_store")
+"""语义记忆 Chroma 持久化目录(运行时产物,不入 git;与知识库 .rag_store 物理分离)"""
+
+SEMANTIC_MEM_TOP_K = 3
+"""召回条数上限"""
+
+SEMANTIC_MEM_MIN_COS = 0.5
+"""噪声闸门低档:余弦低于此值静默(原型定标,硬卡高阈值会误杀,取舍权在 LLM)"""
+
+SEMANTIC_MEM_DECAY_DAYS = 30
+"""超期降权天数:条目 age 超此值降低排序权重(未过期不衰减)"""
+
+SEMANTIC_MEM_NOTE_TIMEOUT_S = 8.0
+"""检索笔记 LLM 生成上限(回合末异步,超时降级拼接,不阻塞任何帧)"""
+
+SEMANTIC_MEM_NOTE_MAX_CHARS = 80
+"""检索笔记长度上限(30~60 字目标,80 兜底截断)"""
+
 # ---- 工具(步骤9:station 方案书存取 / admin 模型配置) ----
 
 STATION_DB_PATH = os.path.join(_BACKEND_DIR, "data", "station.db")

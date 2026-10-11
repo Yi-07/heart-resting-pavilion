@@ -89,6 +89,36 @@ class FakeMemory:
         )
 
 
+class FakeSemantic:
+    """语义记忆替身:调用记录型;网关/admin 测试零模型成本。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.items: list[dict[str, Any]] = []
+
+    async def recall(self, query: str, recent_topics: str = "", k: int | None = None) -> list[dict[str, Any]]:
+        self.calls.append(("recall", {"query": query, "recent_topics": recent_topics}))
+        return []
+
+    async def save_notes(self, session_id: str, turn_index: int, notes_raw: str) -> None:
+        self.calls.append(
+            ("save_notes", {"session_id": session_id, "turn_index": turn_index, "raw": notes_raw})
+        )
+
+    def list_items(self, limit: int = 50) -> list[dict[str, Any]]:
+        self.calls.append(("list_items", {"limit": limit}))
+        return list(self.items)
+
+    def delete_items(self, ids: list[str]) -> None:
+        self.calls.append(("delete_items", {"ids": ids}))
+
+    def clear_all(self) -> int:
+        self.calls.append(("clear_all", {}))
+        n = len(self.items)
+        self.items.clear()
+        return n
+
+
 @pytest.fixture(autouse=True)
 def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     mem = FakeMemory()
@@ -96,6 +126,9 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     monkeypatch.setattr("app.station.routes.get_memory", lambda: mem)
     monkeypatch.setattr("app.admin.routes.get_memory", lambda: mem)
     monkeypatch.setattr("app.main.get_memory", lambda: mem)
+    sem = FakeSemantic()
+    monkeypatch.setattr("app.ws_gateway.gateway.get_semantic", lambda: sem)
+    monkeypatch.setattr("app.admin.routes.get_semantic", lambda: sem)
     # 语音默认静音:TTS 流式合成不出块(跳过音频帧)、fillers 取不到——防测试
     # 拉起真 sidecar 或多出 audio_chunk 破坏既有帧序断言;语音用例自行覆盖。
     # **两条链路都要静音**:默认 STREAM_MODE=pcm,只静音 wav 那条等于没静音
@@ -123,6 +156,8 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     ready = threading.Event()
     ready.set()
     monkeypatch.setattr(_rag, "_ready", ready)
+    # sem 挂在 mem 上供用例取用(避免改 fixture 签名破坏既有用例)
+    mem.semantic = sem  # type: ignore[attr-defined] — 动态挂载,仅测试便利
     return mem
 
 

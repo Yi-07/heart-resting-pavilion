@@ -47,7 +47,7 @@ from app.agents import (
 )
 from app.agents.state import CollectEvent, FinishCause
 from app.llm import LLMError, Message, get_provider
-from app.memory import Memory, get_memory
+from app.memory import Memory, get_memory, get_semantic
 from app.router import classifier, gate, phrases
 from app.router.classifier import Classification
 from app.schema import (
@@ -97,6 +97,8 @@ class Connection:
         self.current: asyncio.Task[None] | None = None
         self.current_emitter: ConnEmitter | None = None
         self.collect_state: CollectState | None = None
+        self.note_tasks: list[asyncio.Task[None]] = []
+        """回合末检索笔记写入任务(done 后异步;连接存活期自然完成,断连取消不追讨)"""
 
     # ---- 计数 ----
 
@@ -642,6 +644,11 @@ async def _collect_sequence(
 
         state.asset_selector = AssetSelector()
         state.session_context = await get_memory().snapshot(conn.session_id)
+        # 语义记忆召回(危机闸门判定之后;查询=首轮输入,后续轮次输入在图内,不重召回)
+        # 降级纪律:失败返回空列表;注入由 graph 侧消费 state.recalled_memories
+        state.recalled_memories = await get_semantic().recall(text)
+        if state.recalled_memories:
+            conn.log("semantic_recalled", ids=[m["id"] for m in state.recalled_memories])
         if state.session_context.history_summary is not None or state.session_context.recent_turns:
             conn.log(
                 "memory_restored",
@@ -710,10 +717,52 @@ async def _archive_round(
         cause=cause,
         summary_len=len(summary),
     )
+    _spawn_note_task(conn, state, trace)
     if summary:
         # 总结语音异步流出(done 后到达,抢占即蒸发):不占 60s 处理窗口,
         # 长总结不再触发 timeout 兜底;ws-contract §6.2 时序措辞已同步
         asyncio.create_task(_speak_summary(conn, summary, trace))
+
+
+def _spawn_note_task(conn: Connection, state: CollectState, trace: int) -> None:
+    """检索笔记异步写入(回合末,done 后跑,不碰回合时延;spec L7 语义层)。
+
+    回合内已召回的语义记忆暂存 state.recalled_memories(注入点写入),
+    供笔记 LLM 做状态闭环(判「本轮化解了哪些」);召回失败/库空=空列表,闭环自然跳过。
+    LLM 失败/超时降级 formulation 拼接(parse_notes 整段兜底);写入全降级(WARN)。
+    """
+    from app.agents.analysis import generate_note_raw
+
+    recalled = list(state.recalled_memories)
+
+    async def _run() -> None:
+        try:
+            raw = await asyncio.wait_for(
+                generate_note_raw(state, recalled), timeout=config.SEMANTIC_MEM_NOTE_TIMEOUT_S
+            )
+        except Exception as exc:  # noqa: BLE001 — LLM 失败降级确定性拼接
+            conn.log(
+                "degraded",
+                level="WARN",
+                reason="semantic_note_llm_failed",
+                detail=str(exc)[:120],
+            )
+            raw = " ".join(
+                part
+                for part in (state.formulation.situation, state.formulation.thought)
+                if part
+            )
+            if not raw.strip():
+                return
+        await get_semantic().save_notes(
+            state.session_id,
+            state.round_index,
+            raw,
+            mood_label=state.formulation.emotion.label,
+            intensity=state.formulation.emotion.intensity,
+        )
+
+    conn.note_tasks.append(asyncio.create_task(_run()))
 
 
 async def _settle_collect_event(
@@ -774,7 +823,12 @@ def _tok_count(text: str) -> int | None:
         return None
 
 
-def _answer_messages(query: str, refs: list[Ref]) -> list[Message]:
+def _answer_messages(
+    query: str, refs: list[Ref], memories: list[dict[str, Any]] | None = None
+) -> list[Message]:
+    """answer prompt:RAG 引用 + 语义记忆注入(记忆行只做「想起」,不引申不翻旧账——
+    已化解条目等 LLM 临场取舍,LLM 失败时无记忆注入不影响回答)。
+    """
     context = ""
     if refs:
         context = "\n\n".join(f"【{r.question}】\n{r.answer}" for r in refs)
@@ -786,6 +840,15 @@ def _answer_messages(query: str, refs: list[Ref]) -> list[Message]:
         system = (
             "你是心栖阁的陪伴助手。温暖、简洁地回应(80 字内),不做医疗诊断,"
             "不连续追问。"
+        )
+    if memories:
+        mem_desc = "\n".join(
+            f"- (相关度 {m['cos']}, {m['date']}{' ,较早' if m.get('aged') else ''}) {m['text']}"
+            for m in memories
+        )
+        system += (
+            "\n\n你可能还记得用户之前聊过(自然衔接即可,用户没提就别主动翻旧账;"
+            "若与当前话题无关就忽略):\n" + mem_desc
         )
     msgs = [Message("system", system), Message("user", query)]
     from app import diag
@@ -1148,6 +1211,17 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
             refs = []
     diag.mark("rag_done", refs=len(refs))
 
+    # 语义记忆同步召回(危机闸门判定之后才到这里——历史不参与路由判定,spec L7 红线):
+    # 查询 = 本轮输入 + 热层最近话题(查询增强);降级纪律全吞异常,空列表=无注入
+    memory_ctx = await get_memory().snapshot(conn.session_id)
+    recent_topics = " ".join(
+        t.text for t in memory_ctx.recent_turns[-3:]
+    )
+    memories = await get_semantic().recall(text, recent_topics=recent_topics)
+    if memories:
+        conn.log("semantic_recalled", ids=[m["id"] for m in memories])
+    diag.mark("semantic_done", n=len(memories))
+
     emitter = ConnEmitter(conn, "scene_answer")  # answer 不走 collect 图,emitter 仅兜底用
     conn.current_emitter = emitter
     trace = conn.current_trace
@@ -1159,7 +1233,7 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
             diag.mark("provider_get_begin")
             provider = get_provider()
             diag.mark("provider_get_done")
-            stream = provider.stream(_answer_messages(text, refs))
+            stream = provider.stream(_answer_messages(text, refs, memories))
             diag.mark("llm_messages_ready")
             if config.TTS_ANSWER_VOICE:
                 # 文字与音频同时流:句子泵把 LLM 流切句逐句送 TTS,首句音频不等全文。

@@ -17,6 +17,9 @@ __pycache__/
 # RAG 持久化(ingest 重建,不入库)
 .rag_store/
 
+# 语义记忆持久化(chroma,运行时产物;治理清除即重建,不入库)
+.mem_store/
+
 # 日志(运行时产物)
 logs/
 
