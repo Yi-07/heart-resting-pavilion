@@ -135,21 +135,21 @@ class SemanticMemory:
         news, settled = parse_notes(notes_raw)
         capped = [n[: config.SEMANTIC_MEM_NOTE_MAX_CHARS] for n in news if n.strip()]
         if capped:
-            meta: dict[str, Any] = {
+            base: dict[str, Any] = {
                 "status": "open",
                 "session_id": session_id,
                 "turn_index": turn_index,
                 "date": _now().date().isoformat(),
             }
             if mood_label:
-                meta["mood"] = mood_label
+                base["mood"] = mood_label
             if intensity is not None:
-                meta["intensity"] = intensity
+                base["intensity"] = intensity
             col.upsert(
                 ids=[f"{_ID_STEM}{uuid4().hex}" for _ in capped],
                 documents=capped,
                 embeddings=self._encode(capped),
-                metadatas=[meta],
+                metadatas=[dict(base) for _ in capped],  # 每条一份独立 metadata(数量须与 ids 对齐)
             )
         if settled:
             col.update(ids=settled, metadatas=[{"status": "settled"}] * len(settled))

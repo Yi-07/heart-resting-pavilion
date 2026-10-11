@@ -112,6 +112,14 @@ class TestSaveAndRecall:
             assert m["status"] == "open"
             assert not m["aged"]
 
+    async def test_save_multi_notes_metadata_aligned(self, sem: SemanticMemory) -> None:
+        # 回归:LLM 返回多条笔记时 metadatas 须与 ids 数量对齐(chroma 否则整批拒)
+        await sem.save_notes("s", 0, '{"new":["笔记甲","笔记乙","笔记丙"],"settled":[]}')
+        items = sem.list_items()
+        assert len(items) == 3
+        assert all(it["status"] == "open" for it in items)
+        assert all(it["date"] for it in items)
+
     async def test_settled_loopback(self, sem: SemanticMemory) -> None:
         await sem.save_notes("s", 0, "与室友闹矛盾,回避回宿舍")
         first = sem.list_items()[0]
