@@ -141,7 +141,10 @@
 | 热 | 当前会话上下文：摘要 + 最近轮次原话（≤20 轮，供重连重建与回放，ADR-001/005） | Redis | TTL 30min（原话到期即弃构成隐私边界，中长期只留摘要） |
 | 温 | 会话摘要（粗摘要不存原文）| Redis | TTL 7天 |
 | 冷 | 长期画像 + 情绪趋势（每日心情记录 `{date, mood_label, intensity, source: mood_select/研判}`）| SQLite | 无 TTL |
+| 语义 | 跨回合检索笔记（LLM 转述非原文）`{text, mood_label, intensity, status: open/settled, session_id, turn_index, date}`，collect 回合末异步写入；供对话管线按相关性召回注入 | Chroma（collection 与知识库物理分离） | 无 TTL（治理可删） |
 | 外挂 | 心理知识问答对，供 RAG | Chroma | 与用户记忆分离 |
+
+**语义记忆检索**：回答管线同步召回 top-3（余弦噪声闸门 + 超期降权），注入 collect 的 Finish 总结与 answer 回答的 prompt（collect 的追问为模板短语、研判为分类器,均非 LLM prompt——总结是 collect 侧唯一注入通道）；召回在危机闸门判定之后，历史记忆不参与路由与危机判定（判定只吃本轮输入）。写入仅 collect 回合；状态闭环（回合末 LLM 判「本轮化解了哪些」回写 settled）+ LLM 临场否决兜底。治理：`GET/DELETE /admin/memories`（契约见 ws-contract「管理通道」）；`clear_all` 连语义层一起清；全部读写降级不杀回合。
 
 **治理层**：Key 隔离 + 版本号 · 音频不落库 · 用户可查看/一键清除。
 **模型配置存储**：LLM/ASR/TTS 引擎配置，AES-GCM 字段加密存 SQLite；密钥环境变量注入不入库；前端零密钥；日志脱敏。
@@ -253,4 +256,4 @@
 
 **MVP**：三路路由（answer/collect/crisis）· 危机闸门贯穿 + 热线 · 快速研判（分类器标签扩展）· 多轮采集 + formulation · mood_select · 停采后分析（同步；后台并行留二期）· 黑板模板声明渲染器 + 粗稿/精稿 · 心灵补给站（方案书懒生成 + md 预览/导出）· 语音链路（打字/语音双输入）· 记忆最小闭环 + 治理层 · 模型配置 UI · Live2D（情绪一源三用）。
 
-**二期**：多模态节奏协同（黑板/语音/Live2D 编排）· WebRTC 打断式语音 · 知识图谱（knowledge.query 接口缝）· 语义级记忆检索 · 黑板模板库定制扩充 · ASR 强化 · 多人并发 · Tauri 打包。（完整二期见 `ARCHITECTURE_PROGRESS.md`「二期范围总表」）
+**二期**：多模态节奏协同（黑板/语音/Live2D 编排）· WebRTC 打断式语音 · 知识图谱（knowledge.query 接口缝）· 黑板模板库定制扩充 · ASR 强化 · 多人并发 · Tauri 打包。（语义级记忆检索已落地为 L7「语义」层；完整二期见 `ARCHITECTURE_PROGRESS.md`「二期范围总表」）
