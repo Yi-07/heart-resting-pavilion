@@ -3,6 +3,10 @@
 interface ImportMetaEnv {
   /** 后端 WS 地址,默认 ws://localhost:8000/ws */
   readonly VITE_WS_URL?: string
+  /** PCM 播放目标缓冲深度(毫秒),默认 120;A/B 用 */
+  readonly VITE_TTS_PCM_BUFFER_MS?: string
+  /** 置 '1' 开启前端 TTS 埋点上报(/v1/tts/bench/events) */
+  readonly VITE_TTS_BENCH?: string
 }
 
 interface ImportMeta {
