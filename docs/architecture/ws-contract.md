@@ -15,7 +15,7 @@
 | 编码 | JSON，UTF-8，文本帧 |
 | 管理通道 | 记忆清除/趋势/模型配置走 HTTP REST（`POST /admin/clear_memory`·`GET /admin/trends`·`GET /admin/config`·`POST /admin/config`），不进 WS；WS 仅对话 9 消息（见「消息总览（9）」） |
 | 语义记忆治理通道 | 语义记忆查看/单条删除走 HTTP REST：`GET /admin/memories`（列表） · `DELETE /admin/memories/{id}`（单条删除，成功 200）；不进 WS |
-| 补给站通道 | 心灵补给站方案书走 HTTP REST：`POST /station/report/generate`（点击触发懒生成） · `GET /station/report/latest`（轮询，等待态"正在为你整理…"）；不进 WS |
+| 补给站通道 | 心灵补给站方案书走 HTTP REST：回合末自动触发生成（Finish 归档时后台启动，无需点击）；`POST /station/report/generate` 保留为手动重生成入口 · `GET /station/report/latest`（轮询取稿，等待态"正在为你整理…"）；不进 WS |
 | 语音转写通道 | 语音输入两步式（ADR-004）：`POST /asr/transcribe`（base64 webm/opus → 转写文本）供前端回填文本框，用户确认后按文本输入发送；不进 WS |
 
 **补给站 REST 响应**（HTTP 200，两端点同形）：
@@ -30,8 +30,7 @@
 | report_md | string | 仅 ready 返回；md 正文，前端预览/导出 |
 
 - generate 受理即返；latest 轮询——生成中 `pending`，完成 `ready`+`report_md`
-- 错误码：`POST /station/report/generate` 无可用素材（无危机回合）→ 409；`GET /station/report/latest` 无历史记录 → 404
-- generate 无可用素材（无危机回合）→ 409；latest 无历史记录 → 404
+- generate 无可用素材（本会话未完成过 collect 回合，危机回合不写素材）→ 409；latest 无历史记录 → 404
 
 **语音转写请求/响应**（ADR-004）——请求 `POST /asr/transcribe`：
 
@@ -55,7 +54,7 @@
 
 | 方向 | 类型 | 触发方 | 说明 |
 |---|---|---|---|
-| S→C | first_frame | 后端 | 新回合起点；告知 route / 模板 / 安抚语 |
+| S→C | first_frame | 后端 | 新回合起点；告知 route / 模板 / 开场文案（collect 可空）|
 | S→C | draw | 后端 | 黑板绘制数据（粗稿/逐轮/精稿统一）|
 | S→C | text_delta | 后端 | 流式回复文本 |
 | S→C | audio_chunk | 后端 | TTS 音频块（base64）|
@@ -76,10 +75,10 @@
   "type": "first_frame",
   "session_id": "sess_abc",
   "route": "collect",
-  "template": "beck_formulation",
+  "template": "scene_default",
   "emotion_label": "疲惫",
   "mood_select": true,
-  "text": "嗯，我在听。这个累不是矫情。"
+  "text": ""
 }
 ```
 
@@ -89,9 +88,9 @@
 | template | 模板 id | collect 才有，预告粗稿模板 |
 | emotion_label | 快速研判标签 | 喂 Live2D + 粗稿 |
 | mood_select | bool | crisis 恒 false；collect true |
-| text | 安抚语 | 按情绪标签选文案 |
+| text | 开场文案（可空） | collect 现行恒空串（开场不设安抚语，第一句话由问话 LLM 生成后随 text_delta 到达）；crisis 携郑重安抚文案 |
 
-**前端语义**：收到 first_frame 即**新回合起点 → 清空黑板、重置 seq 基线、收起心情选择器计时**（基线是旧帧判定起点；后端计数不重置，见 §3.2）。
+**前端语义**：收到 first_frame 即**新回合起点 → 清空黑板、重置 seq 基线、收起心情选择器计时**（基线是旧帧判定起点；后端计数不重置，见 §3.2）。`text` 为空串时前端直接开空 bot 消息等待 text_delta，不渲染任何占位语。
 
 ### 3.2 draw
 
@@ -145,8 +144,8 @@
 - **可多帧**：TTS 分块合成，一段语音拆成多个 audio_chunk（seq 单调递增），前端按序连播
 - **round_id 一致性**：同一回合的所有帧 `round_id` 相同，由后端从 TTS 服务原样透传。前端只接受 `round_id == currentRoundId` 的帧；旧回合的迟到帧直接丢（可观测）
 - **audio_seq**：回合内单调递增的音频块序号，**跨句连续、不重置**。它与外层 `seq` 是两套号：`seq` 是本连接全局发帧序号，`audio_seq` 是回合内音频块序
-- **final 语义**：`true` 标记本回合最后一块（单发路径如安抚语/危机热线恒 true；answer 流式路径恒 false，最后一块不补发）。前端当前不读该字段，不依赖它也能播
-- **时序例外**：总结语音与安抚语异步流出，可在 `done` 之后到达（见「6.2 collect」）；前端播放队列独立于回合状态，下一回合 `first_frame` 清队（音频打断由 AudioQueue/PcmPlayer 承担）
+- **final 语义**：`true` 标记本回合最后一块（单发路径如危机热线/等待语音/心情回执恒 true；流式路径恒 false，最后一块不补发）。前端当前不读该字段，不依赖它也能播
+- **时序例外**：总结语音异步流出，可在 `done` 之后到达（见「6.2 collect」）；前端播放队列独立于回合状态，旧回合余音由新回合音频首块自认领时 flush、用户发送新输入（user_sent）时即 flush（音频打断由 AudioHub/PcmPlayer 承担）
 
 ### 3.5 done
 
@@ -180,6 +179,7 @@
 | invalid_message | 请求消息不合法（缺字段/类型错）|
 | timeout | 采集/分析超时 |
 | server_error | 后端异常，已降级 |
+| ask_llm_failed | 问话 LLM 失败；采集态挂起待重试，前端走辐条提示 |
 
 ---
 
@@ -211,7 +211,7 @@
 ```
 
 - mood 取值（6 档）：`难过 / 低落 / 平静 / 还好 / 开心 / 很好`
-- **独立到达**（无活跃回合）：后端仅更新 L7 profile，回 `text_delta`（短安抚） + `done`（**不发 first_frame**，与 §3.1 answer 一致）；Live2D 表情由前端 mood_select 本地触发
+- **独立到达**（无活跃回合）：后端仅更新 L7 profile，回 `text_delta`（预置回执） + `audio_chunk`（预置回执语音，预置 wav 直发，失败跳过） + `done`（**不发 first_frame**，与 §3.1 answer 一致）；Live2D 表情由前端 mood_select 本地触发
 - **回合内到达**（§6.2 采集期）：仅更新 L7 profile，不回帧，采集照常等待轮次回答
 
 ---
@@ -235,7 +235,7 @@
 
 **scene_* 板式 data 扩展（scene_formulation）**：六字段同 formulation + `assets`（定义与语义见 §3.2）；后端实现为 formulation 子型，Draw 判别校验按 TEMPLATE_DATA 映射取型
 
-**scene_answer / scene_crisis 固定场景 data（scene_note）**：`{ "note": "string|null" }`——图标全预绑定无 LLM，data 只携底部注释行文字（crisis 恒 `note: "你不是一个人"`；answer 恒 `note: null`）
+**scene_answer / scene_crisis 固定场景 data（scene_note）**：`{ "note": "string|null" }`——图标全预绑定无 LLM，data 只携底部注释行文字（crisis 恒携预置注文案，正文由后端话术库单源；answer 恒 `note: null`）
 
 **测试模板 data**：
 - `emotion_wheel`：`{ emotions: [{ label: string, intensity: 0~1, color: string }] }`
@@ -271,33 +271,32 @@ S→C  done
 - **文字不被音频拖住**：LLM 出字比合成快一个量级，两条队列分开走
 - **语音缺席不杀回合**：TTS 失败只记 degraded，文字链路照常；`TTS_ANSWER_VOICE=0` 可整体关停 answer 语音（调试用）
 
-### 6.2 collect（多轮采集，板式接力）
+### 6.2 collect（多轮采集，问话 LLM 流式 + 逐句 TTS）
 
 ```
-C→S  user_input
-S→C  first_frame (route=collect, template=scene_default, 安抚语, mood_select=true)
-S→C  draw (template=scene_default, 粗稿: 暖场景, 仅 emotion 有值)
-S→C  audio_chunk ×N (安抚语语音,可选)
-S→C  text_delta (确认情绪 + 第 1 问)
+C→S  user_input (第 1 条)
+S→C  first_frame (route=collect, template=scene_default, text="", mood_select=true)
+S→C  draw (scene_default|scene_focus, entry 提取结果: 首条输入即提取,带选材)
+S→C  text_delta ×N (问话 LLM 流式,攒批)
+S→C  audio_chunk ×N (问话逐句 TTS,句子泵,pcm_s16le 带 round_id)
      C→S  mood_select (可选,用户点了才发)
      C→S  user_input (第 1 轮回答)
-S→C  draw (template=scene_default|scene_focus, 全量,+situation+emotion)
-S→C  text_delta (确认 + 第 2 问)
-     C→S  user_input (第 2 轮回答)
-S→C  draw (全量,+thought+behavior)
-S→C  text_delta (确认 + 第 3 问)
-     [充分度 ≥0.7 或轮数上限 → 停采 → 停采后同步分析]
-S→C  audio_chunk ×N (等待语音,可选)
-S→C  draw (精稿: 完整 formulation)
-S→C  text_delta ×N (人话总结,末尾拼心灵补给站邀请语)
+S→C  draw (增量,+新字段,板式接力可能在此切 scene_focus)
+S→C  text_delta ×N + audio_chunk ×N (确认+下一问,流式+逐句 TTS,与第 1 问同构)
+     ...循环至充分度 ≥0.7 或轮数上限...
+S→C  audio_chunk ×1 (等待语音 filler,预置 wav 直发)
+S→C  draw (精稿: 复核后全量 formulation,选材不重发)
+S→C  text_delta ×N (人话总结,流式攒批,末尾拼心灵补给站邀请语)
 S→C  done
 S→C  audio_chunk ×N (总结语音,异步流出,可选;done 后到达,抢占即蒸发)
 ```
 
-- **板式接力**：开场恒 `scene_default` 暖场景（无字段槽位，纯陪伴）；situation/thought/behavior 任一**首次入格且该字段选材图标有效**的那轮 draw 切 `scene_focus`，单向不变；该类字段无有效选材图标时维持暖场景，字段文本暂不上板；选材熔断 → 永久暖场景（`asset_fuse_trip` WARN）
+- **问话生成**：LLM 按采集信息需求流式生成（系统提示词规范共情陪伴者风格），文字攒批与逐句 TTS 与 answer 同构（SentenceSplitter 复用）；确认语不再独立预置——由问话 LLM 按采集进展自然带出（含进度感知：已采字段/剩余轮数进 prompt）
+- **entry 即提取**：首条输入过路由即跑字段提取+选材，粗稿带实质字段出图；板式接力条件不变（situation/thought/behavior 首次入格且选材图标有效），时点提前至 entry 即可发生；选材熔断 → 永久暖场景（`asset_fuse_trip` WARN）
 - **打岔挂起/恢复**（ADR-003）：采集期命中 answer 的输入 → `draw (template:"scene_answer")` 接管黑板 + 短答 + done，采集态挂起不清；下一输入恢复采集，恢复轮照常发全量 draw（模板切回触发转场）
 - **降级**（答案过短/话题漂移/负面词）：后端跳过剩余轮次，直接发精稿 draw + 转共情陪聊/已采字段收尾；情绪变差命中软预筛 → 改发危机序列（§6.3）
-- **分析等待**：停采后同步分析，精稿 draw 前有分析耗时（前端显示"收尾中"）；后台并行属二期
+- **问话 LLM 失败**：`error(code=ask_llm_failed)` + 前端辐条提示（不入对话气泡）；采集态挂起，下一条输入重试；不发预置问句兜底
+- **分析等待**：停采后同步分析，精稿 draw 前有分析耗时（前端显示"收尾中"）；等待语音预置 wav 直发；后台并行属二期
 - **seq 示例**：时序图仅示意；text/audio 交错消耗号，递增规则见 §3.2
 
 ### 6.3 crisis（危机）
@@ -305,13 +304,14 @@ S→C  audio_chunk ×N (总结语音,异步流出,可选;done 后到达,抢占�
 ```
 C→S  user_input
 S→C  first_frame (route=crisis, 郑重安抚, mood_select=false)
-S→C  draw (seq=1, template:"scene_crisis", data:{note:"你不是一个人"})
+S→C  draw (seq=1, template:"scene_crisis", data:{note:"加油！你能行的"})
 S→C  text_delta (热线 12356 引导)
-S→C  audio_chunk ×N (危机话术语音,可选)
+S→C  audio_chunk (热线话术语音,预置 wav,与文本同步)
 S→C  done
 ```
 
 - 图标预绑定，无 LLM 选材（危机链路不走选材）；热线引导仍走 text_delta
+- 危机话术（安抚文案/热线引导/黑板注）全部预置文本+预生成 wav：文本照常发帧，语音直发预置文件，不占运行时 TTS；固定文案由后端话术库单源，契约不记正文
 
 ---
 
@@ -331,7 +331,8 @@ S→C  done
 1. 后端收到非法 C→S 消息 → 回 `error(code=invalid_message)`，**不崩连接**
 2. 采集/分析超时 → `error(code=timeout)` + 转降级回复
 3. 后端异常 → `error(code=server_error)`，前端显示温和兜底话术（非医疗、不恐慌）
-4. 重连：前端带 `session_id` 重连，后端恢复热层上下文（ADR-001：重建 turns；ADR-005：先推 `replay` 帧回放）
+4. 问话 LLM 失败 → `error(code=ask_llm_failed)`，前端辐条提示（不入对话气泡）；采集态挂起，下一条输入重试，不发预置问句兜底
+5. 重连：前端带 `session_id` 重连，后端恢复热层上下文（ADR-001：重建 turns；ADR-005：先推 `replay` 帧回放）
 
 ---
 
@@ -367,7 +368,7 @@ S→C  done
 | ERROR | 消息非法、后端异常、error 帧发出 |
 | FATAL | 进程级故障 |
 
-事件： `session_open` · `user_input_received` · `crisis_gate_hit` · `route_decided` · `first_frame_sent` · `collection_start` · `collection_round` · `sufficiency_scored` · `degraded` · `analysis_start` · `analysis_end` · `draw_sent` · `replay_sent`（ADR-005） · `done` · `error` · `escalate_end` · `audio_sent` · `mood_select_received` · `reconnect_adopted` · `memory_restored` · `memory_degraded` · `memory_cleared` · `memory_clear_failed` · `session_close` · `event_loop_lag` · `rag_warm_ready` · `rag_retrieved` · `extract_filled` · `extract_empty` · `asset_fallback`（WARN，选材校验拒绝落默认） · `asset_fuse_trip`（WARN，选材熔断全默认） · `tts_degraded` · `tts_sidecar_version_mismatch`；REST 侧： `asr_transcribed` · `asr_empty`（归属 `/asr/transcribe`，ADR-004）。本表为全量事件名清单，与代码 `logger` 调用同步维护
+事件： `session_open` · `user_input_received` · `crisis_gate_hit` · `route_decided` · `first_frame_sent` · `collection_start` · `collection_round` · `sufficiency_scored` · `degraded` · `ask_llm_failed`（WARN，问话 LLM 失败采集挂起） · `analysis_start` · `analysis_end` · `draw_sent` · `replay_sent`（ADR-005） · `done` · `error` · `escalate_end` · `audio_sent` · `mood_select_received` · `reconnect_adopted` · `memory_restored` · `memory_degraded` · `memory_cleared` · `memory_clear_failed` · `session_close` · `event_loop_lag` · `rag_warm_ready` · `rag_retrieved` · `extract_filled` · `extract_empty` · `asset_fallback`（WARN，选材校验拒绝落默认） · `asset_fuse_trip`（WARN，选材熔断全默认） · `tts_degraded` · `tts_sidecar_version_mismatch`；REST 侧： `asr_transcribed` · `asr_empty`（归属 `/asr/transcribe`，ADR-004） · `station_report_accepted` · `station_report_ready`。本表为全量事件名清单，与代码 `logger` 调用同步维护
 
 ### 9.4 脱敏（硬约束）
 
@@ -391,12 +392,12 @@ S→C  done
 2. first_frame → 清黑板/重置/收起选择器
 3. draw → 增量渲染（新字段动画；scene 模板 asset 渲染——未知 id 跳过兜底，subject 与 zones 声明都在才画）
 4. mood_select 上报（含独立到达）
-5. error → 温和兜底
+5. error → 温和兜底（ask_llm_failed 走辐条提示，不入对话气泡）
 6. replay → 幕布回放/小结卡（ADR-005；session_id 经 localStorage 持久化）
 
 **后端**
 1. WS 网关（session_id、消息路由、seq 管理）
-2. first_frame 生成（route/template/安抚语；collect 开场=scene_default）
+2. first_frame 生成（route/template/开场文案；collect 置空，crisis 携安抚）
 3. draw 下发（粗稿/逐轮/精稿；collect 板式接力 scene_default→scene_focus）
 4. mood_select 处理（profile 更新 / 独立到达）
 5. error 帧 + 超时兜底

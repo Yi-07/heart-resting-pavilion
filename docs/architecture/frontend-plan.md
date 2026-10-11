@@ -29,13 +29,13 @@
 | board | `render(templateId,data,seq)` 通用渲染（读模板声明→增量绘制）·`diff(seq+新字段→动画)`·registry 为模板声明注册表（`register(decl)`/`get(templateId)`；测试模板 3 个，声明类型见 §5.1）；粉笔效果（抖动/dash-reveal/光标/滤镜）为实现细节，实施时入 docstring |
 | mood | 今日心情选择器（浮出/超时/mood_select 上报） |
 | l2d | pixi-live2d-display 封装+表情映射（版本钉子见「1. 技术栈」，不重复） |
-| audio | 音频队列与播放：enqueue（chunk） 入队顺序播放 · stopAndFade（） 淡出当前声并清队（first_frame 抢占时调，时长见 §6）· onPlayback（cb） 广播播放状态；l2d 订阅播放事件驱动口型，播放不依赖立绘加载 |
+| audio | 音频队列与播放：AudioHub 按 chunk.format 分派——`pcm_s16le` 走 PcmPlayer（round_id 隔离，未见过的新 round 自认领即隐式 flush 旧回合；flush 掐掉全部已排程 source）· `wav` 走 AudioQueue（enqueue 顺序播放 · stopAndFade）；用户发送新输入（user_sent）即 flush；onPlayback（cb） 广播播放状态；l2d 订阅播放事件驱动口型，播放不依赖立绘加载 |
 | chat | 气泡+流式文本+危机横幅（ChatPanel）；输入单源文本：文字/麦克风（录音→/asr/transcribe 转写→追加回填文本框，用户确认发送，ADR-004）（input） |
-| station | 心灵补给站：触发生成/等待态/md 预览/导出 |
+| station | 心灵补给站：取稿轮询（生成回合末自动触发）/等待态/md 预览/导出 |
 | state | 回合状态机 `transition(event)`（§3）·持当前情绪 emotionLabel：写者按 first_frame.emotion_label → mood_select 本地写 → 精稿 draw.data.emotion.label 次序覆盖，本回合内用户手点不被精稿回退，first_frame 重置；Pinia store |
 | logger | console 彩色 logger（INFO/WARN/ERROR） |
 
-> **工具栏工具范围**：今日心情（即心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点击触发生成 + 等待态"正在为你整理" + md 预览 + 导出 md；pdf 导出属二期未实现，见 station.ts 注记）** · 心灵练习 / 留言墙——前端留入口 UI + TODO 占位（二期）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
+> **工具栏工具范围**：今日心情（即心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点开取稿（回合末已自动生成，未就绪显示等待态"正在为你整理"） + md 预览 + 导出 md；pdf 导出属二期未实现，见 station.ts 注记）** · 心灵练习 / 留言墙——前端留入口 UI + TODO 占位（二期）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
 
 > **UI 参考**：默认实现见 `preview/l1-ui-mockup-v7.html`。黑板左 64% 横向（细橡木+HUD+呼吸+粉笔手绘）· Live2D 叠右下 · 气泡头部旁；聊天抽屉点气泡展开；心情右上 10s；rail 磁吸右缘。**接口固定，视觉可替换。**
 >
@@ -73,7 +73,7 @@ final ──done──▶ idle
 ```
 
 - **心情选择器**：collecting 开始时浮出，10s 超时自动收起；crisis 不浮
-- **crisis**：first_frame（route=crisis）→ 显示热线横幅 + 支持性画面（stage_map）
+- **crisis**：first_frame（route=crisis）→ 显示热线横幅 + 支持性画面（scene_crisis）
 - **analysis**：最后回答提交 → 精稿 draw 之间，前端显示"收尾中"（纯前端推断，无专用消息）
 
 ---
@@ -163,14 +163,15 @@ function render(templateId, data):         # 新鲜度由 ws 层保证(§4),收�
 ```
 on WS message m:
   switch m.type:
-    first_frame: audio.stopAndFade(); round.reset(); round.enter("collecting")
-                 if m.route == "crisis": showHotline()   # stage_map 由后续 draw 帧渲染
-                 else: mood.show(); board.render(m.template, 粗稿数据)
+    first_frame: audio.flush(); round.reset(); round.enter("collecting")
+                 if m.route == "crisis": showHotline()   # scene_crisis 由后续 draw 帧渲染
+                 else: mood.show(); board.render(m.template, m.text 为空串则只开空气泡)
     draw:        board.render(m.template, m.data)
     text_delta:  chat.append(m.text); if m.final: chat.finalize()
     audio_chunk: audio.enqueue(m)
     done:        round.enter("idle"); mood.hide()
-    error:       round.enter("idle"); chat.append(温和兜底话术)
+    error:       if m.code == "ask_llm_failed": 辐条提示(不入对话气泡); round 挂起不动
+                 else: round.enter("idle"); 辐条提示
 ```
 
 ---
@@ -179,13 +180,13 @@ on WS message m:
 
 | 消息 | 前端行为 |
 |---|---|
-| first_frame | 回合重置；淡出停播当前音频（~100ms）；crisis→热线+stage_map；collect→心情选择器+粗稿 |
+| first_frame | 回合重置；flush 停播当前音频；crisis→热线+scene_crisis；collect→心情选择器+空气泡等问话流 |
 | draw | 渲染器增量画（按 seq）|
 | text_delta | 气泡流式追加 |
-| audio_chunk | 入队顺序播放；口型由播放事件驱动（抢占随 first_frame 淡出） |
+| audio_chunk | 入队顺序播放；口型由播放事件驱动（抢占随 first_frame flush/新输入 user_sent flush） |
 | done | 收尾：收起等待态 |
-| error | 温和兜底，回 idle |
-| user_input（发）| 触发新回合 |
+| error | ask_llm_failed→辐条（回合挂起）；其余→辐条，回 idle |
+| user_input（发）| 触发新回合；**发送即 flush 旧回合音频**（user_sent 本地事件） |
 | mood_select（发）| 上报心情 |
 
 ---
@@ -193,8 +194,8 @@ on WS message m:
 ## 7. 验收（前端视角，3 用例）
 
 1. **answer**：输入"什么是正念" → 无黑板，气泡流式文本，结束
-2. **collect**：输入"最近很焦虑睡不着" → 第一帧 → 心情选择器（10s 超时回退）→ 黑板粗稿 → 逐轮增量 → 精稿补全 → 分析总结+心灵补给站邀请语（方案书点击补给站触发生成）
-3. **crisis**：输入"我不想活了" → 热线横幅 + stage_map，不弹心情选择器
+2. **collect**：输入"最近很焦虑睡不着" → 第一帧（text 空）→ 心情选择器（10s 超时回退）→ 黑板粗稿（entry 提取带选材）→ 逐轮增量 → 精稿补全 → 分析总结+心灵补给站邀请语（方案书回合末已自动生成，点开取稿）
+3. **crisis**：输入"我不想活了" → 热线横幅 + scene_crisis，不弹心情选择器
 
 ---
 
