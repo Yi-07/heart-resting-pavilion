@@ -36,7 +36,8 @@
 ## 2. 裁定残项（待人拍板/已裁定留档）
 
 - [ ] `router/gate.py`「生不如死」归软档（0.4 单独不触危机）偏宽——内测词表抽测时复核分档
-- [ ] TTS 换引擎 GPT-SoVITS 三残项（tts-gptsovits 看板收尾）：①g2p_en 缺 nltk cmudict 致英文硬拦截——LLM 提示词约束纯中文为短期方案，长期修服务侧 g2p 或词级混读；②自训权重对 liuding（GPT ckpt+SoVITS pth）已在 `GPT-SoVITS/GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/` 但 tts_infer.yaml 仍指官方底模——接线需改 yaml+重启，属音色定版决策；③PR #1 全量合入时本实现与 PR 同名文件冲突裁定（代码已同源，冲突好解）
+- [ ] TTS 换引擎 GPT-SoVITS 二残项（tts-pcm-streaming 收尾更新）：①g2p_en 缺 nltk cmudict 致英文硬拦截——LLM 提示词约束纯中文为短期方案，长期修服务侧 g2p 或词级混读；②自训权重对 liuding（GPT ckpt+SoVITS pth）已在 `GPT-SoVITS/GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/` 但 tts_infer.yaml 仍指官方底模——接线需改 yaml+重启，属音色定版决策。~~③PR 同名冲突裁定~~ 已销（2026-10-11）：PR #2 的 TTS 面（PCM16 链路/纳库差量/引擎升级）经 tts-pcm-streaming 任务线手工移植并入本仓（8aaf08f..b304915），ASR/RAG 拆服务与 CosyVoice 服务化裁定不采，PR 已无可采面
+- [ ] `test_collect_e2e.py::test_collect_preempt_during_analysis` 全量偶发失败（单跑稳定过；基线 40f7b79 worktree 复现同 flaky）——collect 抢占时序断言对调度敏感，修测试隔离或放宽时序断言（tts-pcm-streaming P5 发现，与本批无关）
 - [ ] mood_select 是否回写 `formulation.emotion`（spec「L3 · 智能路由决策器」标签优先级链语义；裁定前不动行为）
 - [ ] `docs/todos/tasks-arrangement.md` 阶段完成状态行未补（第一阶段日期已过无标注）——头注补「阶段完成状态以对应看板为准」或直接归档，二选一（audit-5b 缺口 4）
 - [ ] `docs/references.md` 头注缺触发条款——补「采纳新开源参考或理论时登记于此，并与 Inspiration「其他灵感来源」表对齐」（audit-5b 缺口 6）
