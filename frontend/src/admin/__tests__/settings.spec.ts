@@ -6,6 +6,8 @@ import {
   getConfig,
   saveConfig,
   clearMemory,
+  loadMemories,
+  deleteMemory,
   resetSettingsForTest,
   CONFIRM_PHRASE,
   confirmMatches,
@@ -50,6 +52,17 @@ async function fetchStub(input: RequestInfo | URL, init?: RequestInit): Promise<
   if (url.includes('/admin/trends')) {
     return new FakeRes(200, {
       moods: [{ date: '2026-09-05', source: 'mood_select', mood_label: '低落', intensity: null }],
+    })
+  }
+  if (url.includes('/admin/memories/')) {
+    return new FakeRes(200, { ok: true })
+  }
+  if (url.includes('/admin/memories')) {
+    return new FakeRes(200, {
+      items: [
+        { id: 'm1', text: '聊到工作压力', status: 'open', date: '2026-10-10' },
+        { id: 'm2', text: '和室友和好了', status: 'settled', date: '2026-10-11' },
+      ],
     })
   }
   return new FakeRes(404)
@@ -122,5 +135,19 @@ describe('admin settings 控制器', () => {
     expect(settings.trends).toHaveLength(0)
     expect(settings.message).toBe('记忆已清除。')
     expect(settings.phase).toBe('saved')
+  })
+
+  it('loadMemories:拉取列表进 settings.memories', async () => {
+    await loadMemories()
+    expect(settings.memories).toHaveLength(2)
+    expect(settings.memories[0]?.id).toBe('m1')
+  })
+
+  it('deleteMemory:DELETE 成功后本地摘除该条', async () => {
+    await loadMemories()
+    await deleteMemory('m1')
+    const del = requests.find((r) => r.url.includes('/admin/memories/m1'))
+    expect(del?.init?.method).toBe('DELETE')
+    expect(settings.memories.map((m) => m.id)).toEqual(['m2'])
   })
 })

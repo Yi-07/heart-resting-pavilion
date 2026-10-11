@@ -12,6 +12,8 @@ import {
   cancelClear,
   clearMemory,
   confirmMatches,
+  loadMemories,
+  deleteMemory,
   CONFIRM_PHRASE,
 } from './settings'
 
@@ -94,6 +96,30 @@ const confirmEnabled = computed(() => confirmMatches(settings.confirmInput))
           <div v-for="(t, i) in settings.trends" :key="`${t.date}-${i}`" class="t-row">
             <span class="t-d">{{ t.date }}</span>
             <span class="t-l">{{ t.mood_label }}</span>
+          </div>
+        </div>
+        <div class="mem-head">
+          <span class="mem-cap">记住了这些(可单条删除)</span>
+          <button
+            type="button"
+            class="mem-refresh"
+            title="刷新列表"
+            data-testid="mem-refresh"
+            @click="loadMemories()"
+          >↻</button>
+        </div>
+        <div class="mems" data-testid="memories">
+          <p v-if="settings.memories.length === 0" class="muted">暂无记忆条目。</p>
+          <div v-for="m in settings.memories" :key="m.id" class="m-row">
+            <span class="m-d">{{ m.date }}</span>
+            <span class="m-t">{{ m.text }}</span>
+            <button
+              type="button"
+              class="m-del"
+              title="删除这条记忆"
+              :data-testid="`mem-del-${m.id}`"
+              @click="deleteMemory(m.id)"
+            >✕</button>
           </div>
         </div>
         <button
@@ -481,6 +507,84 @@ const confirmEnabled = computed(() => confirmMatches(settings.confirmInput))
 .t-l {
   font-weight: 700;
   color: var(--primary-deep);
+}
+/* 语义记忆列表(查看+单条删除,治理「用户可查看」兑现) */
+.mem-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 9px 0 5px;
+}
+.mem-cap {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.mem-refresh {
+  border: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  line-height: 1;
+}
+.mems {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 170px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+.mems::-webkit-scrollbar {
+  width: 5px;
+}
+.mems::-webkit-scrollbar-thumb {
+  background: rgba(110, 147, 124, 0.3);
+  border-radius: 3px;
+}
+.m-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+.m-d {
+  flex: none;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 9.5px;
+  padding-top: 1px;
+}
+.m-t {
+  flex: 1;
+  color: var(--ink);
+  word-break: break-all;
+}
+.m-del {
+  flex: none;
+  border: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  line-height: 1;
+  transition: all 0.15s;
+}
+.m-del:hover {
+  color: #a2563b;
+  background: rgba(213, 138, 99, 0.15);
 }
 /* 确认层:文字与按钮居中(高危两步) */
 .confirm {

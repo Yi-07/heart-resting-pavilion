@@ -29,6 +29,13 @@ interface TrendRow {
   intensity: number | null
 }
 
+export interface MemoryItem {
+  id: string
+  text: string
+  status: string
+  date: string
+}
+
 export const CONFIRM_PHRASE = '清除记忆'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
@@ -44,6 +51,7 @@ export const settings = reactive({
   apiKeySet: false,
   providers: [] as ProviderConfig[],
   trends: [] as TrendRow[],
+  memories: [] as MemoryItem[],
   message: '',
   confirmOpen: false,
   confirmInput: '',
@@ -75,6 +83,7 @@ export function openSettings(): void {
   settings.phase = 'idle'
   void getConfig()
   void loadTrends()
+  void loadMemories()
 }
 
 export function closeSettings(): void {
@@ -139,6 +148,24 @@ export async function loadTrends(): Promise<void> {
   settings.trends = body?.moods ?? []
 }
 
+export async function loadMemories(): Promise<void> {
+  // 治理「用户可查看」:打开设置即拉语义记忆列表;失败不弹全局错误(记忆区自带空态)
+  const { status, body } = await requestJson<{ items: MemoryItem[] }>('/admin/memories')
+  settings.memories = status === 200 ? (body?.items ?? []) : []
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  const { status } = await requestJson(`/admin/memories/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (status === 200) {
+    settings.memories = settings.memories.filter((m) => m.id !== id)
+  } else {
+    settings.phase = 'error'
+    settings.message = '删除没有完成,请稍后再试。'
+  }
+}
+
 export function requestClear(): void {
   settings.confirmOpen = true
   settings.confirmInput = ''
@@ -197,6 +224,7 @@ export function resetSettingsForTest(): void {
   settings.apiKeySet = false
   settings.providers = []
   settings.trends = []
+  settings.memories = []
   settings.message = ''
   settings.confirmOpen = false
   settings.confirmInput = ''
