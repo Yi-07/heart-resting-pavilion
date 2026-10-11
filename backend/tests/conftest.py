@@ -98,12 +98,13 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     monkeypatch.setattr("app.main.get_memory", lambda: mem)
     # 语音默认静音:TTS 流式合成不出块(跳过音频帧)、fillers 取不到——防测试
     # 拉起真 sidecar 或多出 audio_chunk 破坏既有帧序断言;语音用例自行覆盖。
-    # synthesize_stream_detailed 也要桩:句子泵走它,remote 模式下它直连远程服务
-    # (本机 GPT-SoVITS 在场时测试会收到真音频,帧序断言被打破)
-    monkeypatch.setattr("app.voice.tts.synthesize_stream", lambda *a, **k: iter(()))
-    monkeypatch.setattr(
-        "app.voice.tts.synthesize_stream_detailed", lambda *a, **k: iter(())
-    )
+    # **两条链路都要静音**:默认 STREAM_MODE=pcm,只静音 wav 那条等于没静音
+    # ——真去打 TTS 服务既给事件循环加负载(负载一变,batched_chunks 的 100ms
+    # 攒批窗口切分就变,精确帧数断言会飘),又会多出 audio_chunk 打乱帧序断言。
+    # 要真服务的那一组(test_ws_streaming_e2e.py)自己恢复。
+    # 签名带 **kw:realtime 链路会用 request_id= 关键字调用。
+    monkeypatch.setattr("app.voice.tts.synthesize_stream", lambda text, **kw: iter(()))
+    monkeypatch.setattr("app.voice.tts.synthesize_pcm_stream", lambda text, **kw: iter(()))
     monkeypatch.setattr("app.voice.fillers.pick", lambda: None)
     # sidecar 进程编排不进测试:TestClient 触发 lifespan 时不得真拉 sidecar,
     # 也不得留下 _stopping=True 污染同进程的后续语音用例;语音用例自行还原

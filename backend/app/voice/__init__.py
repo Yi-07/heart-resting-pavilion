@@ -6,6 +6,6 @@ asr 在 backend venv(funasr+SenseVoice);tts 经 sidecar HTTP 调 CosyVoice 仓�
 
 from app.voice import fillers
 from app.voice.asr import transcribe
-from app.voice.tts import synthesize
+from app.voice.tts import synthesize, synthesize_stream
 
-__all__ = ["fillers", "synthesize", "transcribe"]
+__all__ = ["fillers", "synthesize", "synthesize_stream", "transcribe"]

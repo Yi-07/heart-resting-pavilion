@@ -9,7 +9,15 @@ gateway.py / fillers.py 的 import 路径不变(app.voice.tts),
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from app import config
+
+if TYPE_CHECKING:
+    # 两个分支的 synthesize_pcm_stream 签名必须一致(mypy 要求),所以统一用
+    # Iterator[PcmChunk] 标注。local 分支永远不 yield,只抛错,所以它不需要
+    # 真在运行时 import tts_client —— TYPE_CHECKING 下不会加载。
+    from app.voice.tts_client import PcmChunk
 
 # 异常类模块级导入:两个模式共用同一组类,且对 gateway 始终是模块属性。
 # 放在各分支内部的话,gateway 里的 tts.TTSCancelled 会被 mypy 判为无此属性。
@@ -21,9 +29,13 @@ if config.TTS_MODE == "remote":
     from app.voice.tts_client import (
         cancel,
         synthesize,
+        synthesize_pcm_stream,
         synthesize_stream,
         synthesize_stream_detailed,
     )
+
+    #: 本模式下 gateway 该走 realtime PCM 链路还是 legacy WAV 链路。
+    STREAM_MODE = "pcm"
 else:
     # ---- local mode:原有 sidecar 实现(内联,避免循环导入) ----
 
@@ -88,7 +100,10 @@ else:
         _terminate_spawned()
 
     def ensure_sidecar(timeout_s: float | None = None) -> bool:
-        """sidecar 就绪(必要时拉起);False=不可用。"""
+        """sidecar 就绪(必要时拉起);False=不可用。
+
+        仅 TTS_MODE=local 会走到这里;默认的 remote 模式整段代码不执行。
+        """
         if timeout_s is None:
             timeout_s = config.TTS_SIDECAR_READY_TIMEOUT_S
 
@@ -153,6 +168,22 @@ else:
             time.sleep(1.0)
         logger.warning("tts_sidecar_not_ready", timeout_s=timeout_s)
         return False
+
+    #: sidecar(CosyVoice)只出整句 wav,没有 /v2 realtime 端点(legacy 链路)。
+    #: gateway 据此选择 legacy 链路;不伪装成 PCM —— 宁可慢,不要给错格式。
+    STREAM_MODE = "wav"
+
+    def synthesize_pcm_stream(
+        text: str, *, request_id: str | None = None
+    ) -> Iterator[PcmChunk]:
+        """local 模式没有 PCM 端点。
+
+        永远不 yield(只抛错),但签名要与 remote 分支一致(mypy 对条件分支的要求)。
+        调用方应先看 STREAM_MODE 再决定走哪条链路,不该走到这里。
+        """
+        raise TTSError(
+            "sidecar 模式不支持 PCM 流式(TTS_MODE=local),请改用 synthesize_stream"
+        )
 
     def synthesize_stream_detailed(
         text: str, *, request_id: str | None = None

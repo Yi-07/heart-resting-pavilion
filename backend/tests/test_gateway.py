@@ -17,6 +17,7 @@ from app.llm import LLMError
 from app.logger import capture_events
 from app.main import app
 from app.rag.corpus import RagLibrary, Ref
+from app.voice.tts_client import PcmChunk
 
 client = TestClient(app)
 
@@ -199,11 +200,61 @@ def test_legacy_audio_input_rejected():
 
 
 def test_crisis_speaks_hotline(monkeypatch):
-    """危机热线 TTS:text → audio_chunk(wav·final·seq 递增)→ done。"""
+    """危机热线 TTS(text → audio_chunk → done)在 realtime 链路下收 PCM 块。"""
     import base64 as b64mod
 
+    # STREAM_MODE=pcm 是默认路径;这里钉的是"默认走 PCM"这件事本身
     monkeypatch.setattr(
-        "app.voice.tts.synthesize_stream", lambda *a, **k: iter((b"WAVDATA",))
+        "app.voice.tts.synthesize_pcm_stream",
+        lambda text, **kw: iter(
+            (
+                PcmChunk(
+                    round_id=kw.get("request_id") or "tts-0",
+                    seq=0,
+                    sentence_index=0,
+                    sample_rate=32000,
+                    channels=1,
+                    format="pcm_s16le",
+                    pcm=b"PCMSTUB",
+                ),
+            )
+        ),
+    )
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "我不想活了")
+        assert _recv(ws)["type"] == "first_frame"
+        assert _recv(ws)["type"] == "draw"
+        text = _recv(ws)
+        assert text["type"] == "text_delta"
+
+        audio = _recv(ws)
+        assert audio["type"] == "audio_chunk"
+        assert audio["format"] == "pcm_s16le"
+        # PCM 四字段必填(ws-contract §3.4)
+        assert audio["round_id"] == "tts-0"
+        assert audio["audio_seq"] == 0
+        assert audio["sample_rate"] == 32000
+        assert audio["channels"] == 1
+        assert b64mod.b64decode(audio["data"]) == b"PCMSTUB"
+        assert audio["seq"] == text["seq"] + 1
+
+        done = _recv(ws)
+        assert done["type"] == "done"
+        assert done["seq"] == audio["seq"] + 1
+
+
+def test_crisis_speaks_hotline_legacy_wav(monkeypatch):
+    """STREAM_MODE=wav(legacy,sidecar/CosyVoice)下仍是整句 wav + final=True。
+
+    与上一条同构但反向:证明两条链路都在,且 legacy 契约没被 realtime 改动带坏。
+    """
+    import base64 as b64mod
+
+    monkeypatch.setattr("app.voice.tts.STREAM_MODE", "wav", raising=False)
+    monkeypatch.setattr(
+        # 收 request_id:_speak_stream 会带上回合 id(为了能穿透打断到服务)
+        "app.voice.tts.synthesize_stream",
+        lambda text, **kw: iter((b"WAVDATA",)),
     )
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "我不想活了")
