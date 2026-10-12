@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.agents.state import CollectState
 from app.llm import LLMError, Message, get_provider
-from app.schema import Emotion
+from app.schema import Emotion, Formulation
 
 if TYPE_CHECKING:
     from app.rag.corpus import Ref
@@ -54,7 +54,8 @@ def summary_messages(
 ) -> list[Message]:
     """总结 prompt:人话总结 formulation + RAG 引用建议(资料没有的不编造);
     带热层历史摘要时先交代上回语境(跨回合连续性,唯一 prompt 侧消费点);
-    语义记忆条目注入(「想起」非翻旧账——LLM 临场取舍,PRD 防线设计)。"""
+    语义记忆条目注入(「想起」非翻旧账——LLM 临场取舍,PRD 防线设计)。
+    user 段剔 intensity(数值类字段不进 prompt,防「xx%」混入人话总结,PRD)。"""
     context = ""
     if refs:
         context = (
@@ -77,7 +78,11 @@ def summary_messages(
         "先温柔地照见情境与情绪,再点出想法-行为之间的联系,最后给 1~2 条贴合的"
         f"小建议(建议式非命令式,不做医疗诊断)。温暖口语,250 字内,不用列表。{context}"
     )
-    user = cs.formulation.model_dump_json(by_alias=True) + history + mem_note
+    data = cs.formulation.model_dump(by_alias=True)
+    if isinstance(data.get("emotion"), dict):
+        # 数值强度不进 prompt:总结是人话不是量表读数(PRD 裁定)
+        data["emotion"] = {"label": data["emotion"].get("label")}
+    user = Formulation(**data).model_dump_json(by_alias=True) + history + mem_note
     return [Message("system", system), Message("user", user)]
 
 

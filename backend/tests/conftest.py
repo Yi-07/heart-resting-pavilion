@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from app import config
 from app.agents.state import SessionContext
 from app.station.reports import StationReports, reset_reports
 
@@ -170,7 +171,7 @@ class _DefaultCollectLLM:
 
 
 @pytest.fixture(autouse=True)
-def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
+def fake_memory(monkeypatch: pytest.MonkeyPatch, tmp_path_factory) -> FakeMemory:
     mem = FakeMemory()
     monkeypatch.setattr("app.ws_gateway.gateway.get_memory", lambda: mem)
     monkeypatch.setattr("app.station.routes.get_memory", lambda: mem)
@@ -189,6 +190,10 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     monkeypatch.setattr("app.voice.tts.synthesize_stream", lambda text, **kw: iter(()))
     monkeypatch.setattr("app.voice.tts.synthesize_pcm_stream", lambda text, **kw: iter(()))
     monkeypatch.setattr("app.voice.fillers.pick", lambda: None)
+    # 预置语音同批静音:pick_named 直读文件(危机 P10/P11 · 心情回执 P13),
+    # 指空目录=缺文件路径,防真 data/fillers 泄进帧序断言;要用真 wav 的用例
+    # 自行 monkeypatch FILLERS_DIR 到 tmp_path 并写文件(见 test_gateway 危机/回执用例)
+    monkeypatch.setattr(config, "FILLERS_DIR", str(tmp_path_factory.mktemp("fillers")))
     # sidecar 进程编排不进测试:TestClient 触发 lifespan 时不得真拉 sidecar,
     # 也不得留下 _stopping=True 污染同进程的后续语音用例;语音用例自行还原
     # remote 模式下 ensure_sidecar/shutdown_spawned 不存在,跳过

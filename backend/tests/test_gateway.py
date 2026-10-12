@@ -17,7 +17,6 @@ from app.llm import LLMError
 from app.logger import capture_events
 from app.main import app
 from app.rag.corpus import RagLibrary, Ref
-from app.voice.tts_client import PcmChunk
 
 client = TestClient(app)
 
@@ -50,7 +49,7 @@ def test_crisis_sequence_and_audit():
             assert draw["type"] == "draw"
             assert draw["seq"] == 1  # 首帧=1
             assert draw["template"] == "scene_crisis"  # blackboard-v1:危机固定场景帧
-            assert draw["data"]["note"] == "你不是一个人"
+            assert draw["data"]["note"] == "加油！你能行的"  # P12 文案裁定
 
             text = _recv(ws)
             assert text["type"] == "text_delta"
@@ -105,7 +104,28 @@ def test_mood_select_independent_no_first_frame():
         ws.send_text(json.dumps({"type": "mood_select", "mood": "低落", "ts": 4}))
         reply = _recv(ws)
         assert reply["type"] == "text_delta"  # 短安抚,不发 first_frame(§4.2)
-        assert _recv(ws)["type"] == "done"
+        assert _recv(ws)["type"] == "done"  # 预置回执 wav 缺文件:音频跳过,直接收口
+
+
+def test_mood_select_speaks_preset_ack(tmp_path, monkeypatch):
+    """P13 心情回执语音:预置 wav 在时 text_delta → audio_chunk → done(§4.2)。"""
+    import base64 as b64mod
+
+    from app.voice import fillers
+
+    monkeypatch.setattr(config, "FILLERS_DIR", str(tmp_path))
+    (tmp_path / f"{fillers.mood_ack_name('低落')}.wav").write_bytes(b"MOODWAV")
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(json.dumps({"type": "mood_select", "mood": "低落", "ts": 4}))
+        reply = _recv(ws)
+        assert reply["type"] == "text_delta"
+        audio = _recv(ws)
+        assert audio["type"] == "audio_chunk"
+        assert audio["format"] == "wav"
+        assert b64mod.b64decode(audio["data"]) == b"MOODWAV"
+        assert audio["seq"] == reply["seq"] + 1
+        done = _recv(ws)
+        assert done["type"] == "done" and done["seq"] == audio["seq"] + 1
 
 
 def test_answer_seq_global_across_rounds(monkeypatch):
@@ -199,43 +219,36 @@ def test_legacy_audio_input_rejected():
         assert reply["code"] == "invalid_message"
 
 
-def test_crisis_speaks_hotline(monkeypatch):
-    """危机热线 TTS(text → audio_chunk → done)在 realtime 链路下收 PCM 块。"""
+def test_crisis_speaks_hotline(monkeypatch, tmp_path):
+    """危机话术预置 wav 直发(契约 §6.3):first_frame 后安抚音频,热线文本后热线音频。
+
+    运行时 TTS 合成路径已由预置语音取代(spec L6「预置语音」);缺文件跳过,
+    文字链路照常——两条断言合在本用例:有 wav 时音频与文本同步。"""
     import base64 as b64mod
 
-    # STREAM_MODE=pcm 是默认路径;这里钉的是"默认走 PCM"这件事本身
-    monkeypatch.setattr(
-        "app.voice.tts.synthesize_pcm_stream",
-        lambda text, **kw: iter(
-            (
-                PcmChunk(
-                    round_id=kw.get("request_id") or "tts-0",
-                    seq=0,
-                    sentence_index=0,
-                    sample_rate=32000,
-                    channels=1,
-                    format="pcm_s16le",
-                    pcm=b"PCMSTUB",
-                ),
-            )
-        ),
-    )
+    monkeypatch.setattr(config, "FILLERS_DIR", str(tmp_path))
+    (tmp_path / "crisis_soothe.wav").write_bytes(b"SOOTHEWAV")
+    (tmp_path / "crisis_hotline.wav").write_bytes(b"HOTLINEWAV")
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "我不想活了")
         assert _recv(ws)["type"] == "first_frame"
-        assert _recv(ws)["type"] == "draw"
+
+        soothe = _recv(ws)
+        assert soothe["type"] == "audio_chunk"  # P10 安抚随 first_frame 同步
+        assert soothe["format"] == "wav"
+        assert soothe["final"] is True
+        assert b64mod.b64decode(soothe["data"]) == b"SOOTHEWAV"
+        assert soothe["seq"] == 1  # audio 盖章:会话首号
+
+        draw = _recv(ws)
+        assert draw["type"] == "draw" and draw["seq"] == 2
+
         text = _recv(ws)
-        assert text["type"] == "text_delta"
+        assert text["type"] == "text_delta" and text["seq"] == 3
 
         audio = _recv(ws)
-        assert audio["type"] == "audio_chunk"
-        assert audio["format"] == "pcm_s16le"
-        # PCM 四字段必填(ws-contract §3.4)
-        assert audio["round_id"] == "tts-0"
-        assert audio["audio_seq"] == 0
-        assert audio["sample_rate"] == 32000
-        assert audio["channels"] == 1
-        assert b64mod.b64decode(audio["data"]) == b"PCMSTUB"
+        assert audio["type"] == "audio_chunk"  # P11 热线随文本同步
+        assert b64mod.b64decode(audio["data"]) == b"HOTLINEWAV"
         assert audio["seq"] == text["seq"] + 1
 
         done = _recv(ws)
@@ -243,36 +256,26 @@ def test_crisis_speaks_hotline(monkeypatch):
         assert done["seq"] == audio["seq"] + 1
 
 
-def test_crisis_speaks_hotline_legacy_wav(monkeypatch):
-    """STREAM_MODE=wav(legacy,sidecar/CosyVoice)下仍是整句 wav + final=True。
+def test_crisis_preset_wav_missing_still_texts():
+    """预置 wav 缺文件:音频跳过、记 degraded,文字链路照常(危机帧序不变形)。"""
+    events: list[dict[str, Any]] = []
+    handle = capture_events(events.append)
+    try:
+        with client.websocket_connect("/ws") as ws:
+            _send_input(ws, "我不想活了")
+            assert _recv(ws)["type"] == "first_frame"
+            draw = _recv(ws)  # 无音频帧:安抚 wav 缺失被跳过
+            assert draw["type"] == "draw"
+            text = _recv(ws)
+            assert text["type"] == "text_delta"
+            done = _recv(ws)
+            assert done["type"] == "done"
+    finally:
+        from loguru import logger
 
-    与上一条同构但反向:证明两条链路都在,且 legacy 契约没被 realtime 改动带坏。
-    """
-    import base64 as b64mod
-
-    monkeypatch.setattr("app.voice.tts.STREAM_MODE", "wav", raising=False)
-    monkeypatch.setattr(
-        # 收 request_id:_speak_stream 会带上回合 id(为了能穿透打断到服务)
-        "app.voice.tts.synthesize_stream",
-        lambda text, **kw: iter((b"WAVDATA",)),
-    )
-    with client.websocket_connect("/ws") as ws:
-        _send_input(ws, "我不想活了")
-        assert _recv(ws)["type"] == "first_frame"
-        assert _recv(ws)["type"] == "draw"
-        text = _recv(ws)
-        assert text["type"] == "text_delta"
-
-        audio = _recv(ws)
-        assert audio["type"] == "audio_chunk"
-        assert audio["format"] == "wav"
-        assert audio["final"] is True
-        assert b64mod.b64decode(audio["data"]) == b"WAVDATA"
-        assert audio["seq"] == text["seq"] + 1
-
-        done = _recv(ws)
-        assert done["type"] == "done"
-        assert done["seq"] == audio["seq"] + 1
+        logger.remove(handle)
+    degraded = [e for e in events if e["extra"].get("reason") == "preset_wav_missing"]
+    assert len(degraded) == 2  # 安抚+热线两次缺文件各记一次 WARN
 
 
 # ---- answer 直答(契约 §6.1 blackboard-v1 修订:场景帧先行,无 first_frame) ----

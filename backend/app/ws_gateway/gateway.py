@@ -365,6 +365,12 @@ async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
     trace = conn.next_trace()
     conn.log("mood_select_received", trace_id=trace, mood=msg.mood)
     await conn.send_text(phrases.MOOD_ACK[msg.mood], final=True)
+    # 预置回执语音随文同步(契约 §4.2:预置 wav 直发,失败跳过)
+    from app.voice import fillers
+
+    wav = await asyncio.to_thread(fillers.pick_named, fillers.mood_ack_name(msg.mood))
+    if wav is not None:
+        await conn.send_audio(wav)
     await conn.send_done()
 
 
@@ -561,20 +567,6 @@ def _produce_pcm(
         ).result()
 
 
-async def _speak(conn: Connection, text: str, *, round_id: str | None = None) -> None:
-    """回合内同步语音(危机热线):失败记 degraded——音频缺席不影响文字链路。"""
-    from app.voice import tts
-
-    try:
-        await _speak_stream(conn, text, lambda: False, round_id=round_id)
-    except tts.TTSCancelled:
-        return
-    except tts.TTSError as exc:
-        conn.log("degraded", level="WARN", reason="tts_failed", detail=str(exc)[:120])
-    except Exception:  # noqa: BLE001 — 发送失败(WS 断开等):音频链路静默收尾
-        conn.log("degraded", level="WARN", reason="tts_send_failed")
-
-
 async def _speak_summary(conn: Connection, text: str, trace: int) -> None:
     """异步总结语音:回合已收尾后继续流出,仅抢占(trace 变)才蒸发——
     总结语音恰恰要在回合收尾后播完,蒸发条件比打断型语音宽。"""
@@ -593,13 +585,30 @@ async def _speak_summary(conn: Connection, text: str, trace: int) -> None:
         conn.log("degraded", level="WARN", reason="tts_send_failed")
 
 
+async def _speak_preset(conn: Connection, name: str) -> None:
+    """预置语音直发(危机 P10/P11):缺文件/发送失败记 degraded 跳过——
+    音频缺席不影响文字链路(危机话术正文照常发帧,契约 §6.3)。"""
+    from app.voice import fillers
+
+    try:
+        wav = await asyncio.to_thread(fillers.pick_named, name)
+        if wav is not None:
+            await conn.send_audio(wav)
+        else:
+            conn.log("degraded", level="WARN", reason="preset_wav_missing", name=name)
+    except Exception as exc:  # noqa: BLE001 — 发送失败(WS 断开等):音频链路静默收尾
+        conn.log("degraded", level="WARN", reason="preset_wav_failed", detail=str(exc)[:120])
+
+
 async def _crisis_sequence(conn: Connection) -> None:
     await conn.send_first_frame(
         route="crisis", text=phrases.CRISIS_SOOTHE, mood_select=False
     )
+    # 危机话术全部预置 wav 随文同步(契约 §6.3;P10 安抚/P11 热线)
+    await _speak_preset(conn, "crisis_soothe")
     await conn.send_draw("scene_crisis", SceneNoteData(note=phrases.CRISIS_SCENE_NOTE))
     await conn.send_text(phrases.CRISIS_HOTLINE, final=True)
-    await _speak(conn, phrases.CRISIS_HOTLINE, round_id=conn.tts_round_id())
+    await _speak_preset(conn, "crisis_hotline")
     await conn.send_done()
 
 

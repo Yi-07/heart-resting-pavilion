@@ -136,15 +136,32 @@ def test_fillers_generate_and_pick(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         "app.voice.fillers.synthesize", lambda text: b"WAV" + text.encode()[:8]
     )
     fillers.generate()
-    files = sorted(p.name for p in tmp_path.glob("wait_*.wav"))
-    assert files == ["wait_1.wav", "wait_2.wav"]
+    names = sorted(p.name for p in tmp_path.glob("*.wav"))
+    # 通用「话术→wav」表:等待×2 + 心情回执×6(P13) + 危机×2(P10/P11)
+    assert names == sorted(
+        ["wait_1.wav", "wait_2.wav"]
+        + [f"mood_{m}.wav" for m in ("难过", "低落", "平静", "还好", "开心", "很好")]
+        + ["crisis_soothe.wav", "crisis_hotline.wav"]
+    )
 
     picked = fillers.pick()
     assert picked is not None
     assert picked.startswith(b"WAV")
 
     fillers.generate()  # 幂等:已存在跳过
-    assert sorted(p.name for p in tmp_path.glob("wait_*.wav")) == files
+    assert sorted(p.name for p in tmp_path.glob("*.wav")) == names
+
+
+def test_fillers_pick_named(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """按名取预置语音(危机 P10/P11 · 心情回执 P13);缺文件返回 None。"""
+    monkeypatch.setattr(config, "FILLERS_DIR", str(tmp_path))
+    assert fillers.pick_named("crisis_soothe") is None
+    assert fillers.pick_named(fillers.mood_ack_name("低落")) is None
+
+    (tmp_path / "crisis_soothe.wav").write_bytes(b"S")
+    (tmp_path / f"{fillers.mood_ack_name('低落')}.wav").write_bytes(b"M")
+    assert fillers.pick_named("crisis_soothe") == b"S"
+    assert fillers.pick_named(fillers.mood_ack_name("低落")) == b"M"
 
 
 def test_fillers_pick_empty_dir_returns_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
