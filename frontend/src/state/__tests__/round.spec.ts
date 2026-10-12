@@ -134,6 +134,36 @@ describe('round 状态机', () => {
   })
 })
 
+describe('error 分派(契约 §8:ask_llm_failed 挂起,其余回 idle)', () => {
+  it('ask_llm_failed:采集态挂起不动(phase 不变,下一条输入重试)', () => {
+    store.transition({ kind: 'user_sent' })
+    store.transition({ kind: 'frame', msg: ff() })
+    expect(store.phase).toBe('collecting')
+
+    store.transition({ kind: 'frame', msg: { type: 'error', code: 'ask_llm_failed', message: '辐条' } satisfies S2CMsg })
+    expect(store.phase).toBe('collecting') // 挂起:状态冻结
+    expect(store.moodVisible).toBe(true) // mood 面板也不动
+
+    // 下一条输入重试:user_sent 照常推进(analysis 等待),新 first_frame 重开
+    store.transition({ kind: 'user_sent' })
+    expect(store.phase).toBe('analysis')
+    store.transition({ kind: 'frame', msg: ff({ emotion_label: '平静' }) })
+    expect(store.phase).toBe('collecting')
+    expect(store.emotionLabel).toBe('平静')
+  })
+
+  it('timeout/server_error:任意态回 idle(辐条呈现归 App,状态机只管 phase)', () => {
+    store.transition({ kind: 'user_sent' })
+    store.transition({ kind: 'frame', msg: ff() })
+    store.transition({ kind: 'frame', msg: { type: 'error', code: 'timeout', message: 'x' } satisfies S2CMsg })
+    expect(store.phase).toBe('idle')
+
+    store.transition({ kind: 'user_sent' })
+    store.transition({ kind: 'frame', msg: { type: 'error', code: 'server_error', message: 'x' } satisfies S2CMsg })
+    expect(store.phase).toBe('idle')
+  })
+})
+
 describe('emotionLabel 写序', () => {
   it('first_frame 写 → draw 无手点时覆盖 → mood 手点锁住后续 draw → 新 first_frame 解锁', () => {
     store.transition({ kind: 'frame', msg: ff({ emotion_label: '焦虑' }) })

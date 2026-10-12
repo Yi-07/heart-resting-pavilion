@@ -88,8 +88,12 @@ export const useRoundStore = defineStore('round', {
           this.moodVisible = false
           break
         case 'error':
-          this.phase = 'idle'
-          this.moodVisible = false
+          // 分派(frontend-plan §5.3):ask_llm_failed → 采集挂起不动(下一条输入
+          // 重试,round 状态冻结);其余 → 回 idle。辐条呈现归 App.vue(状态外)
+          if (msg.code !== 'ask_llm_failed') {
+            this.phase = 'idle'
+            this.moodVisible = false
+          }
           break
       }
     },

@@ -59,6 +59,9 @@ let l2d: Live2DController | null = null
 let l2dEntry: ModelEntry | null = null
 const wsStatus = ref<'connecting' | 'open' | 'closed'>('connecting')
 const wsReconnecting = ref(false)
+// 提示辐条(契约 §3.7/§8:系统状态提示,不入对话气泡;形态参考 .ws-banner)
+const spoke = ref<{ text: string; autoHide: boolean } | null>(null)
+let spokeTimer: ReturnType<typeof setTimeout> | null = null
 const draft = ref('')
 const lastTemplate = ref<string | null>(null)
 const protoOpen = ref(false)
@@ -230,6 +233,7 @@ onMounted(() => {
     // 靠这里预置),这里只负责把旧声音淡出掐掉(提交瞬间 user_sent 已 flush 过,
     // 此处兜底覆盖服务端先到 first_frame 的窗口)。
     audio.flush()
+    spoke.value = null // 新回合起点:上一回合的挂起辐条收起(采集已恢复/重开)
     round.transition({ kind: 'frame', msg: m })
     boardRef.value?.clear()
     lastTemplate.value = m.template
@@ -253,11 +257,19 @@ onMounted(() => {
     round.transition({ kind: 'frame', msg: m })
     chat.finalize()
     mood.hide()
+    spoke.value = null // 回合收口:辐条一并撤(挂起态不会收到 done,防御性清理)
   })
   track('error', (m) => {
     round.transition({ kind: 'frame', msg: m })
     chat.finalize()
-    chat.beginBot('小栖刚才走神了,我们再试一次好吗?换句话说说也可以。')
+    if (m.code === 'ask_llm_failed') {
+      // 问话 LLM 失败(契约 §8.4):辐条提示,不入对话气泡;采集挂起不动,
+      // 下一条输入重试——不渲染任何假装正常的预设话术
+      showSpoke(m.message, false)
+    } else {
+      // timeout/server_error 等系统级失败:同样走辐条(气泡假话术废弃,PRD)
+      showSpoke(m.message, true)
+    }
     mood.hide()
   })
   track('replay', (m) => {
@@ -299,6 +311,18 @@ onUnmounted(() => {
   disposeLive2D()
   l2d = null
 })
+
+/** 辐条提示:autoHide=true 数秒后自动收起(超时/异常类);false 常驻待下一帧覆盖 */
+function showSpoke(text: string, autoHide: boolean): void {
+  if (spokeTimer !== null) clearTimeout(spokeTimer)
+  spoke.value = { text, autoHide }
+  if (autoHide) {
+    spokeTimer = setTimeout(() => {
+      spoke.value = null
+      spokeTimer = null
+    }, 5000)
+  }
+}
 
 function submit(): void {
   const text = draft.value.trim()
@@ -480,6 +504,8 @@ function toggleMic(): void {
   <!-- 危机横幅 + 审计标签(后端规则硬判才出现,前端零判定逻辑) -->
   <div v-if="wsReconnecting" class="ws-banner" data-testid="ws-banner">连接断开了，正在重连…</div>
   <div v-if="l2dFailed" class="ws-banner" data-testid="l2d-error-banner">立绘加载失败了，已启用备用形象，稍后可点「⇄」重试</div>
+  <!-- 提示辐条(契约 §3.7/§8):error 帧系统状态提示,不入对话气泡 -->
+  <div v-if="spoke" class="ws-banner spoke" data-testid="spoke">{{ spoke.text }}</div>
   <div v-if="round.crisis" class="crisis-banner" data-testid="crisis-banner">
     <span class="cb-ic">
       <svg viewBox="0 0 24 24">
@@ -1097,6 +1123,12 @@ function toggleMic(): void {
   padding: 8px 18px;
   border-radius: 12px;
   box-shadow: 0 12px 30px -14px rgba(62, 58, 53, 0.35);
+}
+
+/* 提示辐条(error 帧):同一形态,暖琥珀边色区分系统状态与连接提示 */
+.ws-banner.spoke {
+  border-color: rgba(196, 154, 84, 0.55);
+  color: #7a6a4f;
 }
 
 /* ── 危机横幅 + 审计 ── */
