@@ -16,6 +16,11 @@
 import { logger } from '../logger'
 import { bench } from './bench'
 
+/** flush 淡出时长(ms):gain ramp 到 0 再 stop(PRD:旧声让位不爆音) */
+export const FLUSH_FADE_MS = 120
+/** 新回合首块淡入时长(ms):从 0 ramp 到 1,防爆音 */
+export const LEAD_IN_MS = 50
+
 /** 一块 PCM16(base64 解码后) */
 export interface PcmBlock {
   roundId: string
@@ -77,11 +82,32 @@ export interface AudioContextLike {
     stop(when?: number): void
     onended: (() => void) | null
   }
+  createGain(): {
+    gain: {
+      value: number
+      setValueAtTime(value: number, when: number): void
+      linearRampToValueAtTime(value: number, when: number): void
+      cancelScheduledValues?(when: number): void
+    }
+    connect(dest: unknown): void
+    disconnect(dest?: unknown): void
+  }
 }
 
 interface LiveSource {
   node: { stop(when?: number): void; onended: (() => void) | null }
   endTime: number
+  /** 挂在 source 与 destination 之间的增益节点;flush 淡出在此 ramp */
+  gain: {
+    gain: {
+      value: number
+      setValueAtTime(value: number, when: number): void
+      linearRampToValueAtTime(value: number, when: number): void
+      cancelScheduledValues?(when: number): void
+    }
+    connect(dest: unknown): void
+    disconnect(dest?: unknown): void
+  }
 }
 
 /** 本播放器支持的声道数。
@@ -167,6 +193,8 @@ export class PcmPlayer {
   private live = new Set<LiveSource>()
   private nextStartTime = 0
   private currentRoundId = ''
+  /** 刚自认领/切到新回合:下一块(新回合首块)挂淡入 gain ramp */
+  private roundJustClaimed = false
   private scheduled = 0
   private lastBufferRate = 0
   private playing = false
@@ -189,6 +217,7 @@ export class PcmPlayer {
     if (roundId === this.currentRoundId) return
     this.flush()
     this.currentRoundId = roundId
+    this.roundJustClaimed = true // 新回合首块淡入
   }
 
   get roundId(): string {
@@ -274,18 +303,24 @@ export class PcmPlayer {
   /**
    * 清空:pending 队列 + 所有已 schedule 未播完的 source + 播放态。
    *
-   * plan §24:cancel → flush,audio_stop → flush。两者语义相同,只是一个来自
-   * 用户动作一个来自回合收尾。这里**不**淡出 —— 抢占要的是立刻停,淡出会让
-   * 旧音频尾巴盖在新回合开头上。
+   * 淡出(PRD:打断清理):已 schedule 的 source 先 ~120ms gain ramp 到 0 再停,
+   * 旧声让位不爆音;user_sent(first_frame 同)即调,~120ms 内旧回合余音消失。
+   * ramp 期间该回合的新帧照常进队——它们属于同一回合,flush 只清「当时的余音」。
    */
   flush(): void {
     const n = this.live.size
     this.pending = []
     this.pendingSamples = 0
+    const now = this.ctx?.currentTime ?? 0
     for (const s of this.live) {
       s.node.onended = null
       try {
-        s.node.stop(0)
+        const g = s.gain.gain
+        g.cancelScheduledValues?.(now)
+        g.setValueAtTime(g.value, now)
+        g.linearRampToValueAtTime(0, now + FLUSH_FADE_MS / 1000)
+        // ramp 完再停;真实 AudioContext 的 stop(when) 精确到采样,假实现立即停也无碍
+        s.node.stop(now + FLUSH_FADE_MS / 1000)
       } catch {
         // 已经结束的 source 再 stop 会抛,忽略即可
       }
@@ -361,13 +396,24 @@ export class PcmPlayer {
 
     const node = ctx.createBufferSource()
     node.buffer = buffer
-    node.connect(ctx.destination)
+
+    // gain 节点挂 source 与 destination 之间:flush 淡出 ramp / 新回合首块淡入都走它
+    const gain = ctx.createGain()
+    node.connect(gain)
+    gain.connect(ctx.destination)
+    if (this.roundJustClaimed) {
+      // 新回合首块 ~50ms 淡入(防爆音: PCM 块边界若从非零样本起播会「啪」一声)
+      const t0 = this.nextStartTime
+      gain.gain.setValueAtTime(0, t0)
+      gain.gain.linearRampToValueAtTime(1, t0 + LEAD_IN_MS / 1000)
+      this.roundJustClaimed = false
+    }
 
     const duration = block.pcm.length / (block.sampleRate * block.channels)
     const startAt = this.nextStartTime
     this.nextStartTime = startAt + duration
 
-    const entry: LiveSource = { node, endTime: this.nextStartTime }
+    const entry: LiveSource = { node, endTime: this.nextStartTime, gain }
     this.live.add(entry)
     this.scheduled += 1
 

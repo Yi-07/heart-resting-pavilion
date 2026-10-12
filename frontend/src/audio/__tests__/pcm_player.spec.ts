@@ -14,18 +14,37 @@ import {
 } from '../pcm_player'
 
 // ---- 可控假 AudioContext ----
+class FakeGain {
+  /** ramp 调用记录:[value, when];断言淡出/淡入用 */
+  ramps: [number, number][] = []
+  gain = {
+    value: 1,
+    setValueAtTime: (value: number, when: number): void => {
+      this.ramps.push([value, when])
+    },
+    linearRampToValueAtTime: (value: number, when: number): void => {
+      this.ramps.push([value, when])
+    },
+  }
+  connect(): void {}
+  disconnect(): void {}
+}
+
 class FakeSource {
   buffer: unknown = null
   onended: (() => void) | null = null
   started = false
   stopped = false
+  /** stop(when) 的入参记录:flush 淡出延迟停的断言素材 */
+  stoppedAt: number | null = null
   connect(): void {}
   start(): void {
     this.started = true
   }
-  stop(): void {
+  stop(when?: number): void {
     if (this.stopped) throw new Error('already stopped')
     this.stopped = true
+    this.stoppedAt = when ?? null
   }
 }
 
@@ -35,12 +54,19 @@ class FakeCtx implements AudioContextLike {
   state = 'running'
   destination = {}
   created: FakeSource[] = []
+  gains: FakeGain[] = []
   buffers: { channels: number; sampleRate: number; length: number }[] = []
   /** 每次 copyToChannel 记一笔参数;断言在测试体内做,不在假对象里 */
   copied: { len: number; ch: number }[] = []
 
   resume(): Promise<void> {
     return Promise.resolve()
+  }
+
+  createGain(): FakeGain {
+    const g = new FakeGain()
+    this.gains.push(g)
+    return g
   }
 
   createBuffer(channels: number, length: number, sampleRate: number) {
@@ -219,6 +245,60 @@ describe('PcmPlayer flush(plan §24)', () => {
     expect(p.enqueue(block('r1', 1, 1600))).toBe(true)
     // 同一 round 仍可继续(flush 不改 round 归属),但 active 必须重新算过
     expect(p.stats().scheduled).toBeGreaterThanOrEqual(n)
+  })
+})
+
+describe('PcmPlayer flush 淡出与首块淡入(PRD:打断清理)', () => {
+  it('flush 对已 schedule 的 source 做 ~120ms gain ramp 后延迟 stop', () => {
+    const ctx = new FakeCtx()
+    const p = new PcmPlayer({}, makeCtxCtor(ctx))
+    p.setRound('r1')
+    p.enqueue(block('r1', 0, 1600))
+    expect(ctx.created).toHaveLength(1)
+
+    p.flush()
+
+    const g = ctx.gains[0]!
+    // ramp 终点 0(从尾部找:首块淡入的起点 0 会先命中)
+    const rampToZero = [...g.ramps].reverse().find(([v]) => v === 0)
+    expect(rampToZero).toBeDefined()
+    const when = rampToZero![1]
+    expect(when - ctx.currentTime).toBeCloseTo(0.12, 5)
+    // stop 延迟到 ramp 终点(淡出完才真正停)
+    expect(ctx.created[0]?.stopped).toBe(true)
+    expect(ctx.created[0]?.stoppedAt ?? 0).toBeCloseTo(when, 5)
+  })
+
+  it('新回合首块挂 ~50ms 淡入 gain ramp(防爆音)', () => {
+    const ctx = new FakeCtx()
+    const p = new PcmPlayer({}, makeCtxCtor(ctx))
+    p.setRound('r1') // 自认领新回合
+    p.enqueue(block('r1', 0, 1600))
+
+    const g = ctx.gains[0]!
+    // 淡入:从 0 ramp 到 1,时长 ~50ms;起点=首块 startAt
+    expect(g.ramps[0]?.[0]).toBe(0)
+    const fadeIn = g.ramps[1]
+    expect(fadeIn?.[0]).toBe(1)
+    expect(fadeIn![1] - g.ramps[0]![1]).toBeCloseTo(0.05, 5)
+
+    // 同回合后续块不重复挂淡入
+    p.enqueue(block('r1', 1, 1600))
+    const second = ctx.gains[1]!
+    expect(second.ramps).toHaveLength(0)
+  })
+
+  it('flush 后同回合新进块不继承旧 ramp(新 source gain 无预约)', () => {
+    const ctx = new FakeCtx()
+    const p = new PcmPlayer({}, makeCtxCtor(ctx))
+    p.setRound('r1')
+    p.enqueue(block('r1', 0, 1600))
+    p.flush()
+    p.enqueue(block('r1', 1, 1600))
+
+    const g = ctx.gains[1]!
+    // 新块无 ramp 记录:flush 淡出只作用于当时的旧 source
+    expect(g.ramps).toHaveLength(0)
   })
 })
 

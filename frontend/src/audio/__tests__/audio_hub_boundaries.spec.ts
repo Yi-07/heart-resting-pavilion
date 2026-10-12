@@ -29,6 +29,17 @@ class FakeCtx implements AudioContextLike {
   resume(): Promise<void> {
     return Promise.resolve()
   }
+  createGain(): {
+    gain: { value: number; setValueAtTime(): void; linearRampToValueAtTime(): void }
+    connect(): void
+    disconnect(): void
+  } {
+    return {
+      gain: { value: 1, setValueAtTime: () => {}, linearRampToValueAtTime: () => {} },
+      connect: () => {},
+      disconnect: () => {},
+    }
+  }
   createBuffer(_c: number, _l: number, _s: number): { copyToChannel: () => void } {
     return { copyToChannel: () => {} }
   }

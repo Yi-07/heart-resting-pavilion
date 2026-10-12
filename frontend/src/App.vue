@@ -227,7 +227,8 @@ onMounted(() => {
   track('first_frame', (m) => {
     // 新回合 = 旧回合音频全部作废(cancel → flush)。直接 flush 而不是设新
     // round_id:回合 id 由第一块 PCM 自认领(answer 路不发 first_frame,不能
-    // 靠这里预置),这里只负责把旧声音立刻掐掉。
+    // 靠这里预置),这里只负责把旧声音淡出掐掉(提交瞬间 user_sent 已 flush 过,
+    // 此处兜底覆盖服务端先到 first_frame 的窗口)。
     audio.flush()
     round.transition({ kind: 'frame', msg: m })
     boardRef.value?.clear()
@@ -302,6 +303,7 @@ onUnmounted(() => {
 function submit(): void {
   const text = draft.value.trim()
   if (text === '' || wsStatus.value !== 'open') return
+  audio.flush() // user_sent 即 flush 旧回合音频(PRD:发送瞬间旧声 ~120ms 淡出让位)
   client.send({ type: 'user_input', text, ts: Math.floor(Date.now() / 1000) })
   round.transition({ kind: 'user_sent' })
   chat.appendUser(text)
