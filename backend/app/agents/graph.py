@@ -5,7 +5,7 @@
 相位不落 state——去向由 where_next 纯函数从 escalate/degrade/sufficiency/
 round_index 算出。emitter 经 config 注入,不进 state。
 
-节点:prepare(entry 粗稿 / 轮次填格+打分+降级)→ softscan → cond(where_next)
+节点:prepare(entry 即提取+粗稿 / 轮次填格+打分+降级)→ softscan → cond(where_next)
   ask(问话 LLM 流式+逐句 TTS) / chat(共情陪聊 LLM) / risk+analysis
 问话:提取(chat_json)与问话(stream)拆双调用(spec L4);LLM 失败 → AskFailed
   (error 帧+采集挂起重试,不发预置问句兜底);确认语由问话流自然带出(无独立 confirm)。
@@ -151,13 +151,41 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
     retry_pending = cs.ask_retry
     cs.ask_retry = False  # 消费挂起标记(仅轮次分支用;entry 分支不经过下面逻辑)
     if not retry_pending and cs.round_index == 0 and cs.pending_question is None:
-        # entry:粗稿(快速研判标签入 emotion,intensity 缺省)。ask_retry 挂起时
-        # pending_question=None 且 round_index 可能仍为 0,不能误走 entry 重发粗稿
+        # entry 即提取(PRD:首条输入过路由即跑字段提取+选材,粗稿带实质字段出图,
+        # 板式接力时点提前);提取 LLM 失败/无所得 → 回退旧行为(只填研判标签),
+        # 不阻断回合。降级检测(too_short/negative)是轮次机制,entry 不跑——
+        # 首条输入不是问句的回答。ask_retry 挂起时 pending_question=None 且
+        # round_index 可能仍为 0,不能误走 entry 重发粗稿
         if cs.emotion_label and cs.formulation.emotion.label is None:
             cs.formulation.emotion = Emotion(label=cs.emotion_label)
-        cs.sufficiency = collect.sufficiency(cs.formulation)
-        await em.draw(_scene_draw_data(cs, _applied_assets(cs)))
-        em.log("collection_round", round_index=0, sufficiency=cs.sufficiency, phase="draft")
+        answer = next((t.text for t in reversed(cs.turns) if t.role == "user"), "")
+        target = collect.next_field(cs) or "situation"
+        selector = cs.asset_selector
+        asset_hint = asset_system(selector.catalog) if selector is not None else None
+        entry_values, raw_assets = await extract_fields(
+            "(开场,用户主动倾诉,无提问)", target, answer,
+            _open_fields(cs, target),
+            asset_hint=asset_hint, raw_fallback=False,
+        )
+        cs.pending_assets = raw_assets or None
+        if entry_values:
+            for field, value in entry_values.items():
+                _fill(cs, field, value)
+            cs.sufficiency = collect.sufficiency(cs.formulation)
+            assets = _applied_assets(cs)
+            _maybe_switch_template(cs, assets)
+            await em.draw(_scene_draw_data(cs, assets))
+            em.log(
+                "sufficiency_scored",
+                round_index=0,
+                score=cs.sufficiency,
+                filled=",".join(entry_values),
+            )
+        else:
+            # 回退旧行为:研判标签入粗稿照发,条件边照常走第 1 问
+            cs.sufficiency = collect.sufficiency(cs.formulation)
+            await em.draw(_scene_draw_data(cs, _applied_assets(cs)))
+            em.log("collection_round", round_index=0, sufficiency=cs.sufficiency, phase="draft")
         return {}
 
     # 轮次:消费最近一条 user 轮为本轮回答(ADR-005:assistant 轮也入 turns,

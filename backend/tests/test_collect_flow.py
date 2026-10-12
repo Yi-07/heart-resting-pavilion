@@ -60,11 +60,27 @@ class _ScriptedProvider:
     async def chat_json(self, messages: list[Message], schema: type):
         name = getattr(schema, "__name__", "")
         if name == "_ExtractOut":
+            asked = ""
+            opening = False
+            for m in messages:
+                if m.role != "user":
+                    continue
+                for line in m.content.splitlines():
+                    if line.startswith("所问字段:"):
+                        asked = line.split(":", 1)[1].strip()
+                    elif line.startswith("问题:") and "(开场" in line:
+                        opening = True  # entry 即提取(非轮次回答)
+            if opening:
+                # entry 提取:走 asked 默认桩(单字段),custom 编程留给轮次跨字段用
+                return schema(
+                    fields={} if self.extract.get("off_topic") else {asked: "提炼后的短句"},
+                    assets=dict(self.assets),
+                    off_topic=False,
+                )
             off_topic = bool(self.extract.get("off_topic", False))
             custom = self.extract.get("fields")
             if isinstance(custom, dict):  # 跨字段编程:直接按给定 dict 填
                 return schema(fields=dict(custom), assets=dict(self.assets), off_topic=off_topic)
-            asked = self._asked_field(messages)
             value = str(self.extract.get("value", "提炼后的短句"))
             return schema(
                 fields={} if off_topic else {asked: value},
@@ -81,16 +97,6 @@ class _ScriptedProvider:
                 raise LLMError("复核断流")
             return schema(risky=self.risky)  # type: ignore[return-value]
         raise AssertionError(f"未预期 schema: {name}")
-
-    @staticmethod
-    def _asked_field(messages: list[Message]) -> str:
-        """从提取请求的 user 消息里取所问字段(单字段默认回填用)。"""
-        for m in messages:
-            if m.role == "user":
-                for line in m.content.splitlines():
-                    if line.startswith("所问字段:"):
-                        return line.split(":", 1)[1].strip()
-        return ""
 
 
 class _Recorder:
@@ -156,20 +162,22 @@ async def test_happy_path_three_rounds_to_finish(monkeypatch):
     cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
 
     ev1 = await run_collect(cs, rec)
-    assert isinstance(ev1, AskNext) and ev1.target_field == "situation"
-    assert len(rec.draws) == 1  # 粗稿
+    assert isinstance(ev1, AskNext) and ev1.target_field == "thought"  # entry 已提取 situation
+    assert len(rec.draws) == 1  # entry 粗稿
     assert rec.draws[0].emotion.label == "焦虑"  # 快速研判入粗稿
+    assert rec.draws[0].situation == "提炼后的短句"  # entry 即提取:首条输入实质入格(PRD)
     assert any("当时在想" in t or "后来呢" in t for t, _ in rec.texts)  # 第 1 问来自 LLM 流
     assert ev1.question  # AskNext 携问话全文(无 confirm 字段,契约 §3.4)
     assert cs.pending_question is not None and cs.pending_question.text == ev1.question
 
-    for answer in ("被领导当众否定了", "觉得自己什么都做不好", "躲开了会议"):
+    # entry 已采 situation+emotion(0.4),两轮即足 0.75 收尾
+    for answer in ("被领导当众否定了", "觉得自己什么都做不好"):
         cs.turns.append(Turn(role="user", text=answer))
         ev = await run_collect(cs, rec)
 
     assert isinstance(ev, Finish) and ev.cause == "sufficient"
-    assert len(rec.draws) == 5  # 粗稿 + 3 轮增量 + 精稿
-    assert cs.sufficiency == 0.75  # .2(emotion)+.2+.2+.15
+    assert len(rec.draws) == 4  # entry 粗稿 + 2 轮增量 + 精稿
+    assert cs.sufficiency == 0.75  # .2(situation entry)+.2(emotion)+.2(thought)+.15(behavior)
     final = rec.draws[-1]
     assert final.emotion.label == "焦虑" and final.emotion.intensity == 0.8  # 复核合入
     assert final.intermediate_belief is None and final.core_belief is None  # 信念留白
@@ -226,23 +234,24 @@ async def test_ask_llm_failed_suspends_and_retries(monkeypatch):
 
 
 async def test_cross_field_extraction_fills_multiple(monkeypatch):
-    """跨字段提取:一条回答里包含多字段信息时一次填全(单字段瓶颈修复的钉测)。"""
+    """跨字段提取:一条回答里包含多字段信息时一次填全(单字段瓶颈修复的钉测)。
+
+    entry 即提取后 situation 已在格,轮次回答补 thought+behavior 两个字段。"""
     provider = _ScriptedProvider(
-        extract={"fields": {"situation": "被当众批评", "thought": "我觉得我不行"}}
+        extract={"fields": {"thought": "满脑子我不行", "behavior": "躲开了会议"}}
     )
     _patch_llm(monkeypatch, provider)
     cs = _state()
     rec = _Recorder()
     cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
-    await run_collect(cs, rec)  # entry → AskNext(situation)
+    await run_collect(cs, rec)  # entry:提取 situation → AskNext(thought)
 
-    cs.turns.append(Turn(role="user", text="被领导当众批评了,满脑子都是我不行"))
+    cs.turns.append(Turn(role="user", text="被领导当众批评了,满脑子都是我不行,躲在了工位上"))
     ev = await run_collect(cs, rec)
-    assert isinstance(ev, AskNext) and ev.target_field == "behavior"
-    assert rec.draws[-1].situation == "被当众批评"
-    assert rec.draws[-1].thought == "我觉得我不行"  # 跨字段一次入格
-    assert cs.pending_question is not None  # 所问 situation 已答→挂起清除后已换新问
-    assert ev.target_field == "behavior"  # 下一问跳过已填字段
+    # entry 已采 situation+emotion(0.4),本轮 thought+behavior 一次入两格 → 0.75 收尾
+    assert isinstance(ev, Finish) and ev.cause == "sufficient"
+    assert rec.draws[-1].thought == "满脑子我不行"
+    assert rec.draws[-1].behavior == "躲开了会议"  # 跨字段一次入格
 
 
 async def test_negative_answer_finishes_with_cause(monkeypatch):
@@ -298,8 +307,9 @@ def _with_selector(cs: CollectState, catalog: dict[str, list[str]]) -> CollectSt
 
 
 async def test_template_switches_on_first_substantive_disclosure(monkeypatch):
-    """接力主链:situation 入格+有效选材 → scene_default 切 scene_focus,单向不变。"""
-    provider = _ScriptedProvider(extract={"fields": {"situation": "被当众批评"}})
+    """接力主链:entry 提取 situation(无图标,暖场景候着)→ 轮次 thought 入格
+    +有效图标 → scene_default 切 scene_focus,单向不变。"""
+    provider = _ScriptedProvider(extract={"fields": {"thought": "被领导当众批评"}})
     _patch_llm(monkeypatch, provider)
     cs = _with_selector(
         _state(),
@@ -314,26 +324,27 @@ async def test_template_switches_on_first_substantive_disclosure(monkeypatch):
     await run_collect(cs, rec)  # entry:粗稿,暖场景
     assert cs.template == "scene_default"
 
-    provider.assets = {"situation": "desk.cluttered", "subject": "desk.overwhelmed"}
+    provider.assets = {"thought": "desk.cluttered", "subject": "desk.overwhelmed"}
     cs.turns.append(Turn(role="user", text="被领导当众批评了"))
     await run_collect(cs, rec)
     assert cs.template == "scene_focus"  # 触发集字段入格+图标有效
     assert rec.draws[-1].assets == {
-        "situation": "desk.cluttered",
+        "thought": "desk.cluttered",
         "subject": "desk.overwhelmed",
     }
+    assert rec.draws[-1].thought == "被领导当众批评"  # 轮次提取值入格
 
     provider.assets = {}
-    cs.turns.append(Turn(role="user", text="后来我就躲着走"))
+    cs.turns.append(Turn(role="user", text="后来我就躲着走,满脑子都是我不行"))
     await run_collect(cs, rec)
     assert cs.template == "scene_focus"  # 单向:后续轮不再回退
 
 
 async def test_template_stays_default_without_icon(monkeypatch):
     """无有效选材图标(目录无对应素材)维持暖场景候着,切换不发生。"""
-    provider = _ScriptedProvider(extract={"fields": {"situation": "和妈妈吵架了"}})
+    provider = _ScriptedProvider(extract={"fields": {"thought": "和妈妈吵架很委屈"}})
     _patch_llm(monkeypatch, provider)
-    cs = _with_selector(_state(), {"state.storm-cloud": ["乌云", "焦虑"]})  # 目录无 situation 可选
+    cs = _with_selector(_state(), {"state.storm-cloud": ["乌云", "焦虑"]})  # 目录无 thought 可选
     rec = _Recorder()
     cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
     await run_collect(cs, rec)
@@ -342,4 +353,4 @@ async def test_template_stays_default_without_icon(monkeypatch):
     cs.turns.append(Turn(role="user", text="和妈妈大吵了一架"))
     await run_collect(cs, rec)
     assert cs.template == "scene_default"
-    assert rec.draws[-1].situation == "和妈妈吵架了"  # 字段照常入格,只是不切板式
+    assert rec.draws[-1].thought == "和妈妈吵架很委屈"  # 字段照常入格,只是不切板式

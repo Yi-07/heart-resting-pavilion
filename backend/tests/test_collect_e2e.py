@@ -1,7 +1,7 @@
-"""collect 网关 E2E(CLAUDE.md §8 用例 2 后端判据):first_frame → 粗稿 draw →
-逐轮增量 draw → 精稿 draw → 分析总结 + 补给站邀请语 → done;seq 单调递增;
-信念字段留白;mood_select 回合内静默;分析中抢占 → 未发帧蒸发 + 承接安抚语。
-LLM 全 stub(provider 按调用方模块替换),RAG stub。"""
+"""collect 网关 E2E(CLAUDE.md §8 用例 2 后端判据):first_frame(text 恒空)→
+entry 提取粗稿 draw → 逐轮增量 draw → 精稿 draw → 分析总结 + 补给站邀请语 →
+done;seq 单调递增;信念字段留白;mood_select 回合内静默;分析中抢占 → 未发帧蒸发 +
+新回合 first_frame 照常。LLM 全 stub(provider 按调用方模块替换),RAG stub。"""
 
 import asyncio
 import json
@@ -94,8 +94,11 @@ def test_collect_full_round(monkeypatch):
         first = _recv(ws)
         assert first["type"] == "first_frame" and first["route"] == "collect"
         assert first["mood_select"] is True and first["template"] == "scene_default"  # 开场板式
+        assert first["text"] == ""  # 开场不设安抚语(契约 §3.1)
         draft = _recv(ws)
+        # entry 即提取:首条输入的实质字段直接入粗稿(PRD)
         assert draft["type"] == "draw" and draft["data"]["emotion"]["label"] == "焦虑"
+        assert draft["data"]["situation"] == "提炼值"
         q1 = _recv(ws)
         assert q1["type"] == "text_delta" and q1["text"]  # 问话 LLM 流式文本(非预置)
         seqs += [draft["seq"], q1["seq"]]
@@ -104,23 +107,19 @@ def test_collect_full_round(monkeypatch):
         # 回合内 mood_select:静默(不回帧)——下一帧应是轮次 draw 而非 mood 应答
         ws.send_text(json.dumps({"type": "mood_select", "mood": "低落", "ts": 2}))
 
+        # entry 已采 situation+emotion(0.4),两轮即达 0.75 收尾
         _send(ws, "那天被领导当众否定了,很难受")
         d2 = _recv(ws)
-        assert d2["type"] == "draw" and d2["data"]["situation"] == "提炼值"
+        assert d2["type"] == "draw" and d2["data"]["situation"] == "提炼值"  # entry 值在板
+        assert d2["data"]["thought"] == "提炼值"
         q2 = _recv(ws)
         assert q2["type"] == "text_delta"
         _settle()
 
         _send(ws, "我当时觉得自己什么都做不好")
-        d3 = _recv(ws)
-        assert d3["type"] == "draw" and d3["data"]["thought"] == "提炼值"
-        q3 = _recv(ws)
-        _settle()
-
-        _send(ws, "我躲开了那个会")
-        d4 = _recv(ws)  # 增量:behavior 入格
-        assert d4["type"] == "draw"
-        assert d4["data"]["behavior"] == "提炼值"
+        d3 = _recv(ws)  # 增量:behavior 入格 → 充分度 0.75 停采
+        assert d3["type"] == "draw"
+        assert d3["data"]["behavior"] == "提炼值"
         final_draw = _recv(ws)  # 精稿:emotion 复核后全量
         assert final_draw["type"] == "draw"
         assert final_draw["data"]["intermediate_belief"] is None  # 信念留白
@@ -134,7 +133,7 @@ def test_collect_full_round(monkeypatch):
         assert invite["type"] == "text_delta" and "心灵补给站" in invite["text"]
         done = _recv(ws)
         assert done["type"] == "done"
-        seqs += [d2["seq"], q2["seq"], d3["seq"], q3["seq"], d4["seq"], final_draw["seq"],
+        seqs += [d2["seq"], q2["seq"], d3["seq"], final_draw["seq"],
                  summary["seq"], invite["seq"], done["seq"]]
 
     assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)  # seq 单调递增
@@ -145,17 +144,13 @@ def test_collect_preempt_during_analysis(monkeypatch):
     with client.websocket_connect("/ws") as ws:
         _send(ws, "最近很焦虑睡不着")
         for _ in range(3):
-            _recv(ws)  # first_frame + 粗稿 draw + 第 1 问
+            _recv(ws)  # first_frame + entry 提取粗稿 draw + 第 1 问
         time.sleep(0.5)  # 等 settle 落定(抢占误判窗口,见 test_collect_full_round)
         _send(ws, "被否定了,很委屈")
         _recv(ws)
         _recv(ws)  # draw 增量 + 第 2 问
         time.sleep(0.5)
-        _send(ws, "觉得自己不行")
-        _recv(ws)
-        _recv(ws)  # draw 增量 + 第 3 问
-        time.sleep(0.5)
-        _send(ws, "我躲开了")  # 第 3 答 → 停采 → 分析开始(总结流 0.4s/块,未发帧)
+        _send(ws, "觉得自己不行")  # 第 2 答 → behavior 入格 → 停采 → 分析开始(总结流 0.4s/块,未发帧)
         d4 = _recv(ws)  # 增量 draw
         assert d4["type"] == "draw"
         final_draw = _recv(ws)  # 精稿 draw(分析初段,快)
@@ -165,7 +160,7 @@ def test_collect_preempt_during_analysis(monkeypatch):
         _send(ws, "我又想到另一件烦心事")  # 抢占:cancel + 弃 state + dead 蒸发
         preempt_first = _recv(ws)
         assert preempt_first["type"] == "first_frame"
-        assert "重新" in preempt_first["text"]  # 承接变体(T2 将置空 collect 开场文案;暂存)
+        assert preempt_first["text"] == ""  # 开场文案恒空串(契约 §3.1,T2 置空)
         new_draft = _recv(ws)
         assert new_draft["type"] == "draw" and new_draft["data"]["emotion"]["label"] is not None
         assert new_draft["seq"] > final_draw["seq"]  # seq 计数不重置

@@ -2,7 +2,7 @@
 
 - 连接即建 session_id;user_input / mood_select 入口;JSON 文本帧
 - user_input 处理跑独立任务、不阻塞收包:新 user_input 即抢占——取消当前任务
-  + 旧 emitter 标 dead(未发帧蒸发)→ 新回合 entry(安抚语承接变体)
+  + 旧 emitter 标 dead(未发帧蒸发)→ 新回合 entry
 - 每条 user_input 先过危机闸门:命中 → 危机序列 + WARN 审计 + 销毁采集态
 - 未命中 → 分层判定(规则速判保 first_frame ≤300ms;模糊按 collect 走,
   LLM 仅异步精化 emotion_label,不撤回,spec §4 L4):
@@ -14,7 +14,7 @@
 - 发号:仅 draw/text_delta/audio_chunk/done 盖章(seq 预增,首帧=1);
   first_frame/error 不带不消耗;计数器=连接内存(会话内全局递增)
 - 非法消息 → error(invalid_message),不崩连接;输入单源文本(语音经 /asr/transcribe
-  转写回填,ADR-004);安抚语/总结/危机 TTS 直发 audio_chunk,
+  转写回填,ADR-004);总结/危机 TTS 直发 audio_chunk,
   全部可失败跳过(音频缺席不影响文字链路)
 """
 
@@ -181,7 +181,7 @@ class Connection:
     ) -> None:
         """TTS 直发一块**整句 wav**(legacy 链路)。
 
-        final=True = 本回合最后一块(单发场景:安抚语/总结/fillers);
+        final=True = 本回合最后一块(单发场景:总结/fillers);
         final=False = 流式中的一块(answer 逐句场景,最后一块在句子泵收尾时补发)。
         前端 AudioQueue 只按序连播,不读 final(ws-contract §3.4 标注"可不依赖"),
         所以这两条路径对它是透明的。
@@ -305,7 +305,7 @@ async def _on_message(conn: Connection, raw: str) -> None:
     # user_input:抢占当前处理(分析中 cancel + 弃 state + 旧 emitter 标 dead
     # → 未发帧蒸发),新任务接管;轮次回答不经过此处销毁(state 仅在处理中被弃)。
     # 已知边界:task.done() 判定在「done 帧已发→Task 状态翻转」的调度窗口内有
-    # 误判可能(挂起态被误清、承接变体重开),间歇性,记 backlog 待单独修复
+    # 误判可能(挂起态被误清、抢占后重开),间歇性,记 backlog 待单独修复
     preempted = False
     if conn.current is not None and not conn.current.done():
         conn.current.cancel()
@@ -314,8 +314,8 @@ async def _on_message(conn: Connection, raw: str) -> None:
         conn.current_emitter.mark_dead()
         conn.current_emitter = None
     # 打断穿透到 TTS 服务:不然后端停了,服务端还在排队出声。
-    # 放在这里而不是 mark_dead 里 —— 安抚语/总结语音用的是独立路径,
-    # 它们靠自己的 trace 比对蒸发,不需要打断服务。
+    # 放在这里而不是 mark_dead 里 —— 总结语音用的是独立路径,
+    # 它靠自己的 trace 比对蒸发,不需要打断服务。
     # T0 = 抢占决定的那一刻(最接近"用户点了"的 backend 侧观测点;
     # 浏览器内的真实点击时刻由前端 bench 上报,两者可对照)。
     from app.voice import tts_bench
@@ -328,7 +328,7 @@ async def _on_message(conn: Connection, raw: str) -> None:
     conn.cancel_tts()
     if preempted and conn.collect_state is not None:
         conn.collect_state = None
-    conn.current = asyncio.create_task(_process_user_input(conn, msg, carried=preempted))
+    conn.current = asyncio.create_task(_process_user_input(conn, msg))
     # 不 await:立刻回收下一条,保持抢占窗口
 
 
@@ -368,7 +368,7 @@ async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
     await conn.send_done()
 
 
-async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool) -> None:
+async def _process_user_input(conn: Connection, msg: UserInput) -> None:
     trace = conn.next_trace()
     if msg.session_id and msg.session_id != conn.session_id:
         # 重连认领(契约 §8.4):带上原 session_id → 后端采纳并恢复热层上下文
@@ -445,7 +445,7 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
                 via="in_round_gate",
             )
             await asyncio.wait_for(
-                _collect_sequence(conn, trace, text, cls, carried=False), timeout=config.LLM_TIMEOUT_S
+                _collect_sequence(conn, trace, text, cls), timeout=config.LLM_TIMEOUT_S
             )
             return
         if cls.route == "answer":
@@ -472,7 +472,7 @@ async def _process_user_input(conn: Connection, msg: UserInput, *, carried: bool
                 in_round=conn.collect_state is not None,
             )
             await asyncio.wait_for(
-                _collect_sequence(conn, trace, text, cls, carried=carried),
+                _collect_sequence(conn, trace, text, cls),
                 timeout=config.LLM_TIMEOUT_S,
             )
     except asyncio.TimeoutError:
@@ -575,25 +575,9 @@ async def _speak(conn: Connection, text: str, *, round_id: str | None = None) ->
         conn.log("degraded", level="WARN", reason="tts_send_failed")
 
 
-def _soothe_evaporated(conn: Connection, trace: int) -> bool:
-    """安抚语蒸发判定:抢占(trace 变)或回合已收尾(current 完成)。"""
-    return conn.current_trace != trace or conn.current is None or conn.current.done()
-
-
-async def _speak_if_current(conn: Connection, text: str, trace: int) -> None:
-    """异步安抚语:逐句合成逐句判定蒸发——已合成未发的部分静默丢弃。"""
-    try:
-        await _speak_stream(
-            conn, text, lambda: _soothe_evaporated(conn, trace),
-            round_id=conn.tts_round_id(trace),
-        )
-    except Exception:  # noqa: BLE001 — 安抚语缺席无副作用,不记 degraded
-        return
-
-
 async def _speak_summary(conn: Connection, text: str, trace: int) -> None:
     """异步总结语音:回合已收尾后继续流出,仅抢占(trace 变)才蒸发——
-    蒸发条件与安抚语不同:安抚语随回合收尾蒸发,总结语音恰恰要在收尾后播完。"""
+    总结语音恰恰要在回合收尾后播完,蒸发条件比打断型语音宽。"""
     from app.voice import tts
 
     try:
@@ -622,12 +606,10 @@ async def _crisis_sequence(conn: Connection) -> None:
 # ---- collect(每条 user_input=一次短图调用,backend-plan §3) ----
 
 
-async def _collect_sequence(
-    conn: Connection, trace: int, text: str, cls: Classification, *, carried: bool
-) -> None:
+async def _collect_sequence(conn: Connection, trace: int, text: str, cls: Classification) -> None:
     state = conn.collect_state
     if state is None:
-        # entry:first_frame(≤300ms 语义,规则速判)+ 建态;承接变体=抢占后重开;
+        # entry:first_frame(≤300ms 语义,规则速判)+ 建态;抢占后重开也走这里;
         # 热层 snapshot 恢复上下文(重连/续话,契约 §8.4;记忆不可用降级空档)
         # 板式接力:建态=scene_default 暖场景开场,图内首次实质披露切
         # scene_focus;template 单源在 state
@@ -661,17 +643,14 @@ async def _collect_sequence(
             if not state.turns:
                 state.turns = list(state.session_context.recent_turns)
         conn.collect_state = state
-        soothe = phrases.collect_soothe(cls.emotion_label, carried=carried)
         await conn.send_first_frame(
             route="collect",
             template=state.template,  # first_frame 随开场板式(scene_default)
             emotion_label=cls.emotion_label,
             mood_select=True,
-            text=soothe,
+            text="",  # 开场不设安抚语(契约 §3.1):第一句话由问话 LLM 生成后随流到达
         )
-        # 安抚语语音异步合成(不阻塞 ≤300ms first_frame);抢占/收尾后蒸发
-        asyncio.create_task(_speak_if_current(conn, soothe, trace))
-        conn.log("collection_start", trace_id=trace, carried=carried)
+        conn.log("collection_start", trace_id=trace)
     # 轮次回答:同回合继续,无 first_frame(契约 §6.2)
     state.turns.append(Turn(role="user", text=text))
 

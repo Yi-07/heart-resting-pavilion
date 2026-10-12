@@ -43,12 +43,14 @@ async def extract_fields(
     open_fields: list[FieldKey],
     *,
     asset_hint: str | None = None,
+    raw_fallback: bool = True,
 ) -> tuple[dict[FieldKey, str], dict[str, str]]:
     """跨字段提取:返回 ({字段: 提炼值}, {字段: 图标id原始选材})(空 dict=无可填,走陪聊轮)。
 
     选材为原始输出,白名单校验/熔断由调用方(board.Selector)处理——本函数
     不持状态。asset_hint=None 时模型仍可能吐 assets 键,静默丢弃,行为等价旧版。
-    LLMError 降级:所问字段填原文截断(与单字段时代同语义)。
+    LLMError 降级:所问字段填原文截断(与单字段时代同语义);entry 即提取传
+    raw_fallback=False——失败回退旧行为(只留研判标签),不阻断回合(PRD)。
     日志只记字段名与长度,不落提炼值原文(脱敏红线 §7)。
     """
     system = _SYSTEM + (f"\n{asset_hint}" if asset_hint else "")
@@ -61,6 +63,8 @@ async def extract_fields(
             [Message("system", system), Message("user", user)], _ExtractOut
         )
     except LLMError:
+        if not raw_fallback:
+            return {}, {}
         fallback = answer.strip()[:MAX_FIELD_LEN]
         if fallback and target_field in open_fields:
             logger.info("extract_filled", fields=target_field, source="llm_error_fallback")
