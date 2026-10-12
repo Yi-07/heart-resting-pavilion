@@ -26,6 +26,14 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/v1")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 
+# ---- 模型服务 profiles 的热激活槽位 ----
+# 为空时继续回落上面的旧 .env 双源，兼容已有部署。
+ACTIVE_PROFILE_ID = ""
+ACTIVE_PROVIDER_ID = ""
+ACTIVE_MODEL = ""
+ACTIVE_API_KEY = ""
+ACTIVE_BASE_URL = ""
+
 LLM_TIMEOUT_S = 60.0
 """单条 user_input 全链路处理上限(契约 §7 超时兜底)"""
 
@@ -95,6 +103,9 @@ MOOD_RECENT_CAP = 5
 
 STATION_DB_PATH = os.path.join(_BACKEND_DIR, "data", "station.db")
 """方案书 SQLite(每会话最新胜;运行时产物不入 git)"""
+
+WALL_DB_PATH = os.path.join(_BACKEND_DIR, "data", "wall.db")
+"""留言墙 SQLite；与会话记忆和一键清除记忆分离，worker 按七日清理。"""
 
 ADMIN_CONFIG_DB_PATH = os.path.join(_BACKEND_DIR, "data", "config.db")
 """模型配置 SQLite(api_key AES-GCM 加密落库;运行时产物不入 git)"""

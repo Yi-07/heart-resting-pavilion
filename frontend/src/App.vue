@@ -30,6 +30,8 @@ import { bindStation, openStation } from './station/station'
 import { appendDraft, transcribeAudio } from './voice/asr'
 import SettingsPanel from './admin/SettingsPanel.vue'
 import { openSettings } from './admin/settings'
+import WallPanel from './wall/WallPanel.vue'
+import PracticePanel from './practice/PracticePanel.vue'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
 
@@ -56,6 +58,9 @@ const draft = ref('')
 const lastTemplate = ref<string | null>(null)
 const protoOpen = ref(false)
 const frames = ref<{ kind: string; brief: string }[]>([])
+const practiceOpen = ref(false)
+const wallOpen = ref(false)
+const wallUnread = ref(false)
 
 const avatar = computed(() => avatarSvg(expressionFor(round.emotionLabel)))
 
@@ -262,6 +267,13 @@ function submit(): void {
   draft.value = ''
 }
 
+function setPracticePhase(phase: 'inhale' | 'exhale' | 'idle'): void {
+  if (phase === 'idle') return
+  // Live2D remains optional: the breathing ring is authoritative and the
+  // existing controller only receives a gentle expression/speaking cue.
+  l2d?.setExpression(phase === 'inhale' ? 'calm' : 'warm')
+}
+
 // ── 语音输入(ADR-004 两步式):录音 → /asr/transcribe 转写 → 追加回填文本框,
 // 用户确认后按文本发送(输入单源文本);转写与 WS 解耦,失败提示转打字 ──
 
@@ -345,8 +357,8 @@ function toggleMic(): void {
       </button>
       <button class="tb" type="button" @click="mood.show()">今日心情</button>
       <button class="tb" type="button" data-testid="station-entry" @click="openStation()">心灵补给站</button>
-      <button class="tb" type="button" disabled title="二期">心灵练习</button>
-      <button class="tb" type="button" disabled title="二期">留言墙</button>
+      <button class="tb" type="button" data-testid="practice-entry" :class="{ active: practiceOpen }" @click="practiceOpen = true">心灵练习</button>
+      <button class="tb" type="button" data-testid="wall-entry" :class="{ active: wallOpen }" @click="wallOpen = true">留言墙<span v-if="wallUnread" class="wall-dot" aria-label="有新的留言回复"></span></button>
       <button class="tb" type="button" title="模型配置 · 记忆治理" data-testid="settings-entry" @click="openSettings()">设置</button>
       <span class="sp"></span>
       <button class="mood-pill" type="button" data-testid="mood-pill" @click="mood.show()">
@@ -389,6 +401,8 @@ function toggleMic(): void {
 
     <!-- 设置:模型配置 + 记忆治理(趋势/一键清除带两步确认) -->
     <SettingsPanel />
+    <PracticePanel :open="practiceOpen" @close="practiceOpen = false" @phase="setPracticePhase" />
+    <WallPanel :open="wallOpen" @close="wallOpen = false" @unread="wallUnread = $event" />
 
     <!-- 输入条:薄玻璃 + 发送钮「液芽分体」(goo 剪影只在动画瞬间显形;文字骑在滤镜上) -->
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
@@ -481,6 +495,8 @@ function toggleMic(): void {
   position: relative;
   z-index: 30;
 }
+.tb.active{color:var(--primary-deep);background:rgba(227,237,226,.72)}
+.wall-dot{display:inline-block;width:6px;height:6px;margin-left:5px;border-radius:50%;background:#df856e;vertical-align:middle;box-shadow:0 0 0 3px rgba(223,133,110,.12)}
 .logo {
   font-family: var(--serif);
   font-weight: 700;

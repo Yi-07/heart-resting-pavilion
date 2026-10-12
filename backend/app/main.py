@@ -18,6 +18,9 @@ from app.logger import setup_logger
 from app.memory import get_memory
 from app.station import router as station_router
 from app.voice.routes import router as asr_router
+from app.wall import router as wall_router
+from app.wall import start_worker as start_wall_worker
+from app.wall import stop_worker as stop_wall_worker
 from app.ws_gateway import handle_connection
 
 setup_logger(verbose=os.getenv("HRP_VERBOSE") == "1")
@@ -106,6 +109,11 @@ async def _loop_watchdog() -> None:
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     _logger.info("startup_begin · 心栖阁 backend 启动中")
+    # 模型 profiles 的 AES 密钥先自举，再读回激活配置；失败不影响旧 .env 回落。
+    try:
+        admin.ensure_aes_key()
+    except Exception as exc:  # noqa: BLE001 — 配置密钥失败时仍保留旧链路
+        _logger.warning("llm_config_key_unavailable", detail=str(exc)[:120])
     admin.load_and_apply()  # 持久配置读回应用;无配置/失败 WARN 走 env
     if await get_memory().ping():
         _logger.info("memory_ready · Redis 连接正常")
@@ -118,6 +126,7 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
         warm = asyncio.create_task(_warm_sidecar())
     rag_warm = asyncio.create_task(_warm_rag())
     watchdog = asyncio.create_task(_loop_watchdog())
+    start_wall_worker()
     _logger.info("startup_ready · 文字链路已就绪")
     yield
     warm.cancel()  # 没就绪就退了:不再等
@@ -128,6 +137,10 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
         from app.voice import tts  # 懒加载(同 warmup)
 
         tts.shutdown_spawned()
+    from app.llm.provider import close_llm_session
+
+    await close_llm_session()
+    await stop_wall_worker()
 
 
 app = FastAPI(title="心栖阁 backend", version="0.1.0", lifespan=_lifespan)
@@ -138,6 +151,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(station_router)
+app.include_router(wall_router)
 app.include_router(admin.router)
 app.include_router(asr_router)
 
