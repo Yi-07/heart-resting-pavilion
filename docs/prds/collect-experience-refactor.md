@@ -2,6 +2,8 @@
 
 > 产品需求文档。描述 collect 链路「话术 LLM 化 + entry 即提取 + 打断清理 + 方案书自动生成」的改动面。机制与参数权威源见 [architecture-spec.md](../architecture/architecture-spec.md)「三路路由」「L4 · 空窗期策略」「L5 · 异步推理层」；消息契约见 [ws-contract.md](../architecture/ws-contract.md)「3.1 first_frame」「6.2 collect」「8. 错误处理」；本 PRD 不复制其内容。裁定来源：collect 链路检查会话（2026-10-10/11，Q1~Q10 逐项裁定，台账 V2.11）。
 
+> **完结注（2026-10-12）**：五面改动全部落地（T1~T8，commit `db7b587`..`0cdb79d`）。实现与裁定的两处偏差：① entry 即提取不跑降级检测（too_short/negative 是问句回答的轮次机制，首条输入无此语境）；② 方案书历史保留的查询 API/前端预览按 Non-Goals 未做。验收判据 7 条全过（后端 ruff/mypy/pytest 222 过，前端 type-check/lint/test:unit 126 过）。
+
 ## Problem Statement
 
 collect 链路现行体验三处硬伤：
