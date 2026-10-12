@@ -100,9 +100,26 @@ class FakeSemantic:
         self.calls.append(("recall", {"query": query, "recent_topics": recent_topics}))
         return []
 
-    async def save_notes(self, session_id: str, turn_index: int, notes_raw: str) -> None:
+    async def save_notes(
+        self,
+        session_id: str,
+        turn_index: int,
+        notes_raw: str,
+        *,
+        mood_label: str | None = None,
+        intensity: float | None = None,
+    ) -> None:
         self.calls.append(
-            ("save_notes", {"session_id": session_id, "turn_index": turn_index, "raw": notes_raw})
+            (
+                "save_notes",
+                {
+                    "session_id": session_id,
+                    "turn_index": turn_index,
+                    "raw": notes_raw,
+                    "mood_label": mood_label,
+                    "intensity": intensity,
+                },
+            )
         )
 
     def list_items(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -117,6 +134,39 @@ class FakeSemantic:
         n = len(self.items)
         self.items.clear()
         return n
+
+
+class _DefaultCollectLLM:
+    """collect 图 LLM 默认替身(问话 LLM 化后的测试隔离桩)。
+
+    问话从预置库改 LLM 流式后,任何触发 collect 而未打桩的测试都会真调 LLM API
+    ——网络抖动(LLMError→AskFailed)让收帧测试死等文本帧。默认桩堵这个洞;
+    需要特定行为的用例自行 monkeypatch 覆盖(函数级 setattr 晚于本 fixture 生效)。
+    """
+
+    async def chat(self, messages: Any) -> str:
+        return "这次梳理的笔记。"
+
+    async def stream(self, messages: Any):
+        yield "嗯,先从最具体的一幕说起吧,当时发生了什么?"
+
+    async def chat_json(self, messages: Any, schema: type) -> Any:
+        name = getattr(schema, "__name__", "")
+        if name == "_ExtractOut":
+            asked = ""
+            for m in messages:
+                content = getattr(m, "content", "") or ""
+                for line in content.splitlines():
+                    if line.startswith("所问字段:"):
+                        asked = line.split(":", 1)[1].strip()
+            return schema(fields={asked: "提炼值"} if asked else {}, off_topic=False)
+        if name == "RouteLabel":
+            return schema(route="collect", emotion_label=None, confidence=0.9)
+        if name == "_ReviewOut":
+            return schema(label="焦虑", intensity=0.8)
+        if name == "_RiskOut":
+            return schema(risky=False)
+        raise AssertionError(f"未预期 schema: {name}")
 
 
 @pytest.fixture(autouse=True)
@@ -156,6 +206,16 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     ready = threading.Event()
     ready.set()
     monkeypatch.setattr(_rag, "_ready", ready)
+    # collect 图 LLM 默认桩(问话 LLM 化的测试隔离;extract/analysis/classifier
+    # 三处同打,classifier 桩保持 fallback=collect 语义不扰路由测试)
+    _default_llm = _DefaultCollectLLM()
+    for target in (
+        "app.agents.extract.get_provider",
+        "app.agents.analysis.get_provider",
+        "app.agents.graph.get_provider",
+        "app.router.classifier.get_provider",
+    ):
+        monkeypatch.setattr(target, lambda _p=_default_llm: _p)
     # sem 挂在 mem 上供用例取用(避免改 fixture 签名破坏既有用例)
     mem.semantic = sem  # type: ignore[attr-defined] — 动态挂载,仅测试便利
     return mem

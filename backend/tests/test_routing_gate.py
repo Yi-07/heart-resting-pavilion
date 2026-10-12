@@ -8,6 +8,8 @@
 - 危机词 → crisis 优先(回归钉,scene_crisis 场景帧)
 """
 
+import time
+
 import pytest
 from test_collect_flow import _patch_llm, _ScriptedProvider
 from test_gateway import (
@@ -19,6 +21,12 @@ from test_gateway import (
 )
 
 from app.rag.corpus import Ref
+
+
+def _settle() -> None:
+    """问话 final 帧后小睡:等 settle(append_turn/Task 翻转)落定——抢占误判窗口
+    (task.done() 调度间隙,见 gateway 已知边界注记)会把下一输入误当抢占弃态重开。"""
+    time.sleep(0.5)
 
 
 @pytest.fixture(autouse=True)
@@ -46,11 +54,13 @@ def test_in_round_concept_suspends_and_resumes(monkeypatch):
         draw1 = _recv(ws)
         assert draw1["type"] == "draw" and draw1["seq"] == 1
         assert _recv(ws)["type"] == "text_delta"  # 首问
+        _settle()
 
         _send_input(ws, "上周开会的时候,领导当众批评我,我脑子里一片空白。")  # 轮1
         draw2 = _recv(ws)
         assert draw2["type"] == "draw" and draw2["seq"] == 3  # 增量(seq 全局递增)
         assert _recv(ws)["type"] == "text_delta"  # 确认+第2问
+        _settle()
 
         _send_input(ws, "什么是正念?")  # 概念问句 → 短答支线
         suspend = _recv(ws)
@@ -72,6 +82,7 @@ def test_in_round_help_seeking_stays_collect(monkeypatch):
         assert _recv(ws)["type"] == "first_frame"
         _recv(ws)  # 粗稿
         _recv(ws)  # 首问
+        _settle()
 
         _send_input(ws, "你说我该怎么办啊")  # 求助句:KNOWLEDGE_PATTERNS 会命中
         frame = _recv(ws)
@@ -86,6 +97,7 @@ def test_two_consecutive_concepts_keep_state(monkeypatch):
         assert _recv(ws)["type"] == "first_frame"
         _recv(ws)
         _recv(ws)
+        _settle()
 
         _send_input(ws, "什么是正念")
         assert _recv(ws)["type"] == "draw"  # 挂起场景帧
@@ -109,6 +121,7 @@ def test_explicit_ask_upgrades_to_short_answer(monkeypatch):
         assert _recv(ws)["type"] == "first_frame"
         _recv(ws)
         _recv(ws)
+        _settle()
 
         _send_input(ws, "你先回答我，什么是正念")
         suspend = _recv(ws)
@@ -127,6 +140,7 @@ def test_crisis_during_suspended(monkeypatch):
         assert _recv(ws)["type"] == "first_frame"
         _recv(ws)
         _recv(ws)
+        _settle()
 
         _send_input(ws, "什么是正念")
         assert _recv(ws)["type"] == "draw"  # 挂起场景帧

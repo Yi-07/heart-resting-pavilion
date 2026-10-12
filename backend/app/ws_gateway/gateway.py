@@ -35,6 +35,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from app import config
 from app import logger as app_logger
 from app.agents import (
+    AskFailed,
     AskNext,
     CollectState,
     ConnEmitter,
@@ -42,7 +43,6 @@ from app.agents import (
     Escalate,
     Finish,
     Turn,
-    batched_chunks,
     stream_final,
 )
 from app.agents.state import CollectEvent, FinishCause
@@ -67,7 +67,6 @@ from app.schema import (
     TextDelta,
     UserInput,
 )
-from app.voice.tts_client import PcmChunk
 
 if TYPE_CHECKING:
     from app.rag.corpus import Ref
@@ -789,11 +788,19 @@ async def _settle_collect_event(
         conn.collect_state = None
         conn.log("route_decided", trace_id=trace, route="crisis", via="escalate")
         await _crisis_sequence(conn)
-    elif isinstance(event, AskNext):
-        # ADR-005:assistant 问句入热层轮次(确认语+问句拼合,与发帧文本一致)
-        await get_memory().append_turn(
-            conn.session_id, "assistant", event.confirm + event.next_question
+    elif isinstance(event, AskFailed):
+        # 问话 LLM 失败(ws-contract §3.7/§8):error 帧 + 采集态挂起待重试;
+        # 不发预置问句兜底(不掩盖错误),也不弃 state——下一条输入重试
+        state = conn.collect_state
+        if state is not None:
+            state.ask_retry = True
+        conn.log("degraded", level="WARN", trace_id=trace, reason="ask_llm_failed", source=event.source)
+        await conn.send_error(
+            "ask_llm_failed", "小栖这边没把话组织好,先告诉我你的想法,我们再继续"
         )
+    elif isinstance(event, AskNext):
+        # ADR-005:assistant 问句入热层轮次(与发帧文本一致——问话全文,无独立 confirm)
+        await get_memory().append_turn(conn.session_id, "assistant", event.question)
     elif isinstance(event, EmpathChat):
         # ADR-005:陪聊回应入热层轮次
         await get_memory().append_turn(conn.session_id, "assistant", event.reply)
@@ -870,316 +877,29 @@ async def _answer_with_voice(
     round_id: str,
     trace: int,
 ) -> bool:
-    """answer 路的语音:LLM 逐字流 → 增量切句 → 逐句 TTS → audio_chunk。
+    """answer 路的语音:句子泵统一实现(collect 问话同构复用,agents/sentence_pump)。
 
-    三个并发度:
-        LLM 读取  →  text_q(文字帧)  +  sentence_q(句子)
-        TTS 合成  ←  sentence_q       →  audio_q(wav)
-        帧下发    ←  audio_q          →  ws
-
-    为什么要有两条队列:LLM 出字很快、TTS 出声很慢(约 10 倍)。
-    如果在读取 LLM 的协程里直接 await TTS,文字会被音频拖住;
-    如果先攒完文本再合成,首句音频要等整段生成完 —— 两种都丢掉流式。
-    分开之后:文字按 LLM 的节奏走,音频按能合成多快走多快,互不阻塞。
-
-    帧保序:audio_q 单一消费者,音频不 hold(final 恒 False,前端不依赖)。
-    抢占:dead() 命中即停止发新请求;服务端那一侧由 /v1/tts/cancel 清队列。
+    LLM 逐字流 → 攒批发帧 + 增量切句 → 逐句 TTS → audio_chunk;文字与音频
+    两条队列并发下发,互不阻塞(细节与理由见 sentence_pump 模块 docstring)。
 
     返回是否发出过文字帧(调用方据此决定要不要兜底/记降级,语义与 stream_final 一致)。
     """
     from app import diag
-    from app.voice import tts
-    from app.voice.sentence_split import SentenceSplitter
 
     # _answer_sequence 已经 enable 过一轮;这里只在没有记录时兜底建一次,
     # 不能无条件 enable —— 那会把 RAG / provider 段的记录清掉、时间基准重置。
     if diag.env_on() and not diag.active():
         diag.enable()
-    diag.mark("pump_start", round_id=round_id)
+    from app.agents.sentence_pump import run_sentence_pump
 
-    # 首句限短:TTFB 与音文交错率都只取决于首句长度(见 config 的说明)
-    splitter = SentenceSplitter(
+    return await run_sentence_pump(
+        conn,
+        emitter,
+        chunks,
+        round_id,
+        trace,
         first_max_hanzi=config.TTS_FIRST_SENTENCE_HANZI,
     )
-
-    def dead() -> bool:
-        # 抢占判定用显式传入的 trace,不要从 round_id 字符串里拆回来 ——
-        # trace 可以是 -1(未开始),拼成 "tts--1" 再 split 会拿到 "1",静默判错。
-        return emitter.dead or conn.current_trace != trace
-
-    loop = asyncio.get_running_loop()
-    text_q: asyncio.Queue[str | None] = asyncio.Queue()
-    sentence_q: asyncio.Queue[str | None] = asyncio.Queue()
-    audio_q: asyncio.Queue[Any | None] = asyncio.Queue()
-    """队列元素是 bytes(legacy wav)或 PcmChunk(realtime),由 pcm_mode 决定。"""
-    stats = {"sentences": 0, "chunks": 0, "errors": 0}
-    pcm_mode = tts.STREAM_MODE == "pcm"
-    pcm_seq_base = 0
-    """下一块的回合内全局 audio_seq。写侧递增(见 _put_pcm),保证跨句不重号。
-
-    服务端的 seq 是**每个 /v2 请求内**的号,而句子泵一句一个请求,直接透传会
-    得到 [0,1,2] [0,1,2] [0,1,2]。ws-contract §3.4 要求 audio_seq 在回合内
-    跨句连续,所以下发侧重编号;round_id 不动——那是身份,seq 只是块序。
-    """
-
-    async def _read_llm() -> None:
-        seen = {"cum": 0, "batch": 0, "sent": 0}
-
-        async def _tap() -> AsyncIterator[str]:
-            """只做打点:标出 LLM 第一个 chunk 真正到达的时刻(不改变流语义)。"""
-            first = True
-            async for piece in chunks:
-                if first:
-                    first = False
-                    diag.mark("llm_first_token")
-                yield piece
-            diag.mark("llm_stream_end")
-
-        try:
-            # 必须走 batched_chunks:LLM 逐字吐,直接转发就是"逐字发帧"消息风暴
-            # (实测 30 字文本会变成 30 个 text_delta)。攒批规则与 stream_final 共用同一处。
-            async for batch in batched_chunks(_tap()):
-                seen["batch"] += 1
-                seen["cum"] += len(batch)
-                diag.mark(
-                    "batch_out", idx=seen["batch"],
-                    size=len(batch), cum=seen["cum"], head=batch[:20],
-                )
-                await text_q.put(batch)
-                diag.mark("text_q_put", idx=seen["batch"])
-                for sentence in splitter.feed(batch):
-                    seen["sent"] += 1
-                    diag.mark(
-                        "sentence_cut", idx=seen["sent"], hanzi=len(sentence),
-                        src="feed", head=sentence[:30],
-                    )
-                    await sentence_q.put(sentence)
-                    diag.mark("sentence_queued", idx=seen["sent"])
-                    stats["sentences"] += 1
-            for sentence in splitter.flush():
-                seen["sent"] += 1
-                diag.mark(
-                    "sentence_cut", idx=seen["sent"], hanzi=len(sentence),
-                    src="flush", head=sentence[:30],
-                )
-                await sentence_q.put(sentence)
-                diag.mark("sentence_queued", idx=seen["sent"])
-                stats["sentences"] += 1
-        finally:
-            await text_q.put(None)
-            await sentence_q.put(None)
-
-    async def _synth() -> None:
-        # TTS 是阻塞 IO,每句丢线程池;dead 命中后不再发起新请求。
-        idx = 0
-        # 抢占信号跨线程:loop 侧写、worker 侧只读(GIL 下单字节读写是原子的)。
-        stop = False
-
-        def _put(wav: bytes, idx: int, n: int) -> None:
-            """audio_q 的**唯一**写入点,跑在 loop 线程,所以不需要加锁。
-
-            dead() 判定因此也回到了 loop 线程(此前在 worker 线程里读
-            emitter.dead / conn.current_trace,是跨线程读)。
-            """
-            nonlocal stop
-            if dead():
-                stop = True
-                return
-            audio_q.put_nowait(wav)
-            diag.mark("audio_queued", idx=idx, n=n, nbytes=len(wav))
-            stats["chunks"] += 1
-
-        def _put_pcm(chunk: PcmChunk, idx: int, n: int) -> None:
-            """PCM 块的同款写入点。round_id 冲突在这里判。
-
-            服务端的 seq 是**每个 /v2 请求内**单调递增,而句子泵一句一请求,
-            三个句子会得到 [0,1,2] [0,1,2] [0,1,2]。ws-contract §3.4 要求
-            audio_seq 在**一个回合内**单调递增、跨句连续,所以重编号发生在
-            下发侧(_emit_audio 的 pcm_seq_next),入队这里保持原样即可。
-            这不是"重新生成 round identity" —— round_id 一个字节都没动。
-            """
-            nonlocal stop, pcm_seq_base
-            if dead():
-                stop = True
-                return
-            if chunk.round_id != round_id:
-                # 同一 request 内 round_id 自相矛盾 = 协议错误。
-                # 丢弃这一帧并停掉该回合的合成,绝不静默下发。
-                stats["errors"] += 1
-                stop = True
-                from app.voice import tts_bench
-
-                tts_bench.mark(
-                    tts_bench.PROTOCOL_MISMATCH,
-                    round_id=round_id,
-                    frame_round_id=chunk.round_id,
-                    stage="gateway_pcm",
-                )
-                app_logger.logger.error(
-                    "tts_pcm_round_id_mismatch want={} got={}",
-                    round_id,
-                    chunk.round_id,
-                )
-                conn.log(
-                    "degraded",
-                    level="ERROR",
-                    reason="tts_round_id_mismatch",
-                    want=round_id,
-                    got=chunk.round_id,
-                )
-                return
-            audio_q.put_nowait((chunk, pcm_seq_base))
-            pcm_seq_base += 1
-            diag.mark("audio_queued", idx=idx, n=n, nbytes=len(chunk.pcm))
-            stats["chunks"] += 1
-
-        try:
-            while True:
-                sentence = await sentence_q.get()
-                if sentence is None:
-                    diag.mark("tts_worker_drained")
-                    return
-                if dead():
-                    continue  # 丢弃剩余排队句,不浪费一次 HTTP
-
-                idx += 1
-                diag.mark(
-                    "tts_worker_get", idx=idx, hanzi=len(sentence),
-                    head=sentence[:30],
-                )
-
-                def _run(sentence: str = sentence, idx: int = idx) -> int:
-                    """worker 线程:每产出一块就立刻交给 loop,不整句物化。
-
-                    此前是 ``list(generator)`` —— 整句音频全部合成完才入队,
-                    于是第一块要白等最后一块(实测多等 0.36~0.87s)。
-                    现在 call_soon_threadsafe 一块一块送,首块落地只差一次
-                    事件循环的调度。
-                    """
-                    n = 0
-                    diag.mark("tts_call_enter", idx=idx, hanzi=len(sentence))
-                    if pcm_mode:
-                        # realtime:逐块 PCM。round_id/seq 原样透传,网关不重编号。
-                        for chunk in tts.synthesize_pcm_stream(
-                            sentence, request_id=round_id
-                        ):
-                            loop.call_soon_threadsafe(_put_pcm, chunk, idx, n)
-                            n += 1
-                            if stop:  # 被抢占:不再往下合成,generator 就地关闭
-                                break
-                    else:
-                        for wav in tts.synthesize_stream_detailed(
-                            sentence, request_id=round_id
-                        ):
-                            loop.call_soon_threadsafe(_put, wav, idx, n)
-                            n += 1
-                            if stop:  # 被抢占:不再往下合成,generator 就地关闭
-                                break
-                    diag.mark("tts_call_exit", idx=idx, n_chunks=n)
-                    return n
-                diag.mark("tts_call_begin", idx=idx)
-                try:
-                    await asyncio.to_thread(_run)
-                except tts.TTSCancelled:
-                    diag.mark("tts_cancelled", idx=idx)
-                    return
-                except tts.TTSError as exc:
-                    stats["errors"] += 1
-                    diag.mark("tts_error", idx=idx, detail=str(exc)[:80])
-                    conn.log(
-                        "degraded", level="WARN",
-                        reason="tts_sentence_failed", detail=str(exc)[:120],
-                    )
-                    continue
-                except Exception as exc:  # noqa: BLE001 — 单句失败不杀整回合
-                    stats["errors"] += 1
-                    diag.mark("tts_error", idx=idx, detail=str(exc)[:80])
-                    conn.log(
-                        "degraded", level="WARN",
-                        reason="tts_sentence_failed", detail=str(exc)[:120],
-                    )
-                    continue
-        finally:
-            audio_q.put_nowait(None)
-
-    read_task = asyncio.create_task(_read_llm(), name=f"llm-read-{round_id}")
-    synth_task = asyncio.create_task(_synth(), name=f"tts-synth-{round_id}")
-
-    async def _emit_text() -> bool:
-        """hold-one 保证末帧 final=True(与 stream_final 同思路)。"""
-        pending: str | None = None
-        while True:
-            piece = await text_q.get()
-            if piece is None:
-                break
-            if pending is not None:
-                diag.mark("ws_text_sent", size=len(pending))
-                await emitter.text(pending)
-            pending = piece
-        if pending is None:
-            return False
-        diag.mark("ws_text_sent", size=len(pending), last=True)
-        await emitter.text(pending, final=True)
-        return True
-
-    async def _emit_audio() -> bool:
-        """收到就发,不 hold。
-
-        这里刻意**不**做 hold-one:hold-one 是为了给最后一块标 final=True,
-        代价是每句最后一块都要压到「下一句第一块到达」才下发 —— 实测把首块音频
-        从 6.6s 推到 10.0s,等于丢掉一整句的延迟。
-
-        final 在流式路径上恒为 False:前端 round.ts 对 audio_chunk 直接 break、
-        AudioQueue 也不读该字段,契约 §3.4 标注"可不依赖"。
-        单发路径(危机热线/安抚语/总结/fillers)只有一块,那里 final=True 无成本。
-        """
-        sent = False
-        n = 0
-        while True:
-            item = await audio_q.get()
-            if item is None:
-                break
-            if dead():
-                break
-            if pcm_mode:
-                chunk, audio_seq = item
-                diag.mark("ws_pcm_sent", n=n, nbytes=len(chunk.pcm))
-                await conn.send_pcm(
-                    chunk.pcm,
-                    round_id=chunk.round_id,
-                    # 回合内全局号,跨句连续(ws-contract §3.4;服务端的 seq 是
-                    # 每请求号,句子泵一句一请求,直接透传会重复)
-                    audio_seq=audio_seq,
-                    sample_rate=chunk.sample_rate,
-                    channels=chunk.channels,
-                    final=False,
-                )
-            else:
-                diag.mark("ws_audio_sent", n=n, nbytes=len(item))
-                await conn.send_audio(item, final=False, round_id=round_id)
-            n += 1
-            sent = True
-        return sent
-
-    # 文字与音频必须**并发**下发。之前串行(先把 text_q 抽干再发音频)会导致
-    # 首块音频要等 LLM 整段出完才落地 —— 那就不是流式了。
-    text_sent, audio_sent = await asyncio.gather(
-        asyncio.create_task(_emit_text(), name=f"emit-text-{round_id}"),
-        asyncio.create_task(_emit_audio(), name=f"emit-audio-{round_id}"),
-    )
-    await asyncio.gather(read_task, synth_task, return_exceptions=True)
-
-    if not audio_sent and stats["errors"] == 0 and text_sent:
-        conn.log("tts_absent", level="INFO", reason="no_audio_produced")
-    conn.log(
-        "tts_answer_done",
-        sentences=stats["sentences"], chunks=stats["chunks"],
-        errors=stats["errors"], audio_sent=audio_sent,
-    )
-    # 返回值语义必须与 stream_final 一致:**这回合有没有发过帧**。
-    # 之前误返回 audio_sent,于是「语音没出来但文字正常」会被上层当成空流,
-    # 再补一句兜底文案 —— 等于把回答重复一遍。
-    return text_sent
 
 
 async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> None:

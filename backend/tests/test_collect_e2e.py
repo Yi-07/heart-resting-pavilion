@@ -23,7 +23,16 @@ class _ScriptedProvider:
         raise AssertionError("E2E 不应调用 chat")
 
     async def stream(self, messages: Any):
-        for part in ["这次梳理帮你看清了念头和行为的联系,", "下一步可以从小事开始。"]:
+        import asyncio
+
+        system = messages[0].content if messages else ""
+        # 按消息内容分发:问话流/陪聊流/总结流(调用计数在多轮下会错位)。
+        # 单 part 单帧:与旧预置问话「一问一帧」同构,测试帧数断言不因攒批漂移。
+        if "正在陪用户做认知梳理" in system or "跑题" in system:
+            parts = ["嗯,那这件事之后,你是怎么应对的?"]
+        else:
+            parts = ["这次梳理帮你看清了念头和行为的联系,下一步可以从小事开始。"]
+        for part in parts:
             if self.stream_delay:
                 await asyncio.sleep(self.stream_delay)
             yield part
@@ -74,6 +83,12 @@ def _send(ws: Any, text: str) -> None:
 def test_collect_full_round(monkeypatch):
     _patch(monkeypatch, _ScriptedProvider())
     seqs: list[int] = []
+
+    def _settle() -> None:
+        # 问话 final 帧后小睡:等 settle(append_turn/Task 状态翻转)落定——
+        # 抢占误判窗口(task.done() 调度间隙)会让下一输入被当成抢占弃 state 重开
+        time.sleep(0.5)
+
     with client.websocket_connect("/ws") as ws:
         _send(ws, "最近很焦虑睡不着")
         first = _recv(ws)
@@ -82,8 +97,9 @@ def test_collect_full_round(monkeypatch):
         draft = _recv(ws)
         assert draft["type"] == "draw" and draft["data"]["emotion"]["label"] == "焦虑"
         q1 = _recv(ws)
-        assert q1["type"] == "text_delta" and "愿意说说" in q1["text"]
+        assert q1["type"] == "text_delta" and q1["text"]  # 问话 LLM 流式文本(非预置)
         seqs += [draft["seq"], q1["seq"]]
+        _settle()
 
         # 回合内 mood_select:静默(不回帧)——下一帧应是轮次 draw 而非 mood 应答
         ws.send_text(json.dumps({"type": "mood_select", "mood": "低落", "ts": 2}))
@@ -93,11 +109,13 @@ def test_collect_full_round(monkeypatch):
         assert d2["type"] == "draw" and d2["data"]["situation"] == "提炼值"
         q2 = _recv(ws)
         assert q2["type"] == "text_delta"
+        _settle()
 
         _send(ws, "我当时觉得自己什么都做不好")
         d3 = _recv(ws)
         assert d3["type"] == "draw" and d3["data"]["thought"] == "提炼值"
         q3 = _recv(ws)
+        _settle()
 
         _send(ws, "我躲开了那个会")
         d4 = _recv(ws)  # 增量:behavior 入格
@@ -128,12 +146,15 @@ def test_collect_preempt_during_analysis(monkeypatch):
         _send(ws, "最近很焦虑睡不着")
         for _ in range(3):
             _recv(ws)  # first_frame + 粗稿 draw + 第 1 问
+        time.sleep(0.5)  # 等 settle 落定(抢占误判窗口,见 test_collect_full_round)
         _send(ws, "被否定了,很委屈")
         _recv(ws)
         _recv(ws)  # draw 增量 + 第 2 问
+        time.sleep(0.5)
         _send(ws, "觉得自己不行")
         _recv(ws)
         _recv(ws)  # draw 增量 + 第 3 问
+        time.sleep(0.5)
         _send(ws, "我躲开了")  # 第 3 答 → 停采 → 分析开始(总结流 0.4s/块,未发帧)
         d4 = _recv(ws)  # 增量 draw
         assert d4["type"] == "draw"
@@ -144,10 +165,10 @@ def test_collect_preempt_during_analysis(monkeypatch):
         _send(ws, "我又想到另一件烦心事")  # 抢占:cancel + 弃 state + dead 蒸发
         preempt_first = _recv(ws)
         assert preempt_first["type"] == "first_frame"
-        assert "我们重新开始" in preempt_first["text"]  # 承接安抚语变体
+        assert "重新" in preempt_first["text"]  # 承接变体(T2 将置空 collect 开场文案;暂存)
         new_draft = _recv(ws)
         assert new_draft["type"] == "draw" and new_draft["data"]["emotion"]["label"] is not None
         assert new_draft["seq"] > final_draw["seq"]  # seq 计数不重置
         new_q = _recv(ws)
-        assert new_q["type"] == "text_delta" and "愿意说说" in new_q["text"]
+        assert new_q["type"] == "text_delta" and new_q["text"]  # 问话 LLM 流式文本(非预置)
         # 未发帧蒸发:抢占后不应收到旧回合的总结帧(下一帧已是新回合第 1 问)

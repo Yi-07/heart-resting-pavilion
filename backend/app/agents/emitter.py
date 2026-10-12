@@ -110,3 +110,24 @@ class ConnEmitter:
             await self._conn.send_audio(chunk)
         except Exception:  # noqa: BLE001 — 音频缺席无副作用(WS 断开等)
             self.log("degraded", level="WARN", reason="audio_send_failed")
+
+    async def ask_stream(self, chunks: AsyncIterator[str], *, first_max_hanzi: int) -> bool:
+        """问话 LLM 流式出口:句子泵(文字攒批发帧+逐句 TTS);dead 时整流蒸发。
+
+        与 answer 同构复用(契约 §6.2);返回是否发出过文字帧(False=调用方
+        走 ask_llm_failed 挂起重试)。trace 取连接当前回合号——图调用总在
+        当前回合任务内,ask 进入时未变;抢占后 trace 变化由泵 dead() 判定。
+        """
+        if self.dead:
+            return False
+        from app.agents.sentence_pump import run_sentence_pump
+
+        trace = self._conn.current_trace
+        return await run_sentence_pump(
+            self._conn,
+            self,
+            chunks,
+            self._conn.tts_round_id(trace),
+            trace,
+            first_max_hanzi=first_max_hanzi,
+        )

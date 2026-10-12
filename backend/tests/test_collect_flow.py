@@ -1,16 +1,17 @@
 """collect 图接缝(backend-plan §3):entry→AskNext→轮次填格→充分度→分析→Finish;
-降级两路(off_topic 陪聊 / negative 收尾);Escalate(risk 复核)。LLM 全 stub。"""
+降级两路(off_topic 陪聊 / negative 收尾);Escalate(risk 复核);问话 LLM 失败
+挂起(AskFailed)。LLM 全 stub。"""
 
 import pytest
 
-from app.agents import AskNext, EmpathChat, Escalate, Finish, Turn, run_collect
+from app.agents import AskFailed, AskNext, EmpathChat, Escalate, Finish, Turn, run_collect
 from app.agents.state import CollectState
 from app.llm import LLMError, Message
 from app.schema import Formulation
 
 
 class _ScriptedProvider:
-    """按 schema 名分发的 stub:提取/复核/risk/总结流各自可编程"""
+    """按 schema 名分发的 stub:提取/复核/risk/总结流/问话流各自可编程"""
 
     def __init__(
         self,
@@ -21,6 +22,8 @@ class _ScriptedProvider:
         stream_parts: list[str] | None = None,
         stream_delay: float = 0.0,
         assets: dict[str, str] | None = None,
+        ask_parts: list[str] | None = None,
+        ask_error: bool = False,
     ) -> None:
         self.extract = extract if extract is not None else {"value": "提炼后的短句", "off_topic": False}
         self.review = review if review is not None else {"label": "焦虑", "intensity": 0.8}
@@ -29,6 +32,9 @@ class _ScriptedProvider:
         self.stream_parts = stream_parts or ["总结第一段", "总结第二段"]
         self.stream_delay = stream_delay
         self.assets = assets or {}
+        self.ask_parts = ask_parts if ask_parts is not None else ["嗯,那后来呢?", "你当时在想什么?"]
+        self.ask_error = ask_error
+        self.ask_messages: list[list[Message]] = []
 
     async def chat(self, messages: list[Message]) -> str:
         raise AssertionError("collect 图测试不应调用 chat")
@@ -36,10 +42,20 @@ class _ScriptedProvider:
     async def stream(self, messages: list[Message]):
         import asyncio
 
-        for part in self.stream_parts:
-            if self.stream_delay:
-                await asyncio.sleep(self.stream_delay)
-            yield part
+        self.ask_messages.append(messages)
+        if self.ask_error:
+            raise LLMError("问话断流")
+        # 首次调用=问话流,其后=总结流;两者文本可区分断言
+        if len(self.ask_messages) > 1:
+            for part in self.stream_parts:
+                if self.stream_delay:
+                    await asyncio.sleep(self.stream_delay)
+                yield part
+        else:
+            for part in self.ask_parts:
+                if self.stream_delay:
+                    await asyncio.sleep(self.stream_delay)
+                yield part
 
     async def chat_json(self, messages: list[Message], schema: type):
         name = getattr(schema, "__name__", "")
@@ -78,7 +94,7 @@ class _ScriptedProvider:
 
 
 class _Recorder:
-    """记录 draw/text 的假 emitter"""
+    """记录 draw/text 的假 emitter;ask_stream 模拟句子泵(消费流攒批发 text)"""
 
     def __init__(self) -> None:
         self.draws: list[Formulation] = []
@@ -96,6 +112,20 @@ class _Recorder:
 
     def log(self, event: str, level: str = "INFO", **fields: object) -> None:
         self.logs.append(event)
+
+    async def ask_stream(self, chunks, **kwargs: object) -> bool:
+        from app.agents.emitter import batched_chunks
+
+        sent = False
+        pending: str | None = None
+        async for batch in batched_chunks(chunks):
+            if pending is not None:
+                await self.text(pending)
+            pending = batch
+            sent = True
+        if pending is not None:
+            await self.text(pending, final=True)
+        return sent
 
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch, provider: _ScriptedProvider) -> None:
@@ -129,7 +159,9 @@ async def test_happy_path_three_rounds_to_finish(monkeypatch):
     assert isinstance(ev1, AskNext) and ev1.target_field == "situation"
     assert len(rec.draws) == 1  # 粗稿
     assert rec.draws[0].emotion.label == "焦虑"  # 快速研判入粗稿
-    assert any("愿意说说" in t for t, _ in rec.texts)  # 第 1 问来自预置库
+    assert any("当时在想" in t or "后来呢" in t for t, _ in rec.texts)  # 第 1 问来自 LLM 流
+    assert ev1.question  # AskNext 携问话全文(无 confirm 字段,契约 §3.4)
+    assert cs.pending_question is not None and cs.pending_question.text == ev1.question
 
     for answer in ("被领导当众否定了", "觉得自己什么都做不好", "躲开了会议"):
         cs.turns.append(Turn(role="user", text=answer))
@@ -148,7 +180,7 @@ async def test_happy_path_three_rounds_to_finish(monkeypatch):
 
 
 async def test_off_topic_degrades_to_chat_then_resumes(monkeypatch):
-    off = _ScriptedProvider(extract={"value": None, "off_topic": True})
+    off = _ScriptedProvider(extract={"value": None, "off_topic": True}, ask_parts=["嗯,慢慢来,不急。"])
     _patch_llm(monkeypatch, off)
     cs = _state()
     rec = _Recorder()
@@ -158,12 +190,39 @@ async def test_off_topic_degrades_to_chat_then_resumes(monkeypatch):
     cs.turns.append(Turn(role="user", text="你听说过昨天那个热搜吗"))  # 答非所问
     ev = await run_collect(cs, rec)
     assert isinstance(ev, EmpathChat)  # 陪聊轮,不填格无 draw
+    assert ev.reply  # 陪聊回应由 LLM 流产出(非固定文案)
     assert len(rec.draws) == 1
 
     _patch_llm(monkeypatch, _ScriptedProvider())  # 回到正题
     cs.turns.append(Turn(role="user", text="还是说回我吧"))
     ev2 = await run_collect(cs, rec)
     assert isinstance(ev2, AskNext)  # 清降级位,恢复提问
+
+
+async def test_ask_llm_failed_suspends_and_retries(monkeypatch):
+    """问话 LLM 失败 → AskFailed(不发预置问句、不填格不计数);下一条输入重试成功。
+    (ask_retry 置位是网关 settle 职责,挂起消费在图 prepare。)"""
+    cs = _state()
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
+
+    bad = _ScriptedProvider(ask_error=True)
+    _patch_llm(monkeypatch, bad)
+    ev = await run_collect(cs, rec)
+    assert isinstance(ev, AskFailed)
+    assert cs.pending_question is None  # 不落预置问句(不掩盖错误)
+    assert cs.round_index == 0  # 失败轮不计数
+    assert not rec.texts  # 失败路径零文字帧(无预置兜底文本)
+
+    # 下一条输入:挂起重试(网关置位模拟),回答尚未被消费 → 不计轮、直接重问
+    cs.ask_retry = True
+    cs.turns.append(Turn(role="user", text="被领导当众否定了,很焦虑"))
+    good = _ScriptedProvider()
+    _patch_llm(monkeypatch, good)
+    ev2 = await run_collect(cs, rec)
+    assert isinstance(ev2, AskNext)
+    assert cs.ask_retry is False
+    assert cs.round_index == 0  # 重试轮不推进计数(该回答随后由下一调用消费)
 
 
 async def test_cross_field_extraction_fills_multiple(monkeypatch):

@@ -3,6 +3,7 @@
 from .emitter import ConnEmitter, batched_chunks, stream_final
 from .graph import run_collect, where_next
 from .state import (
+    AskFailed,
     AskNext,
     CollectEvent,
     CollectState,
@@ -15,6 +16,7 @@ from .state import (
 )
 
 __all__ = [
+    "AskFailed",
     "AskNext",
     "CollectEvent",
     "CollectState",

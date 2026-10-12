@@ -84,7 +84,6 @@ def test_next_field_order_and_skip():
     assert collect.next_field(cs) == "intermediate_belief"
 
 
-def test_question_retry_variant():
-    first = collect.question_for("thought")
-    retry = collect.question_for("thought", retry=True)
-    assert first != retry
+def test_field_info_need_covers_ask_order():
+    """问序单源:每字段都有信息需求描述(问话 prompt 消费;话术归 LLM,无预置)。"""
+    assert set(collect.FIELD_INFO_NEED) == set(collect.ASK_ORDER)

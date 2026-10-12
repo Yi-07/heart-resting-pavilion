@@ -1,18 +1,19 @@
 """collect 图(backend-plan §5;LangGraph StateGraph,确定性条件边)。
 
-每次 user_input = 一次短图调用,跑到「等待下一条输入」(AskNext/EmpathChat)
+每次 user_input = 一次短图调用,跑到「等待下一条输入」(AskNext/EmpathChat/AskFailed)
 或「回合终结」(Finish/Escalate)即返回;CollectState 挂连接对象,节点只读写;
 相位不落 state——去向由 where_next 纯函数从 escalate/degrade/sufficiency/
 round_index 算出。emitter 经 config 注入,不进 state。
 
 节点:prepare(entry 粗稿 / 轮次填格+打分+降级)→ softscan → cond(where_next)
-  ask(确认+下一问,预置问题库) / chat(共情陪聊,off_topic) / risk+analysis
+  ask(问话 LLM 流式+逐句 TTS) / chat(共情陪聊 LLM) / risk+analysis
+问话:提取(chat_json)与问话(stream)拆双调用(spec L4);LLM 失败 → AskFailed
+  (error 帧+采集挂起重试,不发预置问句兜底);确认语由问话流自然带出(无独立 confirm)。
 softscan:每轮软预筛(gate.SOFT_TERMS 过全部 user 轮,spec §4 L5)→ 新增命中
   (risk_reviewed_terms 去重)才 LLM 复核;risk=终结路径增量复核(同一去重)。
   复核失败不升级(WARN 记录,硬闸门已每条过)。情绪强度环比上升检测二期。
 analysis:emotion 复核(两级标签第二级)→ 精稿 draw → RAG 引用 → 流式总结
   → 邀请语(phrases,不走 LLM);LLM 失败话术兜底,精稿照发。
-MVP 润色跳过:问话骨架全预置(性能热点 §6:预置优先于 LLM 生成)。
 """
 
 import asyncio
@@ -24,10 +25,11 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from app import collect
-from app.agents import analysis
+from app.agents import analysis, ask
 from app.agents.emitter import ConnEmitter, stream_final
 from app.agents.extract import extract_fields
 from app.agents.state import (
+    AskFailed,
     AskNext,
     CollectEvent,
     CollectState,
@@ -146,8 +148,11 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
     cs = state["cs"]
     em = _emitter(config)
 
-    if cs.round_index == 0 and cs.pending_question is None:
-        # entry:粗稿(快速研判标签入 emotion,intensity 缺省)
+    retry_pending = cs.ask_retry
+    cs.ask_retry = False  # 消费挂起标记(仅轮次分支用;entry 分支不经过下面逻辑)
+    if not retry_pending and cs.round_index == 0 and cs.pending_question is None:
+        # entry:粗稿(快速研判标签入 emotion,intensity 缺省)。ask_retry 挂起时
+        # pending_question=None 且 round_index 可能仍为 0,不能误走 entry 重发粗稿
         if cs.emotion_label and cs.formulation.emotion.label is None:
             cs.formulation.emotion = Emotion(label=cs.emotion_label)
         cs.sufficiency = collect.sufficiency(cs.formulation)
@@ -158,7 +163,9 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
     # 轮次:消费最近一条 user 轮为本轮回答(ADR-005:assistant 轮也入 turns,
     # turns[-1] 可能是上一问——按 role 倒查,不能只取末条)
     answer = next((t.text for t in reversed(cs.turns) if t.role == "user"), "")
-    cs.round_index += 1
+    if not retry_pending:
+        # 问话失败挂起后的重试轮:该回答还没被消费过,round_index 不加(失败轮不计数)
+        cs.round_index += 1
     pending = cs.pending_question
 
     if pending is None:
@@ -207,31 +214,65 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
     return {}
 
 
+class _TeeStream:
+    """包装 LLM 流:边喂句子泵边攒全量(问话/陪聊文本落事件与 pending_question)。"""
+
+    def __init__(self, chunks: AsyncIterator[str]) -> None:
+        self._it = chunks.__aiter__()
+        self.parts: list[str] = []
+
+    def __aiter__(self) -> "_TeeStream":
+        return self
+
+    async def __anext__(self) -> str:
+        piece = await self._it.__anext__()
+        self.parts.append(piece)
+        return piece
+
+
 async def _ask(state: GraphState, config: RunnableConfig) -> dict:
+    """问话 LLM 流式生成(spec L4:问题生成行):提取与问话拆双调用,文本流式
+    出帧+逐句 TTS(emitter.ask_stream 句子泵);失败 → AskFailed(采集挂起,
+    网关发 error 帧,不发预置问句兜底)。target_field 由字段选择单源定;
+    问话全文进 pending_question(下轮提取的「问题」语境)与 AskNext 事件(热层落账)。"""
     cs = state["cs"]
     em = _emitter(config)
     field = collect.next_field(cs)
     if field is None:  # 全满兜底(正常应被充分度拦截)
         return {"event": Finish(cause="sufficient")}
+    answer = next((t.text for t in reversed(cs.turns) if t.role == "user"), "")
     retry = cs.degrade_reason == "too_short"
-    question = collect.question_for(field, retry=retry)
-    if cs.round_index == 0:
-        confirm = ""  # entry 首问:尚无内容可确认,不带"记下了"式确认语
-    elif retry:
-        confirm = phrases.RETRY_ACK
-    else:
-        confirm = phrases.CONFIRM_BY_FIELD[field]
+    messages = ask.ask_messages(cs, field, answer, retry=retry, memories=cs.recalled_memories)
+    stream = _TeeStream(get_provider().stream(messages))
+    try:
+        sent = await em.ask_stream(stream, first_max_hanzi=ask.first_max_hanzi())
+    except LLMError:
+        sent = False
+    if not sent:
+        em.log("ask_llm_failed", level="WARN", target_field=field)
+        return {"event": AskFailed(source="ask")}
+    question = "".join(stream.parts)
     cs.pending_question = PendingQuestion(text=question, target_field=field)
     cs.degrade_reason = None
-    await em.text(f"{confirm}{question}", final=True)
-    return {"event": AskNext(confirm=confirm, next_question=question, target_field=field)}
+    return {"event": AskNext(question=question, target_field=field)}
 
 
 async def _chat(state: GraphState, config: RunnableConfig) -> dict:
+    """陪聊轮 LLM 回应(PRD:EMPATH_CHAT_REPLY 固定文案废弃);失败同走 AskFailed。"""
+    cs = state["cs"]
     em = _emitter(config)
-    reply = phrases.EMPATH_CHAT_REPLY
-    await em.text(reply, final=True)
-    return {"event": EmpathChat(reply=reply)}
+    answer = next((t.text for t in reversed(cs.turns) if t.role == "user"), "")
+    stream = _TeeStream(
+        get_provider().stream(ask.chat_messages(cs, answer, memories=cs.recalled_memories))
+    )
+    try:
+        sent = await em.ask_stream(stream, first_max_hanzi=ask.first_max_hanzi())
+    except LLMError:
+        sent = False
+    if not sent:
+        em.log("ask_llm_failed", level="WARN", source="chat")
+        return {"event": AskFailed(source="chat")}
+    return {"event": EmpathChat(reply="".join(stream.parts))}
 
 
 class _RiskOut(BaseModel):

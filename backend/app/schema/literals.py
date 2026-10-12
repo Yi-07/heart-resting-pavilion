@@ -17,5 +17,5 @@ TemplateId = Literal[
 MoodKey = Literal["难过", "低落", "平静", "还好", "开心", "很好"]
 """心情六档(§4.2)"""
 
-ErrorCode = Literal["invalid_message", "timeout", "server_error"]
-"""error 帧 code(§3.6)"""
+ErrorCode = Literal["invalid_message", "timeout", "server_error", "ask_llm_failed"]
+"""error 帧 code(§3.7);ask_llm_failed=问话 LLM 失败,采集态挂起待重试"""

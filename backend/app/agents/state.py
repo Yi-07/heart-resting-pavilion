@@ -83,6 +83,9 @@ class CollectState:
     """最近一轮 extract 的原始选材输出(待校验);每轮重置,只活单次图调用。"""
     recalled_memories: list[dict[str, Any]] = field(default_factory=list)
     """回合内已召回的语义记忆条目(注入点暂存;笔记 LLM 状态闭环语境,回合末消费后随态弃)。"""
+    ask_retry: bool = False
+    """问话 LLM 失败挂起标记:挂起等下一条输入重试,消费(问话成功或终结)即复位。
+    挂起期间 formulate/round_index 冻结(失败轮不填格不计数)。"""
 
 
 # ---- 图出口事件(§3.4;网关按事件收尾,不读 state 内部) ----
@@ -90,8 +93,9 @@ class CollectState:
 
 @dataclass(frozen=True)
 class AskNext:
-    confirm: str
-    next_question: str
+    # 问话 LLM 流式产出(backend-plan §3.3:AskNext 只携带问句与所问字段,
+    # confirm 不再独立成字段——确认语由问话流自然带出)
+    question: str
     target_field: FieldKey
 
 
@@ -113,4 +117,12 @@ class Escalate:
     pass
 
 
-CollectEvent = AskNext | EmpathChat | Finish | Escalate
+@dataclass(frozen=True)
+class AskFailed:
+    """问话/陪聊 LLM 失败:网关发 error(ask_llm_failed)+ 采集态挂起待重试
+    (ws-contract §3.7/§8;不发预置问句兜底)。挂起=ask_retry 置位,下一条输入重试。"""
+
+    source: Literal["ask", "chat"] = "ask"
+
+
+CollectEvent = AskNext | EmpathChat | Finish | Escalate | AskFailed
