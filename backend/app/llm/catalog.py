@@ -18,6 +18,17 @@ from app.llm.presets import (
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$")
 _SPECIAL = {"realtime", "audio", "transcribe", "tts", "asr", "embedding", "embeddings", "rerank", "moderation", "image", "computer", "research"}
 _PRETTY = {"gpt": "GPT", "qwen": "Qwen", "kimi": "Kimi", "deepseek": "DeepSeek", "claude": "Claude", "gemini": "Gemini", "glm": "GLM", "openai": "OpenAI", "vl": "VL"}
+_SUGGESTED = {
+    # 这些是 UI 的常用起步候选；最终仍会经过 LiteLLM 最小调用验证。
+    "deepseek": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
+    "qwen": ["qwen3.8-flash", "qwen3.8-max", "qwen3.7-plus", "qwen3.7-flash", "qwen3.5-plus", "qwen3-max", "qwen-plus", "qwen-turbo"],
+    "kimi": ["kimi-k2", "kimi-k2-thinking", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    "glm": ["glm-5", "glm-4.5-air", "glm-4-flash", "glm-4-plus", "glm-4-long"],
+    "openai": ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-cyber", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"],
+    "gemini": ["gemini-3.1-pro", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"],
+    "claude": ["claude-opus-4.7", "claude-sonnet-4.7", "claude-haiku-4.5", "claude-sonnet-4", "claude-3-7-sonnet"],
+    "ollama": ["qwen3:8b", "qwen3:14b", "llama3.3:70b", "gemma3:12b", "deepseek-r1:8b", "mistral:7b"],
+}
 _cache: tuple[ProviderCatalog, ...] | None = None
 _live: OrderedDict[tuple[str, str], frozenset[str]] = OrderedDict()
 
@@ -60,16 +71,7 @@ def _brand_match(preset: ProviderPreset, model_id: str) -> bool:
 
 
 def _catalog_entries(preset: ProviderPreset) -> list[str]:
-    fallback = {
-        "deepseek": ["deepseek-chat", "deepseek-reasoner"],
-        "qwen": ["qwen-plus", "qwen-turbo"],
-        "kimi": ["moonshot-v1-8k", "kimi-k2"],
-        "glm": ["glm-4-flash", "glm-4-plus"],
-        "openai": ["gpt-4o-mini", "gpt-4o"],
-        "gemini": ["gemini-2.0-flash", "gemini-1.5-pro"],
-        "claude": ["claude-3-5-sonnet-latest"],
-        "ollama": ["qwen:8b", "llama3.1:8b"],
-    }
+    fallback = _SUGGESTED
     try:
         from app.llm.provider import load_litellm
         model_cost: dict[str, Any] = getattr(load_litellm(), "model_cost", {})
@@ -86,7 +88,7 @@ def _catalog_entries(preset: ProviderPreset) -> list[str]:
         if model_id.startswith("ft:") or tokens & _SPECIAL or not _brand_match(preset, model_id):
             continue
         result.append(model_id)
-    return result or fallback.get(preset.id, [])
+    return list(dict.fromkeys([*fallback.get(preset.id, []), *result]))
 
 
 def get_catalog(*, refresh: bool = False) -> tuple[ProviderCatalog, ...]:

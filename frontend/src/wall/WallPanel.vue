@@ -104,7 +104,7 @@ onUnmounted(() => { if (poll !== null) clearInterval(poll) })
     </div>
     <p v-if="error" class="wall-error">{{ error }}</p>
     <form class="wall-compose" @submit.prevent="submit">
-      <textarea v-model="draft" :disabled="busy" maxlength="2000" rows="3" placeholder="写下此刻想说的话…" />
+      <textarea v-model="draft" :disabled="busy" maxlength="2000" rows="3" placeholder="写下此刻想说的话…" @keydown.enter.exact.prevent="submit" />
       <div class="compose-foot"><span>{{ draft.length }}/2000</span><button class="primary-action" type="submit" :disabled="busy || !draft.trim()"><LoaderCircle v-if="busy" class="spin" :size="15" /><Send v-else :size="15" />写下留言</button></div>
     </form>
     <button class="clear-wall" type="button" @click="confirmClear = true"><Eraser :size="14" />清空留言墙</button>
