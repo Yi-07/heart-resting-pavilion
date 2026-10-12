@@ -7,6 +7,7 @@ import type {
   Emotion,
   EmotionWheelData,
   EmotionWheelDatum,
+  ErrorCode,
   Formulation,
   StageMapData,
 } from '../messages'
@@ -40,6 +41,14 @@ const STAGE_MAP_KEYS = {
   current: true,
   from: true,
 } as const satisfies Record<keyof StageMapData, true>
+
+/** error code 全集(契约 §3.7 表);satisfies 钉住与 ErrorCode 联合同步 */
+const ERROR_CODES = {
+  invalid_message: true,
+  timeout: true,
+  server_error: true,
+  ask_llm_failed: true,
+} as const satisfies Record<ErrorCode, true>
 
 function contractText(): string {
   return readFileSync(CONTRACT_PATH, 'utf-8')
@@ -100,5 +109,13 @@ describe('契约对齐:ws-contract §5.1 ↔ messages.ts', () => {
   it('stage_map 测试模板字段名与契约一致', () => {
     const bullets = templateBullets()
     expect(bodyKeys(bullets.stage_map ?? '').sort()).toEqual(sortedKeys(STAGE_MAP_KEYS))
+  })
+
+  it('error code 全集与契约 §3.7 表一致(含 ask_llm_failed)', () => {
+    // 契约 §3.7 的 code 表 4 行;后端 ErrorCode 枚举与前端联合由本测试双向钉住
+    const section = contractText().match(/\| code \| 含义 \|([\s\S]*?)^---/m)?.[1]
+    if (section === undefined) throw new Error('ws-contract §3.7 code 表缺失')
+    const codes = [...section.matchAll(/^\| `?([a-z_]+)`? \|/gm)].map((m) => m[1]!)
+    expect(codes.sort()).toEqual(sortedKeys(ERROR_CODES))
   })
 })

@@ -430,6 +430,32 @@ def test_finish_archives_round_three_actions(monkeypatch, fake_memory, tmp_repor
     assert row["round_id"] == "r0"  # 挂起重试轮不计,entry 回合 round_index=0
 
 
+def test_ask_llm_failed_suspends_collect(monkeypatch, fake_memory):
+    """问话 LLM 失败(网关 settle 面,契约 §8.4):error(ask_llm_failed) 帧 + 采集态
+    挂起(ask_retry 置位);无 done——前端辐条呈现,下一条输入重试。
+    (挂起消费/重试语义由 test_collect_flow 图层钉;此处钉网关帧序与置位。)"""
+    from app.agents import AskFailed
+    from app.agents.state import CollectState
+
+    captured: dict[str, CollectState] = {}
+
+    async def _stub_run(cs, emitter):
+        captured["cs"] = cs
+        return AskFailed(source="ask")
+
+    monkeypatch.setattr("app.agents.run_collect", _stub_run)
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "最近很焦虑睡不着")
+        assert _recv(ws)["type"] == "first_frame"
+        err = _recv(ws)
+        assert err["type"] == "error"
+        assert err["code"] == "ask_llm_failed"
+        assert "小栖" in err["message"] or err["message"]  # 辐条文案由后端给
+    assert captured["cs"].ask_retry is True  # 挂起标记置位(下一条输入重试)
+    assert captured["cs"].round_index == 0  # 失败轮不计数
+    assert captured["cs"].pending_question is None  # 不落预置问句(不掩盖错误)
+
+
 def test_reconnect_adopts_session_id(monkeypatch):
     """契约 §8.4:带原 session_id 的 user_input → 后端认领(done 帧带回原 id)。"""
     stub = _StreamStub(["好" * 20])
