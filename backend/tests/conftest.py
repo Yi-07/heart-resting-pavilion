@@ -44,7 +44,7 @@ class FakeMemory:
         self.calls.append(("save_round_summary", {"session_id": session_id, "summary": summary}))
 
     async def save_station_input(
-        self, session_id: str, formulation_json: str, summary: str
+        self, session_id: str, formulation_json: str, summary: str, *, round_id: str = "0"
     ) -> None:
         self.calls.append(
             (
@@ -53,9 +53,18 @@ class FakeMemory:
                     "session_id": session_id,
                     "formulation_json": formulation_json,
                     "summary": summary,
+                    "round_id": round_id,
                 },
             )
         )
+        # 写回返回口:回合末自动生成(方案书裁定)归档后立即 load 素材,
+        # 不写回会话内 save→load 断流,触发被静默跳过
+        if self.station_input is None:
+            self.station_input = {
+                "formulation": formulation_json,
+                "summary": summary,
+                "round_id": round_id,
+            }
 
     async def load_station_input(self, session_id: str) -> dict[str, Any] | None:
         self.calls.append(("load_station_input", {"session_id": session_id}))

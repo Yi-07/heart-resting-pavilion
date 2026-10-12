@@ -683,9 +683,11 @@ async def _archive_round(
     summary: str, trace: int, cause: FinishCause,
 ) -> None:
     """Finish 归档三动作(shield 下执行,断连取消不打断;B2 发现⑤)。"""
+    round_id = f"r{state.round_index}"
     await memory.save_round_summary(conn.session_id, summary)
     await memory.save_station_input(
-        conn.session_id, state.formulation.model_dump_json(by_alias=True), summary
+        conn.session_id, state.formulation.model_dump_json(by_alias=True), summary,
+        round_id=round_id,
     )
     label = state.formulation.emotion.label
     if label:
@@ -705,6 +707,18 @@ async def _archive_round(
         summary_len=len(summary),
     )
     _spawn_note_task(conn, state, trace)
+    # 方案书回合末自动生成(spec「L5 · 计划制定者」):归档后后台起任务,done
+    # 照发不等待;素材损坏/记忆降级由 station 侧降级纪律兜底,不杀回合收尾
+    try:
+        material = await memory.load_station_input(conn.session_id)
+        if material is not None:
+            from app.station.routes import start_auto_generate
+
+            await start_auto_generate(conn.session_id, round_id, material)
+        else:
+            conn.log("degraded", level="WARN", reason="station_auto_material_missing")
+    except Exception as exc:  # noqa: BLE001 — 自动生成触发失败不杀回合收尾
+        conn.log("degraded", level="WARN", reason="station_auto_generate_failed", detail=str(exc)[:120])
     if summary:
         # 总结语音异步流出(done 后到达,抢占即蒸发):不占 60s 处理窗口,
         # 长总结不再触发 timeout 兜底;ws-contract §6.2 时序措辞已同步

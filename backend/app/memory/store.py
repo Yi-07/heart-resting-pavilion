@@ -209,11 +209,18 @@ class Memory:
             logger.warning("memory_degraded", layer="warm", reason=str(exc)[:120])
 
     async def save_station_input(
-        self, session_id: str, formulation_json: str, summary: str
+        self, session_id: str, formulation_json: str, summary: str, *, round_id: str = "0"
     ) -> None:
-        """station:input 懒生成素材(回合末写;步骤 9 补给站消费)。"""
+        """station:input 懒生成素材(回合末写;步骤 9 补给站消费)。
 
-        payload = json.dumps({"formulation": formulation_json, "summary": summary}, ensure_ascii=False)
+        round_id 随素材落账:方案书按回合键生成/历史保留(reports 表主键同源);
+        手动重生成从素材读回该回合号。
+        """
+
+        payload = json.dumps(
+            {"formulation": formulation_json, "summary": summary, "round_id": round_id},
+            ensure_ascii=False,
+        )
         try:
             await self._redis.set(
                 _station_key(session_id), payload, ex=config.MEMORY_WARM_TTL_S

@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.llm import LLMError
 from app.main import app
-from app.schema import Formulation, StationReportResponse, StationReportStatus
+from app.schema import Emotion, Formulation, StationReportResponse, StationReportStatus
 from app.station.planner import DISCLAIMER, generate_report
 from app.station.reports import get_reports
 
@@ -23,7 +23,12 @@ client = TestClient(app)
 
 def _material(summary: str = "焦虑睡不着的总结") -> dict[str, Any]:
     f = Formulation(situation="加班到很晚", thought="我做得不够好")
-    return {"formulation": f.model_dump_json(by_alias=True), "summary": summary}
+    f.emotion = Emotion(label="疲惫", intensity=0.6)
+    return {
+        "formulation": f.model_dump_json(by_alias=True),
+        "summary": summary,
+        "round_id": "r2",
+    }
 
 
 class _RagStub:
@@ -63,16 +68,35 @@ def test_cors_preflight_allowed():
 
 
 def test_reports_upsert_latest_wins(tmp_reports: Any):
-    get_reports().upsert("s", "pending")
-    assert get_reports().get("s") is not None
-    get_reports().upsert("s", "ready", "第一稿")
-    row = get_reports().get("s")
+    get_reports().upsert("s", "pending", round_id="r0")
+    assert get_reports().get_latest("s") is not None
+    get_reports().upsert("s", "ready", "第一稿", round_id="r0")
+    row = get_reports().get_latest("s")
     assert row is not None and row["status"] == "ready" and row["report_md"] == "第一稿"
-    get_reports().upsert("s", "ready", "第二稿")  # 重新生成=覆盖旧稿
-    row = get_reports().get("s")
+    get_reports().upsert("s", "ready", "第二稿", round_id="r0")  # 同回合重新生成=覆盖
+    row = get_reports().get_latest("s")
     assert row is not None and row["report_md"] == "第二稿"
     assert get_reports().clear_all() == 1
-    assert get_reports().get("s") is None
+    assert get_reports().get_latest("s") is None
+
+
+def test_reports_history_by_round(tmp_reports: Any):
+    """(session_id, round_id) 主键历史保留:新回合新增行,get_latest 取最新回合。"""
+    get_reports().upsert("s", "ready", "第 0 回合稿", round_id="r0", emotion_label="焦虑")
+    get_reports().upsert("s", "pending", round_id="r1", emotion_label="低落")
+    row = get_reports().get_latest("s")
+    assert row is not None and row["round_id"] == "r1" and row["status"] == "pending"
+    assert row["emotion_label"] == "低落"
+    get_reports().upsert("s", "ready", "第 1 回合稿", round_id="r1", emotion_label="低落")
+    row = get_reports().get_latest("s")
+    assert row is not None and row["status"] == "ready" and row["report_md"] == "第 1 回合稿"
+    # 旧回合行还在(历史保留)
+    with sqlite3.connect(tmp_reports._db_path) as conn:
+        rows = conn.execute(
+            "SELECT round_id, status FROM station_reports WHERE session_id='s' ORDER BY round_id"
+        ).fetchall()
+    assert rows == [("r0", "ready"), ("r1", "ready")]
+    assert get_reports().clear_all() == 2
 
 
 # ---- REST 端点 ----
@@ -120,12 +144,14 @@ def test_generate_flow_pending_to_ready(
         assert res.json() == {"status": "pending"}
         row = None
         for _ in range(200):  # 后台任务在 portal loop 落地,轮询行
-            row = get_reports().get("s1")
+            row = get_reports().get_latest("s1")
             if row is not None and row["status"] == "ready":
                 break
             time.sleep(0.02)
         assert row is not None and row["status"] == "ready"
         assert row["report_md"] == "# 心理成长方案\n\n生成稿"
+        assert row["round_id"] == "r2"  # 素材 round_id 落账(手动重生成同键)
+        assert row["emotion_label"] == "疲惫"  # 素材研判标签落账
         latest = c.get("/station/report/latest", params={"session_id": "s1"})
         assert latest.json() == {"status": "ready", "report_md": "# 心理成长方案\n\n生成稿"}
     assert got == ["焦虑睡不着的总结"]
@@ -185,6 +211,65 @@ def test_generate_stale_pending_reaccepted(
         res = c.post("/station/report/generate", params={"session_id": "s1"})
         assert res.status_code == 200
     assert started == 2  # 陈旧 pending(任务已死)重新受理
+
+
+def test_auto_generate_round_end(
+    fake_memory: Any, tmp_reports: Any, monkeypatch: pytest.MonkeyPatch
+):
+    """回合末自动生成(方案书裁定):start_auto_generate 按回合键落 pending 后台起任务;
+    同回合重复触发(重连/收尾重放)在鲜 pending 窗内不重复起任务。"""
+    started = 0
+
+    async def _stub(f: Formulation, summary: str) -> str:
+        nonlocal started
+        started += 1
+        return "# 自动稿"
+
+    monkeypatch.setattr("app.station.planner.generate_report", _stub)
+    from app.station.routes import start_auto_generate
+
+    async def _drive() -> None:
+        await start_auto_generate("s9", "r0", _material())
+        await start_auto_generate("s9", "r0", _material())  # 鲜 pending:防重
+        for _ in range(200):
+            row = get_reports().get_latest("s9")
+            if row is not None and row["status"] == "ready":
+                break
+            await asyncio.sleep(0.02)
+
+    asyncio.run(_drive())
+    row = get_reports().get_latest("s9")
+    assert row is not None and row["status"] == "ready" and row["report_md"] == "# 自动稿"
+    assert row["round_id"] == "r0"
+    assert started == 1
+
+
+def test_auto_generate_new_round_appends(
+    fake_memory: Any, tmp_reports: Any, monkeypatch: pytest.MonkeyPatch
+):
+    """第二回合 Finish:新 round_id 行新增,latest 指向新回合(历史保留)。"""
+    from app.station.routes import start_auto_generate
+
+    async def _drive() -> None:
+        await start_auto_generate("s8", "r0", _material("第一回合小结"))
+        for _ in range(200):
+            row = get_reports().get_latest("s8")
+            if row is not None and row["status"] == "ready":
+                break
+            await asyncio.sleep(0.02)
+        await start_auto_generate("s8", "r1", _material("第二回合小结"))
+        for _ in range(200):
+            row = get_reports().get_latest("s8")
+            if row is not None and row["round_id"] == "r1" and row["status"] == "ready":
+                break
+            await asyncio.sleep(0.02)
+
+    asyncio.run(_drive())
+    row = get_reports().get_latest("s8")
+    assert row is not None and row["round_id"] == "r1"
+    with sqlite3.connect(tmp_reports._db_path) as conn:
+        n = conn.execute("SELECT COUNT(*) FROM station_reports WHERE session_id='s8'").fetchone()[0]
+    assert n == 2  # 两回合各一行(历史保留)
 
 
 # ---- planner ----

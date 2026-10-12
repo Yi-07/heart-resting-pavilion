@@ -7,6 +7,7 @@
 
 import asyncio
 import json
+import time
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -17,6 +18,7 @@ from app.llm import LLMError
 from app.logger import capture_events
 from app.main import app
 from app.rag.corpus import RagLibrary, Ref
+from app.station.reports import get_reports
 
 client = TestClient(app)
 
@@ -390,18 +392,27 @@ def test_mood_select_recorded_to_cold_layer(fake_memory):
     assert calls[0][1]["source"] == "mood_select"
 
 
-def test_finish_archives_round_three_actions(monkeypatch, fake_memory):
-    """回合三动作:温层摘要+station:input(研判 mood 需 emotion 已填,此处空态不记)。"""
+def test_finish_archives_round_three_actions(monkeypatch, fake_memory, tmp_reports):
+    """回合三动作:温层摘要+station:input(研判 mood 需 emotion 已填,此处空态不记)。
+
+    方案书回合末自动生成(方案书裁定):归档后素材在 → start_auto_generate 被触发,
+    done 照发不等待;reports 表落 pending/ready 行(round_id=回合号)。"""
     from app.agents.state import Finish
 
     async def _stub_run(cs, emitter):
         return Finish(cause="sufficient", summary="测试总结文本")
 
+    async def _stub_report(f, summary):
+        return "# 自动生成稿"
+
     monkeypatch.setattr("app.agents.run_collect", _stub_run)
+    monkeypatch.setattr("app.station.planner.generate_report", _stub_report)
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "最近很焦虑睡不着")
-        assert _recv(ws)["type"] == "first_frame"
-        assert _recv(ws)["type"] == "done"
+        first = _recv(ws)
+        assert first["type"] == "first_frame"
+        assert _recv(ws)["type"] == "done"  # done 照发:自动生成不拖收尾
+        session_id = first["session_id"]
     names = [c[0] for c in fake_memory.calls]
     assert "save_round_summary" in names
     assert "save_station_input" in names
@@ -409,6 +420,14 @@ def test_finish_archives_round_three_actions(monkeypatch, fake_memory):
     assert saved["save_round_summary"]["summary"] == "测试总结文本"
     assert saved["save_station_input"]["summary"] == "测试总结文本"
     assert "situation" in saved["save_station_input"]["formulation_json"]
+    row = None
+    for _ in range(200):  # 后台生成在 portal loop 落地,轮询行
+        row = get_reports().get_latest(session_id)
+        if row is not None and row["status"] == "ready":
+            break
+        time.sleep(0.02)
+    assert row is not None and row["status"] == "ready" and row["report_md"] == "# 自动生成稿"
+    assert row["round_id"] == "r0"  # 挂起重试轮不计,entry 回合 round_index=0
 
 
 def test_reconnect_adopts_session_id(monkeypatch):

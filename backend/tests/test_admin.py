@@ -46,7 +46,7 @@ def test_clear_memory_clears_all_three(fake_memory: Any, tmp_reports: Any):
         "reports": 1,
         "semantic": 0,
     }
-    assert tmp_reports.get("s") is None
+    assert tmp_reports.get_latest("s") is None
     assert ("clear_all", {}) in fake_memory.calls
     assert ("clear_all", {}) in fake_memory.semantic.calls  # 语义层一并清除
 
