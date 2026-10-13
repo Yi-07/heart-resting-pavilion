@@ -4,8 +4,16 @@
 
 import pytest
 
-from app.agents import AskFailed, AskNext, EmpathChat, Escalate, Finish, Turn, run_collect
-from app.agents.state import CollectState
+from app.agents import (
+    AskFailed,
+    AskNext,
+    EmpathChat,
+    Escalate,
+    Finish,
+    Turn,
+    run_collect,
+)
+from app.agents.state import CollectState, PendingQuestion
 from app.llm import LLMError, Message
 from app.schema import Formulation
 
@@ -194,17 +202,58 @@ async def test_off_topic_degrades_to_chat_then_resumes(monkeypatch):
     rec = _Recorder()
     cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
     await run_collect(cs, rec)  # entry → AskNext(situation)
+    assert cs.round_index == 1  # 第 1 问发出计数
 
     cs.turns.append(Turn(role="user", text="你听说过昨天那个热搜吗"))  # 答非所问
     ev = await run_collect(cs, rec)
     assert isinstance(ev, EmpathChat)  # 陪聊轮,不填格无 draw
     assert ev.reply  # 陪聊回应由 LLM 流产出(非固定文案)
     assert len(rec.draws) == 1
+    assert cs.round_index == 1  # 陪聊轮不占轮次(轮计提问轮)
 
     _patch_llm(monkeypatch, _ScriptedProvider())  # 回到正题
     cs.turns.append(Turn(role="user", text="还是说回我吧"))
     ev2 = await run_collect(cs, rec)
     assert isinstance(ev2, AskNext)  # 清降级位,恢复提问
+    assert cs.round_index == 2  # 第 2 问发出才计数
+
+
+async def test_off_topic_stays_chat_until_round_budget_exhausted_by_questions_only(monkeypatch):
+    """陪聊驻留不占轮次(裁定 2026-10-13):连续陪聊后轮数预算只由提问消耗——
+    max_rounds=1 时陪聊任意多轮不触发 finish(max_rounds),第 2 问发出才到顶。"""
+    off = _ScriptedProvider(extract={"value": None, "off_topic": True}, ask_parts=["嗯。"])
+    _patch_llm(monkeypatch, off)
+    cs = _state()
+    cs.max_rounds = 1
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
+    await run_collect(cs, rec)  # entry → AskNext,round_index=1 已到 max_rounds
+    assert cs.round_index == cs.max_rounds
+
+    for text in ("聊聊天气吧", "你吃了吗", "热搜看了吗"):
+        cs.turns.append(Turn(role="user", text=text))
+        ev = await run_collect(cs, rec)
+        assert isinstance(ev, EmpathChat)  # 陪聊轮不触发 finish(max_rounds)
+        assert cs.round_index == 1
+
+
+async def test_chat_messages_carries_pending_question_guide(monkeypatch):
+    """陪聊 prompt 引导回题(spec「陪聊引导」):挂起提问的 info_need 进 prompt,
+    system 段带衔接约束;问话 LLM 化后 entry 后挂起提问恒在,断言其存在。"""
+    from app.agents import ask as ask_mod
+
+    cs = _state()
+    cs.pending_question = PendingQuestion(text="当时你在想什么?", target_field="thought")
+    msgs = ask_mod.chat_messages(cs, "聊聊天气吧")
+    user_text = msgs[1].content
+    assert "自动思维" in user_text  # thought 字段的 info_need 进 prompt
+    assert "还没聊完" in user_text
+    assert "前面你提到" in msgs[0].content  # system 段回指点题约束
+
+    cs.pending_question = None
+    msgs_plain = ask_mod.chat_messages(cs, "聊聊天气吧")
+    assert "还没聊完" not in msgs_plain[1].content  # 无挂起提问只共情不引导
+    assert "前面你提到" not in msgs_plain[0].content
 
 
 async def test_ask_llm_failed_suspends_and_retries(monkeypatch):
@@ -219,10 +268,10 @@ async def test_ask_llm_failed_suspends_and_retries(monkeypatch):
     ev = await run_collect(cs, rec)
     assert isinstance(ev, AskFailed)
     assert cs.pending_question is None  # 不落预置问句(不掩盖错误)
-    assert cs.round_index == 0  # 失败轮不计数
+    assert cs.round_index == 0  # 失败轮不计数(轮计提问轮:问话未发出)
     assert not rec.texts  # 失败路径零文字帧(无预置兜底文本)
 
-    # 下一条输入:挂起重试(网关置位模拟),回答尚未被消费 → 不计轮、直接重问
+    # 下一条输入:挂起重试(网关置位模拟),回答尚未被消费 → 直接重问;重问发出才计轮
     cs.ask_retry = True
     cs.turns.append(Turn(role="user", text="被领导当众否定了,很焦虑"))
     good = _ScriptedProvider()
@@ -230,7 +279,7 @@ async def test_ask_llm_failed_suspends_and_retries(monkeypatch):
     ev2 = await run_collect(cs, rec)
     assert isinstance(ev2, AskNext)
     assert cs.ask_retry is False
-    assert cs.round_index == 0  # 重试轮不推进计数(该回答随后由下一调用消费)
+    assert cs.round_index == 1  # 重试问话发出:第 1 问计数(该回答随后由下一调用消费)
 
 
 async def test_cross_field_extraction_fills_multiple(monkeypatch):

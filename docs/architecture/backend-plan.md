@@ -72,7 +72,7 @@
 | 字段 | 类型 | 初始值 | 写入者 |
 |---|---|---|---|
 | formulation | Formulation | 全 null | entry 提取（填实质字段+emotion）→ 轮次填格 → 分析（emotion_review 合入） |
-| round_index | int | 0 | 轮次处理（每条回答 +1） |
+| round_index | int | 0 | 提问轮计数（问话发出 +1；陪聊轮与降级轮不计，spec「多轮采集器」轮定义） |
 | sufficiency | float | 0.0 | 充分度打分（每次填格后重算，§4） |
 | degrade_reason | DegradeReason\|None | None | 降级检测；None 表示未降级，布尔派生 |
 | pending_question | PendingQuestion\|None | None | 问话 LLM 产出时写，下条回答消费（回答填哪格由它定） |
@@ -97,7 +97,8 @@ entry 调用:字段提取+选材(首条输入即提取,entry 即提取)→ 粗�
 每轮:softscan 软预筛+新增命中 LLM 复核(spec §4 L5「每轮预筛/命中复核」;
   risk_reviewed_terms 去重,同一软词整会话只复核一次)
 轮次调用:填 formulation → draw 增量 → 充分度重算 → where_next
-  → 继续问:第 i 问(问话 LLM 流式,确认语自然带出;陪聊轮不填格、无 draw)
+  → 继续问:第 i 问(问话 LLM 流式,确认语自然带出;陪聊轮不填格、无 draw、
+    不计轮,回应后带出指向挂起提问信息需求的引导语句)
   → 终结:充分度 ≥0.7 ｜ round_index ≥ max_rounds ｜ 降级收尾
 终结调用:risk 增量复核(命中→escalated=True 即止)→ emotion_review 合入 → 精稿 draw → 总结+邀请语 → done
 回合结束(网关三动作):温层写本回合摘要 → Redis 写 station:input{formulation,summary,round_id}(TTL 7 天)→ 弃 state

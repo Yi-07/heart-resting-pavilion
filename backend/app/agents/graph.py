@@ -3,7 +3,8 @@
 每次 user_input = 一次短图调用,跑到「等待下一条输入」(AskNext/EmpathChat/AskFailed)
 或「回合终结」(Finish/Escalate)即返回;CollectState 挂连接对象,节点只读写;
 相位不落 state——去向由 where_next 纯函数从 escalate/degrade/sufficiency/
-round_index 算出。emitter 经 config 注入,不进 state。
+round_index 算出。轮计提问轮:round_index 只在 ask 发出问话时递增,陪聊/降级/
+重试轮不占轮次。emitter 经 config 注入,不进 state。
 
 节点:prepare(entry 即提取+粗稿 / 轮次填格+打分+降级)→ softscan → cond(where_next)
   ask(问话 LLM 流式+逐句 TTS) / chat(共情陪聊 LLM) / risk+analysis
@@ -191,9 +192,8 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
     # 轮次:消费最近一条 user 轮为本轮回答(ADR-005:assistant 轮也入 turns,
     # turns[-1] 可能是上一问——按 role 倒查,不能只取末条)
     answer = next((t.text for t in reversed(cs.turns) if t.role == "user"), "")
-    if not retry_pending:
-        # 问话失败挂起后的重试轮:该回答还没被消费过,round_index 不加(失败轮不计数)
-        cs.round_index += 1
+    # 轮计提问轮(spec「多轮采集器」):round_index 只在 _ask 发出问话时递增;
+    # 陪聊轮/降级轮/重试轮都不占轮次
     pending = cs.pending_question
 
     if pending is None:
@@ -282,6 +282,7 @@ async def _ask(state: GraphState, config: RunnableConfig) -> dict:
     question = "".join(stream.parts)
     cs.pending_question = PendingQuestion(text=question, target_field=field)
     cs.degrade_reason = None
+    cs.round_index += 1  # 轮计提问轮:问话发出才计数(陪聊/降级/重试轮不计)
     return {"event": AskNext(question=question, target_field=field)}
 
 

@@ -68,7 +68,10 @@ def ask_messages(
 def chat_messages(
     cs: CollectState, answer: str, *, memories: list[dict[str, object]] | None = None
 ) -> list[Message]:
-    """陪聊轮 prompt(off_topic 共情回应;PRD:EMPATH_CHAT_REPLY 固定文案废弃)。"""
+    """陪聊轮 prompt(off_topic 共情回应;PRD:EMPATH_CHAT_REPLY 固定文案废弃)。
+
+    引导回题(spec「陪聊引导」):回应后带出一句指向挂起提问信息需求的语句;
+    无挂起提问(entry 前打岔等)只共情不引导。"""
     user = f"用户这轮的话:{answer}"
     filled = ", ".join(
         f"{key}={value}"
@@ -77,20 +80,29 @@ def chat_messages(
     )
     if filled:
         user += f"\n此前梳理到的内容:{filled}"
+    pending = cs.pending_question
+    if pending is not None:
+        user += (
+            f"\n有个还没聊完的话题:{collect_info_need(pending.target_field)}"
+            "（用户还没说到这部分）"
+        )
     if memories:
         mem_desc = "\n".join(f"- {m['text']}" for m in memories)
         user += (
             "\n\n你可能还记得用户之前聊过这些(相关时自然衔接,没提就别翻旧账):\n" + mem_desc
         )
-    return [
-        Message(
-            "system",
-            "你是心栖阁的共情陪伴者。用户暂时跑题了或没接上梳理的问题,"
-            "不评判、不硬拉回正题,先自然地接住这轮的话(短回应,60 字内),"
-            "口语化、温暖,不做医疗诊断。",
-        ),
-        Message("user", user),
-    ]
+    system = (
+        "你是心栖阁的共情陪伴者。用户暂时跑题了或没接上梳理的问题,"
+        "不评判、不硬拉回正题,先自然地接住这轮的话(短回应,60 字内),"
+        "口语化、温暖,不做医疗诊断。"
+    )
+    if pending is not None:
+        system += (
+            "接住之后,用一句与回应自然衔接的话,把话题轻轻带回那个还没聊完的部分——"
+            "比如顺着共同点问下去;实在没有关联,就点一下它(「前面你提到的…」)。"
+            "只带一句,用户接不接由他,别追问别催。"
+        )
+    return [Message("system", system), Message("user", user)]
 
 
 def collect_info_need(field: FieldKey) -> str:
