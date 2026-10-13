@@ -328,6 +328,7 @@ function submit(): void {
   const text = draft.value.trim()
   if (text === '' || wsStatus.value !== 'open') return
   audio.flush() // user_sent 即 flush 旧回合音频(PRD:发送瞬间旧声 ~120ms 淡出让位)
+  chat.finalize() // 封口旧流式消息:抢占保留采集态后旧半截问句不再接收续写(契约 §7)
   client.send({ type: 'user_input', text, ts: Math.floor(Date.now() / 1000) })
   round.transition({ kind: 'user_sent' })
   chat.appendUser(text)

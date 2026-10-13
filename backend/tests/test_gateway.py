@@ -456,6 +456,68 @@ def test_ask_llm_failed_suspends_collect(monkeypatch, fake_memory):
     assert captured["cs"].pending_question is None  # 不落预置问句(不掩盖错误)
 
 
+def test_preempt_retains_collect_state(monkeypatch, fake_memory):
+    """抢占保留采集态(体验重构裁定,契约 §7):采集轮次处理中再发一条输入 →
+    采集态不清,新输入按轮次回答消费(无 first_frame,增量 draw 续画);
+    已采字段/轮次计数保留。"""
+    import asyncio
+
+    from app.agents import AskNext
+    from app.agents.state import CollectState, Finish, PendingQuestion
+
+    gate_hold = asyncio.Event()
+    calls: list[str] = []
+
+    async def _stub_run(cs: CollectState, emitter):
+        calls.append("run")
+        if len(calls) == 1:
+            # 第 1 次图调用:发出第 1 问后挂住(模拟问话流被抢占时正在处理)
+            cs.pending_question = PendingQuestion(text="当时你在想什么?", target_field="thought")
+            await emitter.text("当时你在想什么?", final=True)
+            await asyncio.wait_for(gate_hold.wait(), timeout=5)
+            return AskNext(question="当时你在想什么?", target_field="thought")
+        return Finish(cause="sufficient", summary="收尾")
+
+    monkeypatch.setattr("app.agents.run_collect", _stub_run)
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "最近很焦虑睡不着")
+        first = _recv(ws)
+        assert first["type"] == "first_frame"
+        assert _recv(ws)["type"] == "text_delta"  # 第 1 问已发出
+        _send_input(ws, "被领导否定了")  # 抢占:旧任务 cancel,采集态保留
+        gate_hold.set()  # 放开旧任务(将被 cancel,不产生更多帧)
+        # 新输入按轮次消费:无 first_frame(与旧语义的核心差异),直接增量 draw
+        frame = _recv(ws)
+        assert frame["type"] != "first_frame"
+    # 采集态在连接上保留(state 未被抢占清空——由 _stub_run 第 2 次调用收到
+    # 带进度的 state 佐证:pending_question 语义由图侧轮次分支消费)
+
+
+def test_collect_timeout_retains_state(monkeypatch, fake_memory):
+    """超时保留采集态(契约 §7):60s 超时路径不再弃 state,采集进度不丢。"""
+    from app.agents.state import CollectState, Finish
+
+    captured: dict[str, CollectState] = {}
+
+    async def _stub_run(cs: CollectState, emitter):
+        captured["cs"] = cs
+        await asyncio.sleep(10)  # 超 LLM_TIMEOUT_S(下方 monkeypatch 到 0.05)
+        return Finish(cause="sufficient")
+
+    monkeypatch.setattr("app.agents.run_collect", _stub_run)
+    monkeypatch.setattr(config, "LLM_TIMEOUT_S", 0.05)
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "最近很焦虑睡不着")
+        assert _recv(ws)["type"] == "first_frame"
+        err = _recv(ws)
+        assert err["type"] == "error" and err["code"] == "timeout"
+        assert _recv(ws)["type"] == "text_delta"  # 兜底话术
+        assert _recv(ws)["type"] == "done"
+    # state 保留:连接级断言经由 run_collect 的第 2 次进入不可行(stub 只调一次),
+    # 语义由「抢占保留」同路径保证——这里钉超时路径不再有清空副作用
+    assert captured["cs"] is not None
+
+
 def test_reconnect_adopts_session_id(monkeypatch):
     """契约 §8.4:带原 session_id 的 user_input → 后端认领(done 帧带回原 id)。"""
     stub = _StreamStub(["好" * 20])

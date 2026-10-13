@@ -302,8 +302,9 @@ async def _on_message(conn: Connection, raw: str) -> None:
             await conn.send_error("server_error", "心情上报处理失败,对话不受影响")
         return
 
-    # user_input:抢占当前处理(分析中 cancel + 弃 state + 旧 emitter 标 dead
-    # → 未发帧蒸发),新任务接管;轮次回答不经过此处销毁(state 仅在处理中被弃)。
+    # user_input:抢占当前处理(分析中 cancel + 旧 emitter 标 dead → 未发帧蒸发),
+    # 新任务接管;**采集态保留**(体验重构裁定:进度不丢,新输入由图当本轮回答
+    # 消费,无 first_frame 无清板);轮次回答不经过此处销毁(state 仅在收尾/危机时弃)。
     # 已知边界:task.done() 判定在「done 帧已发→Task 状态翻转」的调度窗口内有
     # 误判可能(挂起态被误清、抢占后重开),间歇性,记 backlog 待单独修复
     preempted = False
@@ -327,7 +328,9 @@ async def _on_message(conn: Connection, raw: str) -> None:
     )
     conn.cancel_tts()
     if preempted and conn.collect_state is not None:
-        conn.collect_state = None
+        # 流式中途 cancel 的半截问句不落 pending_question(_ask 在泵返回后才赋值),
+        # ask_retry 未置位——新输入走轮次分支消费,旧问句语境自然失效,无需补偿
+        conn.log("preempt_collect_retained")
     conn.current = asyncio.create_task(_process_user_input(conn, msg))
     # 不 await:立刻回收下一条,保持抢占窗口
 
@@ -482,17 +485,14 @@ async def _process_user_input(conn: Connection, msg: UserInput) -> None:
                 timeout=config.LLM_TIMEOUT_S,
             )
     except asyncio.TimeoutError:
-        # 挂起态(打岔支线)失败不弃采集:ADR-003「挂起不清空」,只结束 answer 支线
-        if conn.collect_state is None or not conn.collect_state.suspended:
-            conn.collect_state = None
+        # 采集态保留(同抢占语义):超时只结束本次处理,进度不丢,下一条输入继续;
+        # 挂起态(打岔支线)本就不弃采集(ADR-003)
         conn.log("degraded", level="WARN", trace_id=trace, reason="timeout")
         await conn.send_error("timeout", "这次回应太慢了,先给你一句兜底")
         await conn.send_text(phrases.ANSWER_FALLBACK, final=True)
         await conn.send_done()
     except Exception as exc:  # noqa: BLE001 — 网关收口:任何异常 error 帧 + 不崩连接
-        # 同上:挂起中的采集进度不被 answer 支线异常拖累
-        if conn.collect_state is None or not conn.collect_state.suspended:
-            conn.collect_state = None
+        # 采集态保留(同抢占语义):异常只结束本次处理,进度不丢
         conn.log(
             "error", level="ERROR", trace_id=trace, code="server_error", detail=str(exc)[:160]
         )
@@ -618,7 +618,8 @@ async def _crisis_sequence(conn: Connection) -> None:
 async def _collect_sequence(conn: Connection, trace: int, text: str, cls: Classification) -> None:
     state = conn.collect_state
     if state is None:
-        # entry:first_frame(≤300ms 语义,规则速判)+ 建态;抢占后重开也走这里;
+        # entry:first_frame(≤300ms 语义,规则速判)+ 建态;抢占不清采集态后,
+        # 这里只剩首次进入/收尾后/危机后重开三种;
         # 热层 snapshot 恢复上下文(重连/续话,契约 §8.4;记忆不可用降级空档)
         # 板式接力:建态=scene_default 暖场景开场,图内首次实质披露切
         # scene_focus;template 单源在 state

@@ -52,7 +52,7 @@
 
 - 每条 user_input = **一次短图调用**：网关先过危机闸门 → 未命中则带着现有 CollectState 调图，跑到「等待下一条输入」或「回合终结」即返回
 - CollectState 挂在 **WS 连接对象**上，图节点只读写、不持有；同一时刻至多一个调用在跑
-- 销毁触发点（任一即弃，不抢救）：done 发出 · 新 user_input 抢占 · 超时 · 危机命中 · 断线/进程重启
+- 销毁触发点（任一即弃，不抢救）：done 发出 · 危机命中 · 断线/进程重启。**抢占与超时不清采集态**——进度保留，新输入按轮次回答消费；仅旧 emitter 标记 dead，未发帧蒸发
 - 相位不落 state：下一步动作由条件边纯函数 `where_next(state)` 从 route/degrade_reason/sufficiency/round_index 算出，出口事件见 §3.4，分派图见 §5
 
 ### 3.2 CollectState 字段（17）
@@ -186,7 +186,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 - 每连接：建 session_id；`user_input/mood_select` 入口；输入单源文本（语音经 `/asr/transcribe` REST 转写预览、用户确认后按文本发送，ADR-004；网关无 audio 分支）
 - **发号**：所有 S→C 帧经网关发送函数，盖章即发送（seq 预增，首帧为 1）；仅 draw/text_delta/audio_chunk/done 消耗号，first_frame/error 不带不消耗；计数器为连接对象内存（会话内全局递增，ws-contract「3.2 draw」）
 - **两条来路**：网关直发（first_frame/危机序列/error/done）；图内 emitter 注入（config 传递，不进 state）发 draw/text_delta/audio_chunk——Emitter 协议三方法：draw（formulation） · text（s） · audio（chunk）
-- 抢占：等待期弃 state 直接 entry；分析中 cancel 图调用 + 旧 emitter 标记 dead（未发帧蒸发）→ entry；前端淡出停播（frontend-plan「6. WS 消息 → 前端行为」）
+- 抢占：**采集态保留**（新输入由图当本轮回答消费，无 first_frame，黑板续画）；取消当前图调用，旧 emitter 标记 dead（未发帧蒸发）；前端淡出停播（frontend-plan「6. WS 消息 → 前端行为」）
 - 非法消息 → `error(invalid_message)`；超时（锚点见 [ws-contract.md](ws-contract.md)「回合与中断」）→ `error(timeout)` + 降级话术 + done；异常 → `error(server_error)`
 
 **帧映射（发射侧唯一事实）**

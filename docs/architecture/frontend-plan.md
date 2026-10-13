@@ -69,8 +69,10 @@ collecting ──充分度达标(后端停采集)──▶ analysis(显示"收�
 analysis ──draw(精稿)+text_delta──▶ final
 final ──done──▶ idle
 任意状态 ──error──▶ idle(温和兜底)
-任意状态 ──新 first_frame──▶ collecting(新回合抢占,清黑板)
+任意状态 ──新 first_frame──▶ collecting（危机/新 collect entry，清黑板）
 ```
+
+- **抢占恢复**：采集期新输入后端**不发新 first_frame**（采集态保留，见 ws-contract「回合与中断」）——前端无清板，增量 draw 直接续画；发送（user_sent）即封口旧流式消息（chat.finalize），新回复另起一条
 
 - **心情选择器**：collecting 开始时浮出，10s 超时自动收起；crisis 不浮
 - **crisis**：first_frame（route=crisis）→ 显示热线横幅 + 支持性画面（scene_crisis）

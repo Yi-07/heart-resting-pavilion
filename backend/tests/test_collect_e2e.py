@@ -1,7 +1,7 @@
 """collect 网关 E2E(CLAUDE.md §8 用例 2 后端判据):first_frame(text 恒空)→
 entry 提取粗稿 draw → 逐轮增量 draw → 精稿 draw → 分析总结 + 补给站邀请语 →
-done;seq 单调递增;信念字段留白;mood_select 回合内静默;分析中抢占 → 未发帧蒸发 +
-新回合 first_frame 照常。LLM 全 stub(provider 按调用方模块替换),RAG stub。"""
+done;seq 单调递增;信念字段留白;mood_select 回合内静默;分析中抢占 → 采集态
+保留(无 first_frame)新输入消费后照常收尾。LLM 全 stub(provider 按调用方模块替换),RAG stub。"""
 
 import asyncio
 import json
@@ -142,6 +142,8 @@ def test_collect_full_round(monkeypatch):
 
 
 def test_collect_preempt_during_analysis(monkeypatch):
+    """分析期抢占(契约 §7 新语义):采集态保留,新输入按轮次消费——
+    充分度已达标 → 直接收尾(等待话术+精稿+总结),不发新 first_frame。"""
     _patch(monkeypatch, _ScriptedProvider(stream_delay=0.4))
     with client.websocket_connect("/ws") as ws:
         _send(ws, "最近很焦虑睡不着")
@@ -160,13 +162,17 @@ def test_collect_preempt_during_analysis(monkeypatch):
         assert final_draw["type"] == "draw"
         time.sleep(0.12)  # 总结流挂起中 → 抢占窗口(portal 线程继续跑分析)
 
-        _send(ws, "我又想到另一件烦心事")  # 抢占:cancel + 弃 state + dead 蒸发
-        preempt_first = _recv(ws)
-        assert preempt_first["type"] == "first_frame"
-        assert preempt_first["text"] == ""  # 开场文案恒空串(契约 §3.1,T2 置空)
-        new_draft = _recv(ws)
-        assert new_draft["type"] == "draw" and new_draft["data"]["emotion"]["label"] is not None
-        assert new_draft["seq"] > final_draw["seq"]  # seq 计数不重置
-        new_q = _recv(ws)
-        assert new_q["type"] == "text_delta" and new_q["text"]  # 问话 LLM 流式文本(非预置)
-        # 未发帧蒸发:抢占后不应收到旧回合的总结帧(下一帧已是新回合第 1 问)
+        _send(ws, "我又想到另一件烦心事")  # 抢占:cancel + 采集态保留(旧 emitter dead 蒸发)
+        # 新语义:无 first_frame(不发新回合),新输入被消费后充分度 0.75 达标 → 收尾
+        resumed = _recv(ws)
+        assert resumed["type"] != "first_frame"  # 采集态保留,恢复不发新回合起点
+        # 收尾帧序:P7 等待话术 → 精稿 → 总结 → 邀请语 → done
+        types = []
+        while True:
+            frame = _recv(ws)
+            types.append(frame["type"])
+            if frame["type"] == "done":
+                break
+        assert "draw" in types  # 精稿照发
+        assert types[-1] == "done"
+        # 未发帧蒸发:抢占前旧回合的总结文本帧不得再到达(旧 emitter 已 dead)
