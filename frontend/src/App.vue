@@ -4,6 +4,7 @@
 //   draw:黑板增量渲染;text_delta:气泡/抽屉流式;audio_chunk:入队;done/error:收口回 idle
 // 工具栏 route-tabs 为被动指示(路由只在后端判定);Live2D/语音留位(步骤 7/8)。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { AlertCircle, CheckCircle2, Info } from 'lucide-vue-next'
 import { logger } from './logger'
 import { WSClient } from './ws/client'
 import type { S2CMsg } from './ws/messages'
@@ -61,8 +62,17 @@ const frames = ref<{ kind: string; brief: string }[]>([])
 const practiceOpen = ref(false)
 const wallOpen = ref(false)
 const wallUnread = ref(false)
+type ToastTone = 'success' | 'error' | 'info'
+const toast = ref<{ message: string; tone: ToastTone } | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
 
 const avatar = computed(() => avatarSvg(expressionFor(round.emotionLabel)))
+
+function showToast(payload: { message: string; tone?: ToastTone }): void {
+  toast.value = { message: payload.message, tone: payload.tone ?? 'success' }
+  if (toastTimer !== null) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toast.value = null; toastTimer = null }, 3200)
+}
 
 // ── 状态 chip(prototypes/ui-taste 定稿):图标+英文链路+状态灯,三部分同步切换 ──
 // answer 无 first_frame 帧信号(契约 §3.1),chip 显示 idle/collect/crisis 三态,与旧 route-tabs 同局限。
@@ -256,6 +266,7 @@ watch(
 onUnmounted(() => {
   disposeLive2D()
   l2d = null
+  if (toastTimer !== null) clearTimeout(toastTimer)
 })
 
 function submit(): void {
@@ -393,7 +404,7 @@ function toggleMic(): void {
     <StationPanel />
 
     <!-- 设置:模型配置 + 记忆治理(趋势/一键清除带两步确认) -->
-    <SettingsPanel />
+    <SettingsPanel @toast="showToast" />
     <PracticePanel :open="practiceOpen" @close="practiceOpen = false" />
     <WallPanel :open="wallOpen" @close="wallOpen = false" @unread="wallUnread = $event" />
 
@@ -439,6 +450,12 @@ function toggleMic(): void {
 
   <!-- 危机横幅 + 审计标签(后端规则硬判才出现,前端零判定逻辑) -->
   <div v-if="wsReconnecting" class="ws-banner" data-testid="ws-banner">连接断开了，正在重连…</div>
+  <div v-if="toast" class="app-toast" :class="`tone-${toast.tone}`" role="status" aria-live="polite">
+    <CheckCircle2 v-if="toast.tone === 'success'" :size="15" />
+    <AlertCircle v-else-if="toast.tone === 'error'" :size="15" />
+    <Info v-else :size="15" />
+    <span>{{ toast.message }}</span>
+  </div>
   <div v-if="round.crisis" class="crisis-banner" data-testid="crisis-banner">
     <span class="cb-ic">
       <svg viewBox="0 0 24 24">
@@ -1069,6 +1086,30 @@ function toggleMic(): void {
   border-radius: 12px;
   box-shadow: 0 12px 30px -14px rgba(62, 58, 53, 0.35);
 }
+
+.app-toast {
+  position: fixed;
+  top: 112px;
+  left: 50%;
+  z-index: 66;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 9px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  color: #587060;
+  background: rgba(248, 252, 248, 0.94);
+  box-shadow: 0 14px 34px -18px rgba(57, 74, 61, 0.5);
+  backdrop-filter: blur(18px) saturate(1.25);
+  transform: translateX(-50%);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+.app-toast.tone-error { color: #a45a4e; background: rgba(255, 246, 241, 0.96); }
+.app-toast.tone-info { color: #66756c; }
 
 /* ── 危机横幅 + 审计 ── */
 .crisis-banner {

@@ -139,6 +139,12 @@ def is_allowed_model(provider_id: str, model_id: str, api_key: str | None) -> bo
     return model_id in allowed_model_ids(provider_id, api_key)
 
 
+def is_valid_model_id(model_id: str) -> bool:
+    """允许用户输入尚未出现在目录中的模型 ID；真实可用性由连接验证确认。"""
+
+    return bool(_MODEL_ID_RE.fullmatch(model_id))
+
+
 def full_model_id(provider_id: str, model_id: str) -> str:
     return litellm_model_id(provider_id, model_id)
 
@@ -161,10 +167,28 @@ async def fetch_live_models(provider_id: str, api_key: str | None) -> list[str] 
         return None
     try:
         import aiohttp
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-        url = preset.base_url.rstrip("/") + ("/api/tags" if provider_id == "ollama" else "/models")
+        params: dict[str, str] | None = None
+        if provider_id == "ollama":
+            url = preset.base_url.rstrip("/") + "/api/tags"
+            headers: dict[str, str] = {}
+        elif provider_id == "gemini":
+            url = preset.base_url.rstrip("/") + "/v1beta/models"
+            headers = {}
+            params = {"key": api_key} if api_key else None
+        elif provider_id == "claude":
+            url = preset.base_url.rstrip("/") + "/v1/models"
+            headers = {
+                "x-api-key": api_key or "",
+                "anthropic-version": "2023-06-01",
+            }
+        elif provider_id == "qwen":
+            url = "https://dashscope.aliyuncs.com/api/v1/models"
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        else:
+            url = preset.base_url.rstrip("/") + "/models"
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         async with aiohttp.ClientSession() as session, session.get(
-            url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)
+            url, headers=headers, params=params, timeout=aiohttp.ClientTimeout(total=8)
         ) as response:
                 if response.status >= 400:
                     return None

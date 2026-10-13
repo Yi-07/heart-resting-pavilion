@@ -108,6 +108,7 @@ class LiveModelsIn(BaseModel):
 
     provider_id: str
     api_key: str | None = None
+    profile_id: str | None = None
 
 
 class ProfileIn(BaseModel):
@@ -153,10 +154,10 @@ def _require_pair(provider_id: str, model_id: str, api_key: str | None) -> None:
     `remember_live` 登记过的那张表;登记表按 provider+key 指纹隔离。
     """
 
-    if not llm_catalog.is_allowed_model(provider_id, model_id, api_key):
+    if not llm_catalog.is_valid_model_id(model_id):
         raise HTTPException(
             status_code=422,
-            detail=f"模型 {model_id} 不在 {provider_id} 的可用列表内(从目录/实时列表选择)",
+            detail="模型 ID 格式不正确，请使用字母、数字、点、冒号、下划线或连字符。",
         )
 
 
@@ -220,13 +221,18 @@ async def llm_live_models(body: LiveModelsIn) -> dict[str, Any]:
     成功结果同时进后端登记表(`remember_live`),保存时方可放行这些模型。"""
 
     _require_preset(body.provider_id)
-    live = await llm_catalog.fetch_live_models(body.provider_id, body.api_key)
+    api_key = body.api_key
+    if not api_key and body.profile_id:
+        profile = get_config_store().get_profile(body.profile_id)
+        if profile is not None and profile.provider_id == body.provider_id:
+            api_key = profile.api_key
+    live = await llm_catalog.fetch_live_models(body.provider_id, api_key)
     live_error: str | None = None
     if live is None:
         live_error = "实时列表探测失败,以下为内置目录候选(可能不是最新)。"
         live = []
     else:
-        llm_catalog.remember_live(body.provider_id, body.api_key, live)
+        llm_catalog.remember_live(body.provider_id, api_key, live)
     merged = llm_catalog.merge_live(body.provider_id, live)
     return {
         "provider_id": body.provider_id,

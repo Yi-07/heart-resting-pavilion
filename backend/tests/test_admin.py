@@ -177,3 +177,39 @@ def test_llm_profile_verify_does_not_activate(
     saved = cfg_store.get_profile(profile.id)
     assert saved is not None and saved.verified is True
     assert cfg_store.active_id() is None
+
+
+def test_llm_profile_accepts_manual_model_id(cfg_store: ConfigStore):
+    """不在内置目录中的合法模型 ID 也可以先保存,等待后续真实验证。"""
+
+    response = client.post(
+        "/admin/llm/profiles",
+        json={"provider_id": "openai", "model_id": "my-private-model:v2"},
+    )
+
+    assert response.status_code == 200
+    saved = cfg_store.get_profile(response.json()["id"])
+    assert saved is not None and saved.model_id == "my-private-model:v2"
+
+
+def test_live_models_reuses_saved_profile_key(
+    cfg_store: ConfigStore, monkeypatch: pytest.MonkeyPatch
+):
+    """编辑模型时不重新填写 Key,实时刷新仍使用已保存的密钥。"""
+
+    _set_key(monkeypatch, _KEY_HEX)
+    profile = cfg_store.create_profile("openai", "gpt-private", "sk-saved")
+    captured: dict[str, Any] = {}
+
+    async def _fetch(provider_id: str, api_key: str | None) -> list[str]:
+        captured.update(provider_id=provider_id, api_key=api_key)
+        return []
+
+    monkeypatch.setattr("app.admin.routes.llm_catalog.fetch_live_models", _fetch)
+    response = client.post(
+        "/admin/llm/models",
+        json={"provider_id": "openai", "profile_id": profile.id},
+    )
+
+    assert response.status_code == 200
+    assert captured == {"provider_id": "openai", "api_key": "sk-saved"}
