@@ -31,8 +31,18 @@ class StationReports:
         self._db_path = db_path
         self._init_db()
 
+    # 现行 schema 列集(换 schema 改这里,自检据此判旧库)
+    _COLUMNS = ("session_id", "round_id", "status", "report_md", "emotion_label", "updated_at")
+
     def _init_db(self) -> None:
         with sqlite3.connect(self._db_path) as conn:
+            # 原型无迁移框架:旧库列集不符即 drop 重建(方案书可再生成,drop 安全)。
+            # 不自检的话 CREATE TABLE IF NOT EXISTS 会保留旧表,新代码 SELECT 撞
+            # no such column(434867c 主键改 (session_id, round_id) 时的真实回归)。
+            existing = tuple(row[1] for row in conn.execute("PRAGMA table_info(station_reports)"))
+            if existing and existing != self._COLUMNS:
+                logger.warning("station_reports_schema_mismatch", found=len(existing))
+                conn.execute("DROP TABLE station_reports")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS station_reports (
