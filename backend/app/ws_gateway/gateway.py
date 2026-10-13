@@ -980,7 +980,17 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
             refs = await retrieve_async(
                 text, k=config.RAG_TOP_K, library=RagLibrary.KNOWLEDGE
             )
-            conn.log("rag_retrieved", refs=[r.id for r in refs])
+            conn.log(
+                "rag_retrieved",
+                trace_id=conn.current_trace,
+                library=RagLibrary.KNOWLEDGE.value,
+                ref_ids=[ref.id for ref in refs],
+                ref_count=len(refs),
+                ref_ranks=[
+                    {"rank": rank, "id": ref.id, "score": ref.score}
+                    for rank, ref in enumerate(refs, start=1)
+                ],
+            )
         except Exception as exc:  # noqa: BLE001 — RAG 失败/未就绪都降级直答,不杀回合
             conn.log("degraded", level="WARN", reason="rag_failed", detail=str(exc)[:120])
             refs = []

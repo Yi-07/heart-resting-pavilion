@@ -321,6 +321,7 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
     refs: list = []
     try:
         from app.rag import retrieve_async  # 懒加载
+        from app.rag.corpus import RagLibrary
 
         query = " ".join(
             part
@@ -332,6 +333,16 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
             if part
         )
         refs = await retrieve_async(query or "情绪", k=2)
+        em.log(
+            "rag_retrieved",
+            library=RagLibrary.CASE.value,
+            ref_ids=[ref.id for ref in refs],
+            ref_count=len(refs),
+            ref_ranks=[
+                {"rank": rank, "id": ref.id, "score": ref.score}
+                for rank, ref in enumerate(refs, start=1)
+            ],
+        )
     except Exception:  # noqa: BLE001 — RAG 失败/未就绪降级无引用总结
         em.log("degraded", level="WARN", reason="rag_failed")
 

@@ -238,35 +238,33 @@ async def llm_live_models(body: LiveModelsIn) -> dict[str, Any]:
 @router.get("/llm/profiles")
 async def llm_profiles_list() -> dict[str, Any]:
     active_id = get_config_store().active_id()
-    profiles = [_profile_out(p, active_id) for p in get_config_store().list_profiles()]
+    raw_profiles = get_config_store().list_profiles()
+    raw_profiles.sort(key=lambda profile: profile.id != active_id)
+    profiles = [_profile_out(p, active_id) for p in raw_profiles]
     return {"active_id": active_id, "profiles": profiles}
 
 
 @router.post("/llm/profiles")
 async def llm_profiles_create(body: ProfileIn) -> dict[str, Any]:
-    """保存并激活:锁内 验证 → 单事务(INSERT verified=1 + 指针)→ 翻内存。
-
-    验证失败 = 库里什么都不落(**不留残行**,不会悄悄变成普通已存配置);
-    提交失败 = 整体回滚,内存不动。
-    """
+    """保存待启动配置；只有显式点击启动才验证并切换项目 LLM。"""
 
     store = get_config_store()
     _require_preset(body.provider_id)
     _require_pair(body.provider_id, body.model_id, body.api_key)
     async with _activate_lock:
-        await _verify_candidate(body.provider_id, body.model_id, body.api_key)
+        if any(profile.provider_id == body.provider_id for profile in store.list_profiles()):
+            raise HTTPException(status_code=409, detail="同一服务商只能配置一个模型胶囊")
         try:
-            profile = _persist(store.create_and_activate, body.provider_id, body.model_id, body.api_key)
+            profile = _persist(store.create_profile, body.provider_id, body.model_id, body.api_key)
         except ConfigKeyError as exc:
             raise HTTPException(
                 status_code=400,
                 detail="未配置可用的加密密钥,无法保存 API Key;配置未创建。",
             ) from exc
-        apply_active(profile)  # 事务提交成功后才翻内存
-    logger.info(
-        "llm_activated", profile_id=profile.id, provider=profile.provider_id, model=profile.model_id
-    )
-    return {"id": profile.id, "active": True, "display_name": profile.display_name}
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    logger.info("llm_profile_created", profile_id=profile.id, provider=profile.provider_id)
+    return {"id": profile.id, "active": False, "display_name": profile.display_name}
 
 
 @router.put("/llm/profiles/{profile_id}")
@@ -340,16 +338,36 @@ async def llm_profiles_activate(profile_id: str) -> dict[str, Any]:
     return {"ok": True, "active_id": activated.id}
 
 
+@router.post("/llm/profiles/{profile_id}/verify")
+async def llm_profiles_verify(profile_id: str) -> dict[str, Any]:
+    """验证模型连接但不切换当前 active profile。"""
+
+    store = get_config_store()
+    async with _activate_lock:
+        profile = store.get_profile(profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="配置不存在")
+        await _verify_candidate(profile.provider_id, profile.model_id, profile.api_key)
+        verified = _persist(store.apply_edit, profile_id, verified=True)
+        if store.active_id() == profile_id:
+            apply_active(verified)
+    logger.info(
+        "llm_connection_verified", profile_id=verified.id, provider=verified.provider_id,
+        model=verified.model_id,
+    )
+    return {"ok": True, "active": verified.id == store.active_id(), "verified": verified.verified}
+
+
 @router.delete("/llm/profiles/{profile_id}")
 async def llm_profiles_delete(profile_id: str) -> dict[str, Any]:
-    """删除(锁内,与激活/编辑串行);激活中的配置拒删(先切换再删)。"""
+    """删除(锁内,与激活/编辑串行);运行中的配置必须先切换后删除。"""
 
     async with _activate_lock:
         try:
             _persist(get_config_store().delete_profile, profile_id)
         except ActiveProfileError as exc:
             raise HTTPException(
-                status_code=409, detail="当前激活中的配置不能删除,请先切换。"
+                status_code=409, detail="运行中的模型不能删除,请先启动其他模型。"
             ) from exc
     logger.info("llm_profile_deleted", profile_id=profile_id)
     return {"ok": True}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Eraser, LoaderCircle, MessageCircleHeart, Send, X } from 'lucide-vue-next'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
@@ -28,21 +28,37 @@ const busy = ref(false)
 const error = ref('')
 const confirmClear = ref(false)
 const hasUnread = computed(() => messages.value.some((message) => message.unread))
+let poll: ReturnType<typeof setTimeout> | null = null
+let loading = false
 
 async function load(): Promise<void> {
+  if (loading) return
+  loading = true
+  const openedAtStart = props.open
   try {
     const response = await fetch(`${REST_BASE}/wall?session_id=${encodeURIComponent(sessionId)}`)
     if (!response.ok) throw new Error('load')
     const payload = await response.json() as { messages: WallMessage[]; unread: number }
     messages.value = payload.messages
-    if (props.open) {
+    if (openedAtStart) {
+      await nextTick()
       await fetch(`${REST_BASE}/wall/read?session_id=${encodeURIComponent(sessionId)}`, { method: 'POST' })
       messages.value = messages.value.map((message) => ({ ...message, unread: false }))
     }
-    emit('unread', props.open ? false : payload.unread > 0)
+    emit('unread', openedAtStart ? false : payload.unread > 0)
   } catch {
     error.value = '留言暂时取不回来，稍后再试。'
+  } finally {
+    loading = false
   }
+}
+
+function schedulePoll(delay = 3000): void {
+  if (poll !== null) clearTimeout(poll)
+  poll = setTimeout(async () => {
+    await load()
+    schedulePoll()
+  }, delay)
 }
 
 async function submit(): Promise<void> {
@@ -57,8 +73,11 @@ async function submit(): Promise<void> {
       body: JSON.stringify({ session_id: sessionId, text }),
     })
     if (!response.ok) throw new Error('save')
+    const payload = await response.json() as { message: WallMessage }
     draft.value = ''
+    messages.value = [payload.message, ...messages.value.filter((message) => message.id !== payload.message.id)]
     await load()
+    schedulePoll(0)
   } catch {
     error.value = '这句话还没有放好，稍后再试。'
   } finally {
@@ -71,19 +90,25 @@ async function clear(): Promise<void> {
   confirmClear.value = false
   messages.value = []
   emit('unread', false)
+  schedulePoll()
 }
 
 function formatTime(value: string): string {
   return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 
-let poll: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
-  void load()
-  poll = setInterval(() => void load(), 30000)
+  void load().finally(() => schedulePoll())
 })
-watch(() => props.open, (open) => { if (open) void load() })
-onUnmounted(() => { if (poll !== null) clearInterval(poll) })
+watch(() => props.open, (open) => {
+  if (open) {
+    emit('unread', false)
+    void load().finally(() => schedulePoll(0))
+  } else {
+    schedulePoll()
+  }
+})
+onUnmounted(() => { if (poll !== null) clearTimeout(poll) })
 </script>
 
 <template>

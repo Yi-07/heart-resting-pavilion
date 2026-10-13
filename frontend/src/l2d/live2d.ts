@@ -22,7 +22,10 @@ interface LiveModel {
 interface LiveInstance {
   app: Application
   canvas: HTMLCanvasElement
+  stage: HTMLElement
   model: LiveModel | null
+  layout: (() => void) | null
+  resizeObserver: ResizeObserver | null
 }
 
 // 每个舞台各自持有 renderer。练习页需要独立 canvas，不能复用主舞台的 WebGL context。
@@ -53,6 +56,29 @@ function waitForCore(timeoutMs = 15000): Promise<boolean> {
   })
 }
 
+/** 等待舞台完成布局，避免隐藏弹层或首次渲染拿到 0×0 尺寸。 */
+function waitForStageSize(stage: HTMLElement, timeoutMs = 3000): Promise<boolean> {
+  if (stage.clientWidth > 0 && stage.clientHeight > 0) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    const startedAt = Date.now()
+    let frame = 0
+    const check = (): void => {
+      if (stage.clientWidth > 0 && stage.clientHeight > 0) {
+        window.cancelAnimationFrame(frame)
+        resolve(true)
+        return
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        window.cancelAnimationFrame(frame)
+        resolve(false)
+        return
+      }
+      frame = window.requestAnimationFrame(check)
+    }
+    frame = window.requestAnimationFrame(check)
+  })
+}
+
 export async function createLive2D(
   stage: HTMLElement,
   canvas: HTMLCanvasElement,
@@ -60,6 +86,7 @@ export async function createLive2D(
 ): Promise<Live2DController | null> {
   try {
     if (!(await waitForCore())) throw new Error('cubism core 未就绪(本地 vendor 与官方 CDN 均未达)')
+    if (!(await waitForStageSize(stage))) throw new Error('Live2D 舞台尚未完成布局')
     const PIXI = await import('pixi.js')
     window.PIXI = PIXI // pixi-live2d-display 运行时取全局 PIXI
     // 必须走 /cubism4 子路径:主入口是 Cubism2+4 全量构建,模块顶层硬要求
@@ -76,7 +103,7 @@ export async function createLive2D(
         resizeTo: stage,
         antialias: true,
       })
-      instance = { app, canvas, model: null }
+      instance = { app, canvas, stage, model: null, layout: null, resizeObserver: null }
       instances.set(canvas, instance)
     } else if (instance.model !== null) {
       // 换模型:清旧模型与舞台(canvas/GL 不动)
@@ -84,6 +111,7 @@ export async function createLive2D(
       instance.model = null
       instance.app.stage.removeChildren()
     }
+    instance.stage = stage
 
     let model: Awaited<ReturnType<typeof Live2DModel.from>> | null = null
     let lastErr: unknown = null
@@ -109,17 +137,28 @@ export async function createLive2D(
     } catch {
       /* 取不到包围盒按经验值缩放 */
     }
-    const s = Math.min((stage.clientWidth * 0.9) / bw, (stage.clientHeight * 0.95) / bh)
-    model.scale.set(s)
-    model.anchor.set(0.5, 0.98)
-    model.x = stage.clientWidth / 2
-    model.y = stage.clientHeight - 4
+    const layout = (): void => {
+      const width = stage.clientWidth
+      const height = stage.clientHeight
+      if (width <= 0 || height <= 0) return
+      const scale = Math.min((width * 0.9) / bw, (height * 0.95) / bh)
+      model.scale.set(scale)
+      model.anchor.set(0.5, 0.98)
+      model.x = width / 2
+      model.y = height - 4
+    }
+    instance.layout = layout
+    instance.resizeObserver?.disconnect()
+    instance.resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(layout)
+    instance.resizeObserver?.observe(stage)
+    layout()
+    const currentScale = Math.min((stage.clientWidth * 0.9) / bw, (stage.clientHeight * 0.95) / bh)
 
     model.on('hit', (areas: string[]) => {
       if (areas.includes('Body')) void model.motion('TapBody').catch(() => {})
     })
 
-    logger.info('l2d', `Live2D 就绪(模型 ${bw}×${bh},缩放 ${s.toFixed(2)})`)
+    logger.info('l2d', `Live2D 就绪(模型 ${bw}×${bh},缩放 ${currentScale.toFixed(2)})`)
 
     return {
       setExpression(expr: AvatarExpr): void {
@@ -137,6 +176,9 @@ export async function createLive2D(
         // 模型级清理(canvas/GL 留给下一次切换复用);全量释放走 disposeLive2D
         const current = instances.get(canvas)
         if (current?.model === model) {
+          current.resizeObserver?.disconnect()
+          current.resizeObserver = null
+          current.layout = null
           model.destroy()
           current.model = null
           current.app.stage.removeChildren()
@@ -153,6 +195,7 @@ export async function createLive2D(
 export function disposeLive2D(): void {
   for (const [canvas, instance] of instances) {
     try {
+      instance.resizeObserver?.disconnect()
       instance.model?.destroy()
       instance.app.destroy(false)
     } catch (err) {

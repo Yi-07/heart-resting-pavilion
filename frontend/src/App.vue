@@ -267,13 +267,6 @@ function submit(): void {
   draft.value = ''
 }
 
-function setPracticePhase(phase: 'inhale' | 'exhale' | 'idle'): void {
-  if (phase === 'idle') return
-  // Live2D remains optional: the breathing ring is authoritative and the
-  // existing controller only receives a gentle expression/speaking cue.
-  l2d?.setExpression(phase === 'inhale' ? 'calm' : 'warm')
-}
-
 // ── 语音输入(ADR-004 两步式):录音 → /asr/transcribe 转写 → 追加回填文本框,
 // 用户确认后按文本发送(输入单源文本);转写与 WS 解耦,失败提示转打字 ──
 
@@ -401,7 +394,7 @@ function toggleMic(): void {
 
     <!-- 设置:模型配置 + 记忆治理(趋势/一键清除带两步确认) -->
     <SettingsPanel />
-    <PracticePanel :open="practiceOpen" @close="practiceOpen = false" @phase="setPracticePhase" />
+    <PracticePanel :open="practiceOpen" @close="practiceOpen = false" />
     <WallPanel :open="wallOpen" @close="wallOpen = false" @unread="wallUnread = $event" />
 
     <!-- 输入条:薄玻璃 + 发送钮「液芽分体」(goo 剪影只在动画瞬间显形;文字骑在滤镜上) -->

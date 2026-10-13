@@ -43,7 +43,7 @@ class ConfigKeyError(Exception):
 
 
 class ActiveProfileError(Exception):
-    """激活中的配置不可删除。"""
+    """保留给旧调用方的激活配置异常。"""
 
 
 @dataclass(frozen=True)
@@ -149,6 +149,10 @@ CREATE TABLE IF NOT EXISTS llm_config (
     api_key_enc TEXT,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS llm_profile_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -160,6 +164,25 @@ class ConfigStore:
     def _init_db(self) -> None:
         with sqlite3.connect(self._db_path) as conn:
             conn.executescript(_SCHEMA)
+            marker = conn.execute(
+                "SELECT 1 FROM llm_profile_meta WHERE key = 'default_deepseek_seeded'"
+            ).fetchone()
+            if marker is None:
+                has_deepseek = conn.execute(
+                    "SELECT 1 FROM llm_profiles WHERE provider_id = 'deepseek' LIMIT 1"
+                ).fetchone()
+                if has_deepseek is None:
+                    now = _now()
+                    conn.execute(
+                        "INSERT INTO llm_profiles "
+                        "(id, provider_id, model_id, api_key_enc, verified, created_at, updated_at) "
+                        "VALUES (?, 'deepseek', 'deepseek-v4-flash', NULL, 0, ?, ?)",
+                        ("p_default_deepseek", now, now),
+                    )
+                conn.execute(
+                    "INSERT INTO llm_profile_meta (key, value) VALUES (?, ?)",
+                    ("default_deepseek_seeded", "1"),
+                )
 
     def save(self, cfg: StoredLLMConfig) -> None:
         """兼容旧 /admin/config 的单行 AES-GCM 配置。"""
@@ -221,6 +244,22 @@ class ConfigStore:
             api_key=api_key,
             verified=bool(verified),
         )
+
+    def create_profile(self, provider_id: str, model_id: str, api_key: str | None) -> Profile:
+        """保存待启动配置，不改变当前激活模型。"""
+
+        enc = _encrypt(api_key) if api_key else None
+        now = _now()
+        profile_id = f"p_{uuid.uuid4().hex[:12]}"
+        with self._txn() as conn:
+            conn.execute(
+                "INSERT INTO llm_profiles (id, provider_id, model_id, api_key_enc, verified,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
+                (profile_id, provider_id, model_id, enc, now, now),
+            )
+        profile = self.get_profile(profile_id)
+        assert profile is not None
+        return profile
 
     def create_and_activate(self, provider_id: str, model_id: str, api_key: str | None) -> Profile:
         """新建即激活:**单事务** INSERT(verified=1)+ 置 active 指针。
@@ -313,7 +352,7 @@ class ConfigStore:
         return refreshed
 
     def delete_profile(self, profile_id: str) -> None:
-        """删除(单事务);激活中的配置拒删(ActiveProfileError,先切换再删)。"""
+        """删除(单事务);激活中的配置必须先切换后删除。"""
 
         if self.active_id() == profile_id:
             raise ActiveProfileError(profile_id)

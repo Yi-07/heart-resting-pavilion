@@ -157,3 +157,23 @@ def test_config_store_singleton_reset_guard():
     first = get_config_store()
     assert first is get_config_store()
     assert get_reports() is not first
+
+
+def test_llm_profile_verify_does_not_activate(
+    cfg_store: ConfigStore, monkeypatch: pytest.MonkeyPatch
+):
+    """连接测试只更新 verified，不切换项目当前模型。"""
+
+    profile = cfg_store.create_profile("deepseek", "deepseek-v4-flash", None)
+
+    async def _verify(*_: Any) -> None:
+        return None
+
+    monkeypatch.setattr("app.admin.routes._verify_candidate", _verify)
+    response = client.post(f"/admin/llm/profiles/{profile.id}/verify")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "active": False, "verified": True}
+    saved = cfg_store.get_profile(profile.id)
+    assert saved is not None and saved.verified is True
+    assert cfg_store.active_id() is None

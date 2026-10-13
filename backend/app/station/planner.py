@@ -90,8 +90,19 @@ async def _retrieve_refs(query: str) -> list[str]:
     """请求侧统一 retrieve_async(ADR-003 决策2:同步 retrieve 直堵事件循环,禁)。"""
     try:
         from app.rag import RagNotReady, retrieve_async  # 重依赖,函数内懒加载(既定模式)
+        from app.rag.corpus import RagLibrary
 
         refs = await retrieve_async(query)
+        logger.info(
+            "rag_retrieved",
+            library=RagLibrary.CASE.value,
+            ref_ids=[ref.id for ref in refs],
+            ref_count=len(refs),
+            ref_ranks=[
+                {"rank": rank, "id": ref.id, "score": ref.score}
+                for rank, ref in enumerate(refs, start=1)
+            ],
+        )
         return [f"- 问:{r.question}\n  答:{r.answer}" for r in refs]
     except RagNotReady:
         logger.warning("degraded", layer="planner_rag", reason="rag_not_ready")
