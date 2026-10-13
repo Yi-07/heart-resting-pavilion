@@ -93,6 +93,27 @@ describe('round 状态机', () => {
     expect(store.phase).toBe('idle')
   })
 
+  it('analysis 期 text_delta:单帧 final=true(P7 等待话术)不推相,精稿照常接管;非 final 流式转 final', () => {
+    store.transition({ kind: 'user_sent' })
+    store.transition({ kind: 'frame', msg: ff() })
+    store.transition({ kind: 'user_sent' })
+    expect(store.phase).toBe('analysis')
+
+    // P7 等待话术单帧:phase 保持 analysis(推了会让精稿走 illegal 丢情绪复核)
+    store.transition({ kind: 'frame', msg: { type: 'text_delta', seq: 2, text: '嗯，好的…', final: true } })
+    expect(store.phase).toBe('analysis')
+
+    // 精稿 draw 正常接管(不被等待话术破坏)
+    store.transition({ kind: 'frame', msg: draw({ seq: 3 }) })
+    expect(store.phase).toBe('final')
+
+    // 异常时序:analysis 期流式文本(final=false)= 内容提前到,按原语义转 final
+    store.transition({ kind: 'user_sent' })
+    expect(store.phase).toBe('analysis')
+    store.transition({ kind: 'frame', msg: { type: 'text_delta', seq: 4, text: '总结…', final: false } })
+    expect(store.phase).toBe('final')
+  })
+
   it('crisis:first_frame(crisis) 不浮选择器,draw/done 走完回 idle', () => {
     store.transition({ kind: 'user_sent' })
     store.transition({ kind: 'frame', msg: ff({ route: 'crisis', template: null, mood_select: false, emotion_label: null }) })

@@ -68,8 +68,13 @@ export const useRoundStore = defineStore('round', {
           this.applyEmotion(msg.data)
           break
         case 'text_delta':
-          if (this.phase === 'awaiting' || this.phase === 'analysis') this.phase = 'final'
-          else if (this.phase === 'collecting' || this.phase === 'final') {
+          if (this.phase === 'awaiting') this.phase = 'final'
+          else if (this.phase === 'analysis') {
+            // P7 等待话术单帧 final=true(后随精稿 draw):不推 phase——
+            // 推了 final 会让精稿走 illegal 丢情绪复核;final=false=流式文本
+            // 提前到(异常时序),按原语义转 final 显示内容
+            if (msg.final !== true) this.phase = 'final'
+          } else if (this.phase === 'collecting' || this.phase === 'final') {
             // 流式继续
           } else {
             this.illegal('text_delta')

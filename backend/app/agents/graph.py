@@ -376,10 +376,12 @@ async def _analysis(state: GraphState, config: RunnableConfig) -> dict:
     em = _emitter(config)
     em.log("analysis_start")
 
-    # 等待语音:停采→精稿之间的分析耗时,直发预生成 filler(契约 §6.2;缺文件跳过)
+    # 等待语音(P7):停采→精稿之间的分析耗时,预置文本+预置 wav 声文同发
+    # (与危机/回执同构;缺文件只缺音频,文字链路照常。契约 §6.2)
     from app.voice import fillers
 
-    wav = await asyncio.to_thread(fillers.pick)
+    await em.text(phrases.WAIT_SOOTHE, final=True)
+    wav = await asyncio.to_thread(fillers.pick_named, fillers.WAIT_NAME)
     if wav is not None:
         em.audio(wav)
 

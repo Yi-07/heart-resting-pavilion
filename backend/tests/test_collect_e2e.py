@@ -120,6 +120,8 @@ def test_collect_full_round(monkeypatch):
         d3 = _recv(ws)  # 增量:behavior 入格 → 充分度 0.75 停采
         assert d3["type"] == "draw"
         assert d3["data"]["behavior"] == "提炼值"
+        wait_text = _recv(ws)  # P7 等待话术单帧(声文配对,契约 §6.2)
+        assert wait_text["type"] == "text_delta" and wait_text["final"] is True
         final_draw = _recv(ws)  # 精稿:emotion 复核后全量
         assert final_draw["type"] == "draw"
         assert final_draw["data"]["intermediate_belief"] is None  # 信念留白
@@ -133,7 +135,7 @@ def test_collect_full_round(monkeypatch):
         assert invite["type"] == "text_delta" and "心灵补给站" in invite["text"]
         done = _recv(ws)
         assert done["type"] == "done"
-        seqs += [d2["seq"], q2["seq"], d3["seq"], final_draw["seq"],
+        seqs += [d2["seq"], q2["seq"], d3["seq"], wait_text["seq"], final_draw["seq"],
                  summary["seq"], invite["seq"], done["seq"]]
 
     assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)  # seq 单调递增
@@ -153,6 +155,7 @@ def test_collect_preempt_during_analysis(monkeypatch):
         _send(ws, "觉得自己不行")  # 第 2 答 → behavior 入格 → 停采 → 分析开始(总结流 0.4s/块,未发帧)
         d4 = _recv(ws)  # 增量 draw
         assert d4["type"] == "draw"
+        _recv(ws)  # P7 等待话术单帧(analysis 期,声文配对)
         final_draw = _recv(ws)  # 精稿 draw(分析初段,快)
         assert final_draw["type"] == "draw"
         time.sleep(0.12)  # 总结流挂起中 → 抢占窗口(portal 线程继续跑分析)

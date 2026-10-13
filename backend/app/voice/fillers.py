@@ -4,12 +4,11 @@
 运行时随文本同步直发,不占运行时 TTS;与 TTS 同音色(sidecar 同源)。
 生成:uv run python -m app.voice.fillers(幂等,已存在跳过;换音色删目录重跑)。
 话术正文单源在 phrases.py——本表只记「话术键→文案」映射,新增话术改两处一致。
-网关/图内经 pick()/pick_named() 取用;缺文件跳过(音频缺席不影响文字链路)。
+网关/图内经 pick_named() 取用;缺文件跳过(音频缺席不影响文字链路)。
 """
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
 from app import config
@@ -22,13 +21,16 @@ logger = app_logger.logger.bind(service=app_logger.SERVICE, module="fillers")
 
 # 通用「话术→wav」表:键=文件名干(组名_序号/名称),值=文案。
 # 等待语音(P7)与心情回执(P13)按 phrases 单源展开;危机话术由网关按名直取。
+# P7 单条裁定(PRD 只定一条文案):运行时经 WAIT_NAME 直取,文本帧同文随发。
 FILLERS: dict[str, str] = {
     "wait_1": phrases.WAIT_SOOTHE,
-    "wait_2": "快好了,再陪我等一小会儿。",
     **{f"mood_{mood}": text for mood, text in phrases.MOOD_ACK.items()},
     "crisis_soothe": phrases.CRISIS_SOOTHE,
     "crisis_hotline": phrases.CRISIS_HOTLINE,
 }
+
+WAIT_NAME = "wait_1"
+"""等待语音文件名干(P7 单条;文本帧与 wav 同源于 phrases.WAIT_SOOTHE)。"""
 
 
 def _dir() -> Path:
@@ -51,16 +53,8 @@ def generate() -> None:
         print(f"ok {path} ({len(wav)} bytes)")
 
 
-def pick() -> bytes | None:
-    """随机取一条等待语音 wav;目录为空返回 None(调用方跳过)。"""
-    files = sorted(_dir().glob("wait_*.wav"))
-    if not files:
-        return None
-    return random.choice(files).read_bytes()
-
-
 def pick_named(name: str) -> bytes | None:
-    """按名取预置语音(危机 P10/P11 · 心情回执 P13);缺文件返回 None。"""
+    """按名取预置语音(等待 P7 · 危机 P10/P11 · 心情回执 P13);缺文件返回 None。"""
     path = _dir() / f"{name}.wav"
     if not path.exists():
         return None

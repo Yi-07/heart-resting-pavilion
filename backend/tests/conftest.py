@@ -198,10 +198,9 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch, tmp_path_factory) -> FakeMemory
     # 签名带 **kw:realtime 链路会用 request_id= 关键字调用。
     monkeypatch.setattr("app.voice.tts.synthesize_stream", lambda text, **kw: iter(()))
     monkeypatch.setattr("app.voice.tts.synthesize_pcm_stream", lambda text, **kw: iter(()))
-    monkeypatch.setattr("app.voice.fillers.pick", lambda: None)
-    # 预置语音同批静音:pick_named 直读文件(危机 P10/P11 · 心情回执 P13),
-    # 指空目录=缺文件路径,防真 data/fillers 泄进帧序断言;要用真 wav 的用例
-    # 自行 monkeypatch FILLERS_DIR 到 tmp_path 并写文件(见 test_gateway 危机/回执用例)
+    # 预置语音静音:FILLERS_DIR 指空目录=pick_named 缺文件路径(返回 None),
+    # 防真 data/fillers 泄进帧序断言;要用真 wav 的用例自行 monkeypatch
+    # FILLERS_DIR 到 tmp_path 并写文件(见 test_gateway 危机/回执用例)
     monkeypatch.setattr(config, "FILLERS_DIR", str(tmp_path_factory.mktemp("fillers")))
     # sidecar 进程编排不进测试:TestClient 触发 lifespan 时不得真拉 sidecar,
     # 也不得留下 _stopping=True 污染同进程的后续语音用例;语音用例自行还原

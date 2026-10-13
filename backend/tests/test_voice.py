@@ -15,7 +15,7 @@ import pytest
 
 from app import config
 from app.voice import fillers, tts
-from app.voice.fillers import pick as _orig_pick
+from app.voice.fillers import pick_named as _orig_pick_named
 from app.voice.sidecar_protocol import SIDECAR_VERSION
 
 # local-mode symbols only exist when TTS_MODE=local
@@ -78,7 +78,7 @@ def _real_voice(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr("app.voice.tts.ensure_sidecar", _orig_ensure_sidecar)
         monkeypatch.setattr(tts, "_stopping", False)
         monkeypatch.setattr(tts, "_spawned", None)
-    monkeypatch.setattr("app.voice.fillers.pick", _orig_pick)
+    monkeypatch.setattr("app.voice.fillers.pick_named", _orig_pick_named)
 
 
 @pytest.fixture()
@@ -97,7 +97,7 @@ def test_synthesize_stream_roundtrip_against_fake_sidecar(fake_sidecar):
     """流式:逐句 NDJSON → 按序产出两个分句块(各为完整 wav)。"""
     chunks = list(tts.synthesize_stream("你好呀"))
     assert len(chunks) == 2
-    for chunk in chunks:
+    for i, chunk in enumerate(chunks):
         with wave.open(io.BytesIO(chunk), "rb") as r:  # 每块都是独立完整 wav
             assert r.getnframes() == 161
 
@@ -178,14 +178,14 @@ def test_fillers_generate_and_pick(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     )
     fillers.generate()
     names = sorted(p.name for p in tmp_path.glob("*.wav"))
-    # 通用「话术→wav」表:等待×2 + 心情回执×6(P13) + 危机×2(P10/P11)
+    # 通用「话术→wav」表:等待×1(P7 单条) + 心情回执×6(P13) + 危机×2(P10/P11)
     assert names == sorted(
-        ["wait_1.wav", "wait_2.wav"]
+        [f"{fillers.WAIT_NAME}.wav"]
         + [f"mood_{m}.wav" for m in ("难过", "低落", "平静", "还好", "开心", "很好")]
         + ["crisis_soothe.wav", "crisis_hotline.wav"]
     )
 
-    picked = fillers.pick()
+    picked = fillers.pick_named(fillers.WAIT_NAME)
     assert picked is not None
     assert picked.startswith(b"WAV")
 
@@ -194,20 +194,18 @@ def test_fillers_generate_and_pick(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 
 def test_fillers_pick_named(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """按名取预置语音(危机 P10/P11 · 心情回执 P13);缺文件返回 None。"""
+    """按名取预置语音(等待 P7 · 危机 P10/P11 · 心情回执 P13);缺文件返回 None。"""
     monkeypatch.setattr(config, "FILLERS_DIR", str(tmp_path))
     assert fillers.pick_named("crisis_soothe") is None
+    assert fillers.pick_named(fillers.WAIT_NAME) is None
     assert fillers.pick_named(fillers.mood_ack_name("低落")) is None
 
     (tmp_path / "crisis_soothe.wav").write_bytes(b"S")
+    (tmp_path / f"{fillers.WAIT_NAME}.wav").write_bytes(b"W")
     (tmp_path / f"{fillers.mood_ack_name('低落')}.wav").write_bytes(b"M")
     assert fillers.pick_named("crisis_soothe") == b"S"
+    assert fillers.pick_named(fillers.WAIT_NAME) == b"W"
     assert fillers.pick_named(fillers.mood_ack_name("低落")) == b"M"
-
-
-def test_fillers_pick_empty_dir_returns_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config, "FILLERS_DIR", str(tmp_path))
-    assert fillers.pick() is None
 
 
 def _silence_wav(seconds: float = 1.0) -> bytes:

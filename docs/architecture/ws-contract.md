@@ -284,7 +284,8 @@ S→C  audio_chunk ×N (问话逐句 TTS,句子泵,pcm_s16le 带 round_id)
 S→C  draw (增量,+新字段,板式接力可能在此切 scene_focus)
 S→C  text_delta ×N + audio_chunk ×N (确认+下一问,流式+逐句 TTS,与第 1 问同构)
      ...循环至充分度 ≥0.7 或轮数上限...
-S→C  audio_chunk ×1 (等待语音 filler,预置 wav 直发)
+S→C  text_delta ×1 (等待话术单帧 final=true,预置文本)
+S→C  audio_chunk ×1 (等待语音,预置 wav 直发,与文本同文)
 S→C  draw (精稿: 复核后全量 formulation,选材不重发)
 S→C  text_delta ×N (人话总结,流式攒批,末尾拼心灵补给站邀请语)
 S→C  done
@@ -296,7 +297,7 @@ S→C  audio_chunk ×N (总结语音,异步流出,可选;done 后到达,抢占�
 - **打岔挂起/恢复**（ADR-003）：采集期命中 answer 的输入 → `draw (template:"scene_answer")` 接管黑板 + 短答 + done，采集态挂起不清；下一输入恢复采集，恢复轮照常发全量 draw（模板切回触发转场）
 - **降级**（答案过短/话题漂移/负面词）：后端跳过剩余轮次，直接发精稿 draw + 转共情陪聊/已采字段收尾；情绪变差命中软预筛 → 改发危机序列（§6.3）
 - **问话 LLM 失败**：`error(code=ask_llm_failed)` + 前端辐条提示（不入对话气泡）；采集态挂起，下一条输入重试；不发预置问句兜底
-- **分析等待**：停采后同步分析，精稿 draw 前有分析耗时（前端显示"收尾中"）；等待语音预置 wav 直发；后台并行属二期
+- **分析等待**：停采后同步分析，精稿 draw 前有分析耗时（前端显示"收尾中"）；等待话术预置文本+预置 wav 声文同发（与危机/心情回执同构，正文单源 phrases.py 不入契约）；前端 analysis 相对单帧 `final=true` 的 text_delta 不推进回合相（后随精稿 draw）；后台并行属二期
 - **seq 示例**：时序图仅示意；text/audio 交错消耗号，递增规则见 §3.2
 
 ### 6.3 crisis（危机）
