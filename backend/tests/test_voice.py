@@ -31,7 +31,7 @@ else:
 
 
 class _FakeSidecar(BaseHTTPRequestHandler):
-    wav_payload = b"FAKEWAVBYTES"
+    sentence_frames = b"\x01\x00" * 160  # 每句 160 帧(10ms@16k)真 wav,验证剥头拼合
 
     def do_GET(self):
         body = json.dumps({"ready": True, "error": None, "version": SIDECAR_VERSION}).encode()
@@ -43,17 +43,28 @@ class _FakeSidecar(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
-        text = json.loads(self.rfile.read(length))["text"]
+        json.loads(self.rfile.read(length))["text"]  # 读掉请求体(内容不参与断言)
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
         self.end_headers()
-        for i in range(2):  # 两个分句块:验证逐句流式
-            payload = self.wav_payload + f"#{i}".encode() + text.encode()[:4]
+        for i in range(2):  # 两个分句块:验证逐句流式(每块=完整 wav,各带 RIFF 头)
+            payload = _sentence_wav(self.sentence_frames, tag=i)
             line = json.dumps({"wav": base64.b64encode(payload).decode("ascii")}) + "\n"
             self.wfile.write(line.encode("ascii"))
 
     def log_message(self, fmt: str, *args: object) -> None:
         pass
+
+
+def _sentence_wav(frames: bytes, *, tag: int = 0) -> bytes:
+    """真 wav(16k 单声道 16bit,帧数据打 tag 便于拼合断言)。"""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(frames + tag.to_bytes(2, "little"))
+    return buf.getvalue()
 
 
 @pytest.fixture(autouse=True)
@@ -83,20 +94,22 @@ def fake_sidecar(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.mark.skipif(config.TTS_MODE == "remote", reason="sidecar tests require local mode")
 def test_synthesize_stream_roundtrip_against_fake_sidecar(fake_sidecar):
-    """流式:逐句 NDJSON → 按序产出两个分句块。"""
+    """流式:逐句 NDJSON → 按序产出两个分句块(各为完整 wav)。"""
     chunks = list(tts.synthesize_stream("你好呀"))
-    assert [c[:12] for c in chunks] == [b"FAKEWAVBYTES", b"FAKEWAVBYTES"]
-    assert chunks[0][12:14] == b"#0"
-    assert chunks[1][12:14] == b"#1"
+    assert len(chunks) == 2
+    for chunk in chunks:
+        with wave.open(io.BytesIO(chunk), "rb") as r:  # 每块都是独立完整 wav
+            assert r.getnframes() == 161
 
 
 @pytest.mark.skipif(config.TTS_MODE == "remote", reason="sidecar tests require local mode")
 def test_synthesize_roundtrip_against_fake_sidecar(fake_sidecar):
-    """整段包装:流式块按序拼接(fillers 离线生成路径)。"""
+    """整段包装:剥头拼 PCM 重写单 RIFF 头(裸拼接损坏,T3fix 问题 A 回归钉)。"""
     wav = tts.synthesize("你好呀")
     assert wav is not None
-    assert wav.startswith(b"FAKEWAVBYTES#0")
-    assert b"#1" in wav
+    with wave.open(io.BytesIO(wav), "rb") as r:
+        assert r.getnchannels() == 1 and r.getframerate() == 16000
+        assert r.getnframes() == 322  # 两句帧数之和(160+1)×2,截断即失败
 
 
 @pytest.mark.skipif(config.TTS_MODE == "remote", reason="sidecar tests require local mode")
@@ -128,6 +141,34 @@ def test_split_for_tts_rules():
     parts = split_for_tts(long_text)
     assert all(p.strip() for p in parts)
     assert parts[0].endswith("，")  # 首包句在首个软标点提前切
+
+
+def test_join_sentence_wavs_structure():
+    """拼接结构钉:单 RIFF 头、帧数=各句之和、参数不一致 fail loud(T3fix 问题 A)。"""
+    from app.voice.wav_join import join_sentence_wavs
+
+    joined = join_sentence_wavs(
+        [_sentence_wav(b"\x01\x00" * 10, tag=0), _sentence_wav(b"\x02\x00" * 15, tag=1)]
+    )
+    with wave.open(io.BytesIO(joined), "rb") as r:
+        assert r.getnframes() == 27  # 10+15+tag×2,裸拼会按首句头截成 11
+        assert r.getnchannels() == 1 and r.getframerate() == 16000
+
+    # 参数不一致(8k vs 16k):拒绝拼接(fail loud,不落损坏产物)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(8000)
+        w.writeframes(b"\x00\x00" * 8)
+    with pytest.raises(tts.TTSError, match="参数不一致"):
+        join_sentence_wavs([_sentence_wav(b"\x01\x00" * 10), buf.getvalue()])
+
+    assert join_sentence_wavs([]) == b""  # 空流:空 bytes(synthesize 已短路,防御)
+
+    # 句 wav 损坏(非 RIFF)→ TTSError 降级,不裸崩
+    with pytest.raises(tts.TTSError, match="解析失败"):
+        join_sentence_wavs([b"NOTWAV"])
 
 
 def test_fillers_generate_and_pick(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

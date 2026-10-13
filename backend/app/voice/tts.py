@@ -52,6 +52,7 @@ else:
 
     from app import logger as app_logger
     from app.voice.sidecar_protocol import SIDECAR_VERSION
+    from app.voice.wav_join import join_sentence_wavs
 
     logger = app_logger.logger.bind(service=app_logger.SERVICE, module="tts")
 
@@ -226,11 +227,14 @@ else:
             raise TTSError(str(exc)[:160]) from exc
 
     def synthesize(text: str, *, request_id: str | None = None) -> bytes | None:
-        """文本 → 拼接整段 wav bytes;失败 WARN 降级 None。"""
+        """文本 → 拼接整段 wav bytes;失败 WARN 降级 None。
+
+        逐句 wav 经 join_sentence_wavs 剥头拼合(直接 b"".join 会落损坏文件,
+        见 wav_join 模块文档;T3fix 问题 A)。"""
         if not text.strip():
             return None
         try:
-            return b"".join(synthesize_stream(text, request_id=request_id))
+            return join_sentence_wavs(list(synthesize_stream(text, request_id=request_id)))
         except TTSError as exc:
             logger.warning("tts_degraded", reason=str(exc)[:160])
             return None
