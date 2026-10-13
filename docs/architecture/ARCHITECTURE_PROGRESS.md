@@ -66,7 +66,6 @@
 | 智能 | 知识图谱（knowledge.query 接口缝） | spec「开发范围（MVP vs 二期）」/Q6 | 已定 |
 | 智能 | 语义级记忆检索 | spec「开发范围（MVP vs 二期）」 | 已定 |
 | 智能 | 温层结构化抽取（Mem0） | 讨论 | 方向 |
-| 产品 | 心灵练习/留言墙 | frontend-plan 工具范围 | UI TODO |
 | 产品 | 设置-偏好/通知 | frontend-plan 工具范围 | 二期 |
 | 插件化 | 组件插件框架（Provider/BoardTheme/ToolPlugin/registry） | 讨论 | 方向 |
 | 合规 | 21号令（单独同意/禁默认训练/极端情绪主动联络/未成年） | 讨论 | 真实产品前 |

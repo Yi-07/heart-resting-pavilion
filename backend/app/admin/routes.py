@@ -8,7 +8,7 @@
   URL 与 litellm 模型名映射由后端 catalog/presets 维护;**任何响应零密钥回显**
 
 **状态一致性铁律**(全部变更操作在同一把 `_activate_lock` 内):
-候选先在内存构造 → pair 校验(catalog ∪ 实时登记)→ 对所选模型真实最小
+候选先在内存构造 → 模型 ID 格式校验 → 对所选模型真实最小
 调用验证 → 单事务落库 → 提交成功才翻内存。任一步失败:库与内存双不动,
 原激活配置继续服务;新建失败的配置**不留残行**(不是悄悄存成普通配置)。
 """
@@ -104,7 +104,7 @@ async def set_legacy_config(body: LegacyLLMConfigIn) -> dict[str, Any]:
 
 
 class LiveModelsIn(BaseModel):
-    """候选实时模型列表(提交 key 后的实时发现;结果进后端登记表,保存时可用)。"""
+    """候选实时模型列表；编辑时可复用对应配置中已保存的密钥。"""
 
     provider_id: str
     api_key: str | None = None
@@ -147,12 +147,8 @@ def _require_preset(provider_id: str):
     return preset
 
 
-def _require_pair(provider_id: str, model_id: str, api_key: str | None) -> None:
-    """pair 强校验:模型必须来自本地 catalog 或该 provider+key 的**实时登记**。
-
-    「来自实时列表」这句话本身不可信(前端可任填),可信的是后端
-    `remember_live` 登记过的那张表;登记表按 provider+key 指纹隔离。
-    """
+def _require_model_id(model_id: str) -> None:
+    """只校验模型 ID 格式；真实可用性由连接验证确认。"""
 
     if not llm_catalog.is_valid_model_id(model_id):
         raise HTTPException(
@@ -217,27 +213,28 @@ async def llm_catalog_endpoint() -> dict[str, Any]:
 @router.post("/llm/models")
 async def llm_live_models(body: LiveModelsIn) -> dict[str, Any]:
     """提交 key 后的实时模型发现:探测成功 → live 置顶 + 回落 catalog 候选;
-    探测失败 → **照样返回 catalog 候选**(不是空数组)+ live_error 说明。
-    成功结果同时进后端登记表(`remember_live`),保存时方可放行这些模型。"""
+    探测失败 → **照样返回 catalog 候选**(不是空数组)+ live_error 说明。"""
 
     _require_preset(body.provider_id)
     api_key = body.api_key
+    api_key_source = "submitted" if api_key else "none"
     if not api_key and body.profile_id:
         profile = get_config_store().get_profile(body.profile_id)
         if profile is not None and profile.provider_id == body.provider_id:
             api_key = profile.api_key
+            if api_key:
+                api_key_source = "saved"
     live = await llm_catalog.fetch_live_models(body.provider_id, api_key)
     live_error: str | None = None
     if live is None:
         live_error = "实时列表探测失败,以下为内置目录候选(可能不是最新)。"
         live = []
-    else:
-        llm_catalog.remember_live(body.provider_id, api_key, live)
     merged = llm_catalog.merge_live(body.provider_id, live)
     return {
         "provider_id": body.provider_id,
         "models": [{"id": m.id, "name": m.name, "source": m.source} for m in merged],
         "live_error": live_error,
+        "api_key_source": api_key_source,
     }
 
 
@@ -255,8 +252,10 @@ async def llm_profiles_create(body: ProfileIn) -> dict[str, Any]:
     """保存待启动配置；只有显式点击启动才验证并切换项目 LLM。"""
 
     store = get_config_store()
-    _require_preset(body.provider_id)
-    _require_pair(body.provider_id, body.model_id, body.api_key)
+    preset = _require_preset(body.provider_id)
+    _require_model_id(body.model_id)
+    if preset.needs_key and not body.api_key:
+        raise HTTPException(status_code=422, detail="该服务商需要 API Key，保存前请先填写。")
     async with _activate_lock:
         if any(profile.provider_id == body.provider_id for profile in store.list_profiles()):
             raise HTTPException(status_code=409, detail="同一服务商只能配置一个模型胶囊")
@@ -288,7 +287,7 @@ async def llm_profiles_update(profile_id: str, body: ProfileUpdateIn) -> dict[st
         if current is None:
             raise HTTPException(status_code=404, detail="配置不存在")
         if body.model_id is not None and body.model_id != current.model_id:
-            _require_pair(current.provider_id, body.model_id, body.api_key or current.api_key)
+            _require_model_id(body.model_id)
         candidate_changed = (body.model_id is not None and body.model_id != current.model_id) or bool(
             body.api_key
         )

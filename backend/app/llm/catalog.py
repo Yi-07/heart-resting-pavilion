@@ -1,11 +1,9 @@
-"""服务商模型目录与实时模型登记。"""
+"""服务商模型目录与实时模型发现。"""
 
 from __future__ import annotations
 
 import re
-from collections import OrderedDict
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Any
 
 from app.llm.presets import (
@@ -30,7 +28,6 @@ _SUGGESTED = {
     "ollama": ["qwen3:8b", "qwen3:14b", "llama3.3:70b", "gemma3:12b", "deepseek-r1:8b", "mistral:7b"],
 }
 _cache: tuple[ProviderCatalog, ...] | None = None
-_live: OrderedDict[tuple[str, str], frozenset[str]] = OrderedDict()
 
 
 @dataclass(frozen=True)
@@ -112,33 +109,6 @@ def model_ids(provider_id: str, *, refresh: bool = False) -> frozenset[str]:
     return frozenset(m.id for p in get_catalog(refresh=refresh) if p.id == provider_id for m in p.models)
 
 
-def _key_fp(api_key: str | None) -> str:
-    return sha256((api_key or "nokey").encode()).hexdigest()[:16]
-
-
-def remember_live(provider_id: str, api_key: str | None, ids: list[str]) -> None:
-    valid = frozenset(x for x in ids if _MODEL_ID_RE.fullmatch(x) and not x.startswith("ft:"))
-    if valid:
-        key = (provider_id, _key_fp(api_key))
-        _live[key] = valid
-        _live.move_to_end(key)
-        while len(_live) > 64:
-            _live.popitem(last=False)
-
-
-def live_ids(provider_id: str, api_key: str | None) -> frozenset[str]:
-    return _live.get((provider_id, _key_fp(api_key)), frozenset())
-
-
-def allowed_model_ids(provider_id: str, api_key: str | None) -> frozenset[str]:
-    return model_ids(provider_id) | live_ids(provider_id, api_key)
-
-
-def is_allowed_model(provider_id: str, model_id: str, api_key: str | None) -> bool:
-    # Ollama 的 /api/tags 在没有 litellm 本地目录时仍可登记；其它服务商必须走目录或实时发现。
-    return model_id in allowed_model_ids(provider_id, api_key)
-
-
 def is_valid_model_id(model_id: str) -> bool:
     """允许用户输入尚未出现在目录中的模型 ID；真实可用性由连接验证确认。"""
 
@@ -182,7 +152,7 @@ async def fetch_live_models(provider_id: str, api_key: str | None) -> list[str] 
                 "anthropic-version": "2023-06-01",
             }
         elif provider_id == "qwen":
-            url = "https://dashscope.aliyuncs.com/api/v1/models"
+            url = preset.base_url.rstrip("/") + "/models"
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         else:
             url = preset.base_url.rstrip("/") + "/models"

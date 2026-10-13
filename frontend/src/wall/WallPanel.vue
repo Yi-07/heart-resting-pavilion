@@ -25,6 +25,7 @@ const emit = defineEmits<{ close: []; unread: [value: boolean] }>()
 const messages = ref<WallMessage[]>([])
 const draft = ref('')
 const busy = ref(false)
+const clearing = ref(false)
 const error = ref('')
 const confirmClear = ref(false)
 const hasUnread = computed(() => messages.value.some((message) => message.unread))
@@ -86,11 +87,21 @@ async function submit(): Promise<void> {
 }
 
 async function clear(): Promise<void> {
-  await fetch(`${REST_BASE}/wall?session_id=${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
-  confirmClear.value = false
-  messages.value = []
-  emit('unread', false)
-  schedulePoll()
+  if (clearing.value) return
+  clearing.value = true
+  error.value = ''
+  try {
+    const response = await fetch(`${REST_BASE}/wall?session_id=${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+    if (!response.ok) throw new Error('clear')
+    confirmClear.value = false
+    messages.value = []
+    emit('unread', false)
+    schedulePoll()
+  } catch {
+    error.value = '留言没有清空，稍后再试。'
+  } finally {
+    clearing.value = false
+  }
 }
 
 function formatTime(value: string): string {
@@ -132,9 +143,9 @@ onUnmounted(() => { if (poll !== null) clearTimeout(poll) })
       <textarea v-model="draft" :disabled="busy" maxlength="2000" rows="3" placeholder="写下此刻想说的话…" @keydown.enter.exact.prevent="submit" />
       <div class="compose-foot"><span>{{ draft.length }}/2000</span><button class="primary-action" type="submit" :disabled="busy || !draft.trim()"><LoaderCircle v-if="busy" class="spin" :size="15" /><Send v-else :size="15" />写下留言</button></div>
     </form>
-    <button class="clear-wall" type="button" @click="confirmClear = true"><Eraser :size="14" />清空留言墙</button>
+    <button class="clear-wall" type="button" :disabled="clearing" @click="confirmClear = true"><Eraser :size="14" />清空留言墙</button>
     <div v-if="confirmClear" class="wall-confirm" role="dialog" aria-modal="true">
-      <div class="confirm-card"><h3>让这面墙重新安静一会儿？</h3><p>留言和回信都会从这台设备上移除，不能恢复。</p><div><button type="button" class="secondary-action" @click="confirmClear = false">先不清除</button><button type="button" class="danger-action" @click="clear">清空留言</button></div></div>
+      <div class="confirm-card"><h3>让这面墙重新安静一会儿？</h3><p>留言和回信都会从这台设备上移除，不能恢复。</p><div><button type="button" class="secondary-action" @click="confirmClear = false">先不清除</button><button type="button" class="danger-action" :disabled="clearing" @click="clear"><LoaderCircle v-if="clearing" class="spin" :size="14" />{{ clearing ? '清空中…' : '清空留言' }}</button></div></div>
     </div>
   </aside>
 </template>

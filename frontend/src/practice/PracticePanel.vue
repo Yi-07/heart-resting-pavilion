@@ -4,9 +4,10 @@ import { Pause, Play, RotateCcw, X } from 'lucide-vue-next'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
+type PracticeMode = 'calm' | 'box' | '478'
 const running = ref(false)
 const elapsed = ref(0)
-const mode = ref<'calm' | 'box' | '478'>('calm')
+const mode = ref<PracticeMode>('calm')
 let timer: ReturnType<typeof setInterval> | null = null
 
 const modeText = computed(() => ({ calm: '舒缓 4·6', box: '方形 4·4', '478': '4·7·8' })[mode.value])
@@ -60,6 +61,12 @@ function reset(): void {
   timer = null
 }
 
+function selectMode(next: PracticeMode): void {
+  if (mode.value === next) return
+  mode.value = next
+  elapsed.value = 0
+}
+
 watch(() => props.open, (open) => { if (!open && running.value) toggle() })
 onBeforeUnmount(() => {
   if (timer !== null) clearInterval(timer)
@@ -71,7 +78,7 @@ onBeforeUnmount(() => {
     <article class="practice-panel">
       <button class="panel-close" type="button" title="关闭练习" aria-label="关闭练习" @click="emit('close')"><X :size="17" /></button>
       <div class="practice-grid">
-        <div class="practice-copy"><span class="eyebrow">心灵练习 · 01</span><h2>温柔呼吸</h2><p>跟着光环慢慢打开，再慢慢收回。小栖会在旁边陪你，不催你抵达任何地方。</p><div class="mode-list"><button v-for="item in (['calm','box','478'] as const)" :key="item" type="button" :class="{ selected: mode === item }" @click="mode = item">{{ ({ calm:'舒缓 4·6', box:'方形 4·4', '478':'4·7·8' } as Record<string,string>)[item] }}</button></div><span class="mode-guide">{{ modeGuide }}</span><span class="practice-tip">时长不限 · 随时可以暂停</span></div>
+        <div class="practice-copy"><span class="eyebrow">心灵练习 · 01</span><h2>温柔呼吸</h2><p>跟着光环慢慢打开，再慢慢收回。小栖会在旁边陪你，不催你抵达任何地方。</p><div class="mode-list"><button v-for="item in (['calm','box','478'] as const)" :key="item" type="button" :class="{ selected: mode === item }" @click="selectMode(item)">{{ ({ calm:'舒缓 4·6', box:'方形 4·4', '478':'4·7·8' } as Record<string,string>)[item] }}</button></div><span class="mode-guide">{{ modeGuide }}</span><span class="practice-tip">时长不限 · 随时可以暂停</span></div>
         <div class="breath-stage"><div class="breath-ring" :class="{ inhale: running && phase === 'inhale', hold: running && phase === 'hold', exhale: running && phase === 'exhale', rest: running && phase === 'rest' }" :style="phaseStyle"><div><b>{{ running ? phaseLabel : '准备好了吗' }}</b><span>{{ running ? '当前阶段倒计时' : modeText }}</span><strong>{{ phaseCountdownLabel }}</strong></div></div><div class="breath-meta">{{ running ? `${modeText} · 跟着光环呼吸` : elapsed > 0 ? '已暂停 · 随时可以继续' : '中央呼吸环会告诉你节奏' }}</div></div>
       </div>
       <div class="practice-actions"><button class="secondary-action" type="button" @click="reset"><RotateCcw :size="15" />重置</button><button class="primary-action" type="button" @click="toggle"> <Pause v-if="running" :size="15" /><Play v-else :size="15" />{{ running ? '暂停练习' : '开始练习' }}</button></div>

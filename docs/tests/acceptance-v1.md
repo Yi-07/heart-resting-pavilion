@@ -100,12 +100,20 @@
 - [ ] Redis 宕机降级:杀 Redis 后对话不崩(降级路径,日志 `memory_degraded` WARN),重启后恢复
 - [ ] `POST /admin/clear_memory` 生效 + **浏览器存的身份一并清**(治理联动);失败时 503(治理不降级)
 
-## 6. 工具(station/admin REST)
+## 6. 工具与设置（station/admin REST）
 
 - [ ] `POST /station/report/generate` → 200,懒生成;轮询 `GET /station/report/latest` 至就绪
 - [ ] 危机回合后 generate → 不产素材(契约约束)
 - [ ] `GET /admin/trends`、`GET /admin/config` → 200 且**响应零密钥回显**
 - [ ] `POST /admin/config` 配 api_key → 落库为 AES-GCM 密文(`HRP_CONFIG_AES_KEY`)
+
+### 6.1 心灵练习、留言墙、模型设置
+
+- [ ] 心灵练习切换舒缓、方形、4·7·8 模式时，运行中的计时从 0 秒重新开始
+- [ ] 留言墙清空请求返回失败时，原留言仍显示，并提示清空未完成
+- [ ] 新增需要 API Key 的服务商时，空 Key 不能保存
+- [ ] 编辑模型后清空本次输入的 Key，刷新模型列表不回退使用已保存 Key
+- [ ] Qwen 模型刷新使用服务商 preset 的 base_url
 
 ## 7. 执行与判定方式
 
