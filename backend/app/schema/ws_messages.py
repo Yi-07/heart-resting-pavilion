@@ -20,6 +20,7 @@ class FirstFrame(BaseModel):
 
     type: Literal["first_frame"] = "first_frame"
     session_id: str
+    round_id: str | None = None  # collect 才有;crisis=None;本轮采集稳定标识(§3.1)
     route: Literal["collect", "crisis"]
     template: TemplateId | None = None  # collect 才有;crisis=None
     emotion_label: str | None = None
@@ -68,6 +69,8 @@ class Done(BaseModel):
     type: Literal["done"] = "done"
     session_id: str
     seq: int
+    round_id: str | None = None  # collect 回合结束带回(§3.5)
+    station_ready: bool | None = None  # 仅 collect Finish 携带:本轮素材是否归档成功
 
 
 class ErrorFrame(BaseModel):

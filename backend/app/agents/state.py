@@ -81,6 +81,11 @@ class CollectState:
     """黑板选材状态机(白名单+熔断);None=选材关闭(测试/降级)。"""
     pending_assets: dict[str, str] | None = None
     """最近一轮 extract 的原始选材输出(待校验);每轮重置,只活单次图调用。"""
+    round_id: str | None = None
+    """本轮 collect 的稳定标识(entry 时由 round_seq 高水位分配;SQLite 不可用时
+    =None → 本轮不产 station 素材,链接显式不可用)。只活连接内存。"""
+    collected_at: str | None = None
+    """素材归档时刻(= 报告有效期锚点);_archive_round 写入。"""
 
 
 # ---- 图出口事件(§3.4;网关按事件收尾,不读 state 内部) ----

@@ -17,6 +17,7 @@ from app import logger as app_logger
 from app.logger import setup_logger
 from app.memory import get_memory
 from app.station import router as station_router
+from app.station.reports import get_reports
 from app.voice.routes import router as asr_router
 from app.ws_gateway import handle_connection
 
@@ -103,6 +104,41 @@ async def _loop_watchdog() -> None:
             )
 
 
+_REPORT_GC_INTERVAL_S = 6 * 3600
+"""报告过期清理周期;启动时另扫一次(含遗留核价)。"""
+
+
+async def _report_gc_once(*, refine: bool) -> None:
+    """方案书过期清理：先查拦截(get_active/list_by_session 已过滤)，这里做物理删除。
+
+    refine=True(仅启动时)：给升级遗留行(expires_at IS NULL)核价——旧素材 Redis TTL
+    可复原原始到期时刻；不可核验且 Redis 不可达则保持未定价(不猜不删，下次启动重试)。
+    任何失败只 WARN，不挡启动/服务。"""
+
+    try:
+        reports = get_reports()
+        if refine:
+            counts = await reports.refine_legacy_expiry(get_memory().legacy_station_deadline)
+            if counts["priced"] or counts["expired"]:
+                _logger.info("station_legacy_refined", **counts)
+            # 旧式标题(「第 N 次梳理」)重算为数据驱动标题(情境 · 情绪):
+            # 素材可得→用其 formulation 推导;不可得→中性备用标题。只改 title,不动正文、不删行。
+            titles = await reports.backfill_legacy_titles(get_memory().load_station_input)
+            if titles["retitled"] or titles["fallback"]:
+                _logger.info("station_titles_backfilled", **titles)
+        removed = reports.delete_expired()
+        if removed:
+            _logger.info("station_reports_gc", removed=removed)
+    except Exception as exc:  # noqa: BLE001 — 清理失败不影响服务
+        _logger.warning("station_report_gc_error", reason=type(exc).__name__)
+
+
+async def _report_gc_loop() -> None:
+    while True:
+        await asyncio.sleep(_REPORT_GC_INTERVAL_S)
+        await _report_gc_once(refine=False)
+
+
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     _logger.info("startup_begin · 心栖阁 backend 启动中")
@@ -118,11 +154,15 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
         warm = asyncio.create_task(_warm_sidecar())
     rag_warm = asyncio.create_task(_warm_rag())
     watchdog = asyncio.create_task(_loop_watchdog())
+    # 方案书过期清理：先核价+扫一遍(先于服务)，再挂周期任务
+    await _report_gc_once(refine=True)
+    report_gc = asyncio.create_task(_report_gc_loop())
     _logger.info("startup_ready · 文字链路已就绪")
     yield
     warm.cancel()  # 没就绪就退了:不再等
     rag_warm.cancel()
     watchdog.cancel()
+    report_gc.cancel()
     # local 模式才关停 sidecar;remote 模式不持有子进程
     if config.TTS_MODE != "remote":
         from app.voice import tts  # 懒加载(同 warmup)

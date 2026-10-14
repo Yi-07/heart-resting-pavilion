@@ -2,8 +2,9 @@
 
 双输出:
 - 控制台:彩色可读(Loguru 风格),INFO 默认,HRP_VERBOSE=1 → DEBUG
-- 文件:logs/debug_{date}.log 结构化 JSON(serialize),DEBUG 全量,
-  轮转 10MB / 保留 30 天
+- 文件:{HRP_LOG_DIR:-logs}/debug_{date}.log 结构化 JSON(serialize),DEBUG 全量,
+  轮转 10MB / 保留 30 天。HRP_LOG_DIR 可重定向目录(默认 logs;测试/CI 用它把
+  日志集中到临时目录,不改代码)
 标准字段:ts/level/service/session_id/trace_id/event/route/message。
 WARN 为注册的自定义级别(契约 §9.2 用 WARN 而非 WARNING,数值=30 同档)。
 脱敏(硬约束):用户文本只记长度/哈希(audio 用户原文同理);音频/凭证绝不落。
@@ -11,6 +12,7 @@ WARN 为注册的自定义级别(契约 §9.2 用 WARN 而非 WARNING,数值=30 
 
 import inspect
 import logging
+import os
 import sys
 from collections.abc import Callable
 from hashlib import sha1
@@ -52,7 +54,7 @@ def setup_logger(verbose: bool = False) -> None:
         ),
     )
     logger.add(
-        "logs/debug_{time:YYYY-MM-DD}.log",
+        os.path.join(os.getenv("HRP_LOG_DIR", "logs"), "debug_{time:YYYY-MM-DD}.log"),
         level="DEBUG",
         serialize=True,
         rotation="10 MB",
