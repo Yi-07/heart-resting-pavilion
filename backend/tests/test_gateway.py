@@ -124,6 +124,7 @@ def test_mood_select_speaks_preset_ack(tmp_path, monkeypatch):
         audio = _recv(ws)
         assert audio["type"] == "audio_chunk"
         assert audio["format"] == "wav"
+        assert audio["round_id"] == "preset-mood-0"  # 独立到达消耗 next_trace=0(§3.4)
         assert b64mod.b64decode(audio["data"]) == b"MOODWAV"
         assert audio["seq"] == reply["seq"] + 1
         done = _recv(ws)
@@ -241,6 +242,7 @@ def test_crisis_speaks_hotline(monkeypatch, tmp_path):
         assert soothe["final"] is True
         assert b64mod.b64decode(soothe["data"]) == b"SOOTHEWAV"
         assert soothe["seq"] == 1  # audio 盖章:会话首号
+        assert soothe["round_id"] == "preset-crisis-0"  # 危机组号(§3.4)
 
         draw = _recv(ws)
         assert draw["type"] == "draw" and draw["seq"] == 2
@@ -252,6 +254,7 @@ def test_crisis_speaks_hotline(monkeypatch, tmp_path):
         assert audio["type"] == "audio_chunk"  # P11 热线随文本同步
         assert b64mod.b64decode(audio["data"]) == b"HOTLINEWAV"
         assert audio["seq"] == text["seq"] + 1
+        assert audio["round_id"] == "preset-crisis-0"  # 两句同组:前端同组排队保顺播
 
         done = _recv(ws)
         assert done["type"] == "done"

@@ -29,7 +29,7 @@
 | board | `render(templateId,data,seq)` 通用渲染（读模板声明→增量绘制）·`diff(seq+新字段→动画)`·registry 为模板声明注册表（`register(decl)`/`get(templateId)`；测试模板 3 个，声明类型见 §5.1）；粉笔效果（抖动/dash-reveal/光标/滤镜）为实现细节，实施时入 docstring |
 | mood | 今日心情选择器（点开浮层/冷却/mood_select 上报；首帧自动浮出已废弃） |
 | l2d | pixi-live2d-display 封装+表情映射（版本钉子见「1. 技术栈」，不重复） |
-| audio | 音频队列与播放：AudioHub 按 chunk.format 分派——`pcm_s16le` 走 PcmPlayer（round_id 隔离，未见过的新 round 自认领即隐式 flush 旧回合；flush 掐掉全部已排程 source）· `wav` 走 AudioQueue（enqueue 顺序播放 · stopAndFade）；用户发送新输入（user_sent）即 flush；onPlayback（cb） 广播播放状态；l2d 订阅播放事件驱动口型，播放不依赖立绘加载 |
+| audio | 音频队列与播放：AudioHub 按 chunk.format 分派——`pcm_s16le` 走 PcmPlayer（round_id 隔离，未见过的新 round 自认领即隐式 flush 旧回合；flush 掐掉全部已排程 source）· `wav` 走 AudioQueue（enqueue 顺序播放 · stopAndFade）并按组号路由（与 PCM 共用回合状态：同组排队续播，未见过的新组双链 flush 后接管，旧组迟到帧丢弃，见 ws-contract「3.4 audio_chunk」）；用户发送新输入（user_sent）即 flush；onPlayback（cb） 广播播放状态；l2d 订阅播放事件驱动口型，播放不依赖立绘加载 |
 | chat | 气泡+流式文本+危机横幅（ChatPanel）；输入单源文本：文字/麦克风（录音→/asr/transcribe 转写→追加回填文本框，用户确认发送，ADR-004）（input） |
 | station | 心灵补给站：取稿轮询（生成回合末自动触发）/等待态/md 预览/导出 |
 | state | 回合状态机 `transition(event)`（见「回合状态机」节）·持当前情绪 emotionLabel：写者按 first_frame.emotion_label → 精稿 draw.data.emotion.label 次序覆盖，first_frame 重置（mood_select 手点写情绪联动已随自动浮出废弃）；Pinia store |

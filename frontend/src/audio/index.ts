@@ -9,6 +9,11 @@
 //   format === 'wav'       → AudioQueue(legacy <audio> 队列)
 // 未知 format 一律按 wav 处理并记一条 warn —— 宁可退回已知可用路径,
 // 不要因为服务端加了新编码就整段没声音。
+//
+// 回合仲裁两条链路共用同一套 currentRoundId/seenRounds(§3.4):
+// PCM 首块与预置 wav 组号(preset-*)都能认领回合——新组双链 flush 后接管
+// (setRound = legacy stopAndFade + pcm flush),同组排队续播,旧组迟到帧丢弃。
+// 真重叠场景(总结 PCM 播放中点心情回执)由此收敛为「旧声淡出、新声独播」。
 
 import type { AudioChunk } from '../ws/messages'
 import { logger } from '../logger'
@@ -71,7 +76,30 @@ export class AudioHub {
       if (chunk.format !== 'wav') {
         logger.warn('audio', `未知音频格式,按 wav 处理: ${chunk.format}`)
       }
-      // legacy 路径没有 round 隔离(整句到齐才播),由抢占时的 stopAndFade 负责
+      if (chunk.round_id === undefined) {
+        // 缺组号:无仲裁依据,按 legacy 现状入队(整句到齐才播,可观测降级)
+        logger.warn('audio', 'wav 帧缺 round_id,无组仲裁,按 legacy 入队')
+        this.legacy.enqueue(chunk)
+        return
+      }
+      // 组路由(§3.4「预置 wav 组号」):与 PCM 共用回合状态。
+      // 新组(没见过)→ setRound 双链 flush 后接管;同组 → legacy 队列顺播
+      // (危机两句同组,顺序契约靠它保);旧组(见过但非当前)→ 迟到帧丢弃。
+      const incoming = chunk.round_id
+      if (this.currentRoundId === '') {
+        this.setRound(incoming)
+      } else if (incoming !== this.currentRoundId) {
+        if (!this.seenRounds.has(incoming)) {
+          this.setRound(incoming)
+        } else {
+          bench.mark(bench.STALE_FRAME_DROP, {
+            round_id: incoming,
+            current: this.currentRoundId,
+            audio_seq: -1,
+          })
+          return
+        }
+      }
       this.legacy.enqueue(chunk)
       return
     }

@@ -9,6 +9,7 @@ from app.schema import Formulation
 class _FakeConn:
     def __init__(self) -> None:
         self.frames: list[tuple[str, str, bool]] = []  # (kind, text, final)
+        self.audio: list[tuple[bytes, str]] = []  # (wav, round_id)
         self.logs: list[str] = []
 
     def log(self, event: str, level: str = "INFO", **fields: object) -> None:
@@ -19,6 +20,12 @@ class _FakeConn:
 
     async def send_draw(self, template: str, data: Formulation) -> None:
         self.frames.append(("draw", template, False))
+
+    async def send_audio(self, wav: bytes, *, final: bool = True, round_id: str | None = None) -> None:
+        self.audio.append((wav, round_id or ""))
+
+    def preset_round_id(self, kind: str, trace: int | None = None) -> str:
+        return f"preset-{kind}-{trace if trace is not None else 0}"
 
 
 async def _chunks(*parts: str, delay: float = 0.0) -> AsyncIterator[str]:
@@ -48,6 +55,15 @@ async def test_live_emitter_passes_through():
     await em.text("可见", final=True)
     await em.draw(Formulation())
     assert conn.frames == [("text", "可见", True), ("draw", "beck_formulation", False)]
+
+
+async def test_audio_carries_preset_wait_group():
+    """图内预置语音(等待话术)赋 preset-wait 组号(契约 §3.4「预置 wav 组号」)。"""
+    conn = _FakeConn()
+    em = ConnEmitter(conn, "beck_formulation")  # type: ignore[arg-type]
+    em.audio(b"wav")
+    await em._audio_task  # 等调度任务收尾,直测 _send_audio 落点
+    assert conn.audio == [(b"wav", "preset-wait-0")]
 
 
 async def test_stream_final_marks_last_batch():

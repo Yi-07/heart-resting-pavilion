@@ -176,3 +176,107 @@ describe('AudioHub 缺 round_id 的兜底不回归', () => {
     expect(hub.roundId).toBe('tts-0')
   })
 })
+
+// ---- wav 预置组号仲裁(契约 §3.4「预置 wav 组号」,T6) ----
+
+function wav(seq: number, roundId: string | undefined, data = `w${seq}`) {
+  return {
+    type: 'audio_chunk' as const,
+    seq,
+    format: 'wav' as const,
+    data,
+    final: true,
+    round_id: roundId,
+  }
+}
+
+describe('AudioHub wav 组仲裁', () => {
+  function makeRoutedHub(): {
+    hub: AudioHub
+    ctx: FakeCtx
+    played: string[]
+    ended: (() => void)[]
+  } {
+    const ctx = new FakeCtx()
+    const played: string[] = []
+    const ended: (() => void)[] = []
+    const hub = new AudioHub({
+      ctxCtor: function Ctor(this: unknown) {
+        return ctx
+      } as unknown as new () => AudioContextLike,
+      createVoice: (c) => {
+        played.push(c.data)
+        return {
+          volume: 1,
+          play: () => undefined,
+          pause: () => undefined,
+          addEventListener: (_ev, cb) => {
+            ended.push(cb)
+          },
+        }
+      },
+    })
+    return { hub, ctx, played, ended }
+  }
+
+  it('同组排队续播:危机两句同组,顺播不互掐', () => {
+    const { hub, played, ended } = makeRoutedHub()
+    hub.enqueue(wav(1, 'preset-crisis-1'))
+    hub.enqueue(wav(2, 'preset-crisis-1'))
+    expect(hub.roundId).toBe('preset-crisis-1')
+    // 第一块起播、第二块在队(队列语义:前块 ended 才起播)
+    expect(played).toEqual(['w1'])
+    ended[0]?.()
+    expect(played).toEqual(['w1', 'w2']) // 同组顺播不互掐
+  })
+
+  it('新组接管:总结 PCM 播放中点心情回执 → 双链 flush 后独播(验收 6)', () => {
+    const { hub, ctx } = makeHub()
+    // 总结 PCM 在播
+    for (let i = 0; i < 3; i += 1) hub.enqueue(chunk('tts-0', i))
+    const playing = ctx.created.filter((s) => !s.stopped)
+    expect(playing.length).toBeGreaterThan(0)
+
+    // 心情回执 wav 新组到达
+    hub.enqueue(wav(10, 'preset-mood-1'))
+    expect(hub.roundId).toBe('preset-mood-1')
+    // 双链 flush:旧 PCM 已排程 source 全停
+    expect(ctx.created.filter((s) => !s.stopped).length).toBe(0)
+    expect(hub.stats()?.pending).toBe(0)
+  })
+
+  it('新组接管方向对称:wav 在播、PCM 新组到达同样接管并掐 legacy 链', () => {
+    const { hub, played, ended } = makeRoutedHub()
+    hub.enqueue(wav(1, 'preset-crisis-1'))
+    expect(hub.roundId).toBe('preset-crisis-1')
+
+    hub.enqueue(chunk('tts-1', 0)) // PCM 新组
+    expect(hub.roundId).toBe('tts-1')
+    // legacy 链被 setRound 的 stopAndFade 断链: crisis 播完不再续播任何 wav
+    ended[0]?.()
+    expect(played).toEqual(['w1'])
+  })
+
+  it('旧组迟到帧丢弃:回执已接管后,旧总结组 wav 不再出声', () => {
+    const { hub, played } = makeRoutedHub()
+    hub.enqueue(wav(1, 'preset-mood-1'))
+    expect(hub.roundId).toBe('preset-mood-1')
+
+    hub.enqueue(wav(2, 'preset-wait-0')) // 新组接管
+    expect(hub.roundId).toBe('preset-wait-0')
+
+    hub.enqueue(wav(3, 'preset-mood-1')) // 旧组迟到帧
+    expect(hub.roundId).toBe('preset-wait-0') // 不认领、不回播
+    expect(played).toEqual(['w1', 'w2']) // w3 未入队
+  })
+
+  it('缺组号 wav 按 legacy 入队,不惊动回合状态', () => {
+    const { hub, played } = makeRoutedHub()
+    hub.enqueue(chunk('tts-0', 0))
+    expect(hub.roundId).toBe('tts-0')
+
+    hub.enqueue(wav(5, undefined))
+    expect(hub.roundId).toBe('tts-0') // 组号缺失不改归属
+    expect(played).toEqual(['w5']) // 照常进 legacy 队列
+  })
+})

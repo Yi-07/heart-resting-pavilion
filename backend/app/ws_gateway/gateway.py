@@ -186,8 +186,9 @@ class Connection:
         前端 AudioQueue 只按序连播,不读 final(ws-contract §3.4 标注"可不依赖"),
         所以这两条路径对它是透明的。
 
-        round_id 带上后,前端在 PCM 链路里能做回合隔离;wav 链路本来整句到齐才播,
-        晚到的整句由 AudioQueue 的抢占清队处理。
+        round_id 带上后,前端按组路由仲裁(ws-contract §3.4「预置 wav 组号」):
+        TTS 透传值与预置组号(preset-*)同语义——同组排队续播,新组双链 flush
+        后接管,旧组迟到帧丢弃;缺组号按 legacy 入队(无隔离降级,可观测)。
         """
         if not wav:
             return
@@ -200,7 +201,7 @@ class Connection:
                 round_id=round_id,
             )
         )
-        self.log("audio_sent", bytes_len=len(wav), final=final)
+        self.log("audio_sent", bytes_len=len(wav), final=final, round_id=round_id)
 
     async def send_pcm(
         self,
@@ -240,6 +241,14 @@ class Connection:
     def tts_round_id(self, trace: int | None = None) -> str:
         """本回合的 TTS round_id。抢占后仍指向旧回合,供 cancel 精确命中。"""
         return f"tts-{self.current_trace if trace is None else trace}"
+
+    def preset_round_id(self, kind: str, trace: int | None = None) -> str:
+        """预置语音的逻辑组号(ws-contract §3.4「预置 wav 组号」)。
+
+        kind = wait/mood/crisis;trace 提供组间唯一性(危机两句同 trace 同组保顺播)。
+        与 tts_round_id 前缀区分:前端按字符串相等路由,不看内部结构。
+        """
+        return f"preset-{kind}-{self.current_trace if trace is None else trace}"
 
     def cancel_tts(self, round_id: str | None = None, *, cascade: bool = True) -> None:
         """打断某个回合的 TTS(同步门面,内部起线程;抢占路径不能被它阻塞)。
@@ -373,7 +382,7 @@ async def _on_mood_select(conn: Connection, msg: MoodSelect) -> None:
 
     wav = await asyncio.to_thread(fillers.pick_named, fillers.mood_ack_name(msg.mood))
     if wav is not None:
-        await conn.send_audio(wav)
+        await conn.send_audio(wav, round_id=conn.preset_round_id("mood"))
     await conn.send_done()
 
 
@@ -585,15 +594,18 @@ async def _speak_summary(conn: Connection, text: str, trace: int) -> None:
         conn.log("degraded", level="WARN", reason="tts_send_failed")
 
 
-async def _speak_preset(conn: Connection, name: str) -> None:
+async def _speak_preset(conn: Connection, name: str, round_id: str) -> None:
     """预置语音直发(危机 P10/P11):缺文件/发送失败记 degraded 跳过——
-    音频缺席不影响文字链路(危机话术正文照常发帧,契约 §6.3)。"""
+    音频缺席不影响文字链路(危机话术正文照常发帧,契约 §6.3)。
+
+    round_id = 预置组号(§3.4):安抚+热线两句同组,前端同组排队保顺播。
+    """
     from app.voice import fillers
 
     try:
         wav = await asyncio.to_thread(fillers.pick_named, name)
         if wav is not None:
-            await conn.send_audio(wav)
+            await conn.send_audio(wav, round_id=round_id)
         else:
             conn.log("degraded", level="WARN", reason="preset_wav_missing", name=name)
     except Exception as exc:  # noqa: BLE001 — 发送失败(WS 断开等):音频链路静默收尾
@@ -601,12 +613,13 @@ async def _speak_preset(conn: Connection, name: str) -> None:
 
 
 async def _crisis_sequence(conn: Connection) -> None:
+    rid = conn.preset_round_id("crisis")
     await conn.send_first_frame(route="crisis", text=phrases.CRISIS_SOOTHE)
     # 危机话术全部预置 wav 随文同步(契约 §6.3;P10 安抚/P11 热线)
-    await _speak_preset(conn, "crisis_soothe")
+    await _speak_preset(conn, "crisis_soothe", rid)
     await conn.send_draw("scene_crisis", SceneNoteData(note=phrases.CRISIS_SCENE_NOTE))
     await conn.send_text(phrases.CRISIS_HOTLINE, final=True)
-    await _speak_preset(conn, "crisis_hotline")
+    await _speak_preset(conn, "crisis_hotline", rid)
     await conn.send_done()
 
 

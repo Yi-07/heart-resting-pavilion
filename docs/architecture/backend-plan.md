@@ -197,7 +197,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 | first_frame | 网关 | 分层判定 collect/crisis 后、进图前 | route/template/emotion_label + text（collect 置空，crisis 携危机安抚） |
 | draw | emitter | 节点改 formulation 后显式发；粗稿/逐轮/精稿同一调用，全量 | state.formulation |
 | text_delta | emitter | 问话/陪聊 LLM 流式（攒批：~100ms 窗或 ~30 字，每批一帧）· 知识直答/分析总结流式 · 邀请语（话术库模板，总结末尾） | 对应文本流 |
-| audio_chunk | 网关+emitter | 网关：危机话术/等待语音/心情回执（预置 wav 直发，随文同步）；emitter：问话逐句 TTS（句子泵）+ 总结 TTS | TTS 流式（pcm_s16le）/ 预生成 wav（同音色） |
+| audio_chunk | 网关+emitter | 网关：危机话术/等待语音/心情回执（预置 wav 直发，随文同步，携预置组号 preset-wait/mood/crisis-{trace}，危机两句同组保顺播，ws-contract「3.4 audio_chunk」）；emitter：问话逐句 TTS（句子泵）+ 总结 TTS | TTS 流式（pcm_s16le）/ 预生成 wav（同音色） |
 | done | 网关 | 图调用终结且 emitter 排空 → 随后回合结束三动作（§3.3） | — |
 | error | 网关 | 非法/超时/异常 | code + message（ws-contract「3.7 error」） |
 

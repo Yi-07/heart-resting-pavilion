@@ -476,7 +476,7 @@ function toggleMic(): void {
       </div>
 
       <ChatPanel />
-      <MoodOverlay v-if="moodOpen" :disabled="moodDisabled" @select="(m) => { mood.select(m); moodOpen = false }" />
+      <MoodOverlay v-if="moodOpen" :disabled="moodDisabled" @select="(m) => { audio.flush(); mood.select(m); moodOpen = false }" />
     </div>
 
     <!-- 心灵补给站:方案书懒生成(点击触发)→轮询→md 预览/导出 -->
