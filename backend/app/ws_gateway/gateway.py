@@ -834,11 +834,17 @@ def _tok_count(text: str) -> int | None:
 
 
 def _answer_messages(
-    query: str, refs: list[Ref], memories: list[dict[str, Any]] | None = None
+    query: str,
+    refs: list[Ref],
+    memories: list[dict[str, Any]] | None = None,
+    history: list[Turn] | None = None,
 ) -> list[Message]:
-    """answer prompt:RAG 引用 + 语义记忆注入(记忆行只做「想起」,不引申不翻旧账——
-    已化解条目等 LLM 临场取舍,LLM 失败时无记忆注入不影响回答)。
+    """answer prompt:RAG 引用 + 对话历史 + 语义记忆注入(记忆行只做「想起」,
+    不引申不翻旧账——已化解条目等 LLM 临场取舍,LLM 失败时无记忆注入不影响回答)。
+    history=热层 recent_turns 原话(末条 user 轮即本轮查询,注入时排除)。
     """
+    from app.agents.ask import turns_context
+
     context = ""
     if refs:
         context = "\n\n".join(f"【{r.question}】\n{r.answer}" for r in refs)
@@ -851,6 +857,9 @@ def _answer_messages(
             "你是心栖阁的陪伴助手。温暖、简洁地回应(80 字内),不做医疗诊断,"
             "不连续追问。"
         )
+    history_ctx = turns_context(history or [], exclude_last_user=True)
+    if history_ctx:
+        system += f"\n\n刚才的对话:\n{history_ctx}"
     if memories:
         mem_desc = "\n".join(
             f"- (相关度 {m['cos']}, {m['date']}{' ,较早' if m.get('aged') else ''}) {m['text']}"
@@ -956,7 +965,9 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
             diag.mark("provider_get_begin")
             provider = get_provider()
             diag.mark("provider_get_done")
-            stream = provider.stream(_answer_messages(text, refs, memories))
+            stream = provider.stream(
+                _answer_messages(text, refs, memories, memory_ctx.recent_turns)
+            )
             diag.mark("llm_messages_ready")
             if config.TTS_ANSWER_VOICE:
                 # 文字与音频同时流:句子泵把 LLM 流切句逐句送 TTS,首句音频不等全文。

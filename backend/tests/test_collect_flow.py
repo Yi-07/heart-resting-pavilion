@@ -256,6 +256,58 @@ async def test_chat_messages_carries_pending_question_guide(monkeypatch):
     assert "前面你提到" not in msgs_plain[0].content
 
 
+async def test_ask_messages_injects_turns_history(monkeypatch):
+    """问话 prompt 注入对话历史(spec L7 注入通道,T3):turns 原话进 user 段
+    (含小栖自己的问句——「接住上文」语境);本轮回答不重复注入。"""
+    from app.agents import ask as ask_mod
+
+    cs = _state()
+    cs.turns = [
+        Turn(role="user", text="最近很焦虑睡不着"),
+        Turn(role="assistant", text="那件事之后你是怎么应对的?"),
+        Turn(role="user", text="被领导否定了,很委屈"),
+    ]
+    msgs = ask_mod.ask_messages(cs, "thought", "被领导否定了,很委屈")
+    user_text = msgs[1].content
+    assert "最近很焦虑睡不着" in user_text  # 历史原话注入
+    assert "你是怎么应对的" in user_text  # assistant 问句(小栖自己说过什么)在语境里
+    assert user_text.count("被领导否定了,很委屈") == 1  # 本轮回答不重复进历史段
+    assert "刚才的对话" in user_text
+
+
+async def test_ask_messages_falls_back_to_summary_when_turns_empty():
+    """热层过期降级(T3):turns 空时注入回合摘要(截断);都无则无历史段。"""
+    from app.agents import ask as ask_mod
+    from app.agents.state import SessionContext
+
+    cs = _state()
+    cs.session_context = SessionContext(history_summary="上次聊了工作压力,情绪以焦虑为主" * 20)
+    msgs = ask_mod.ask_messages(cs, "thought", "被否定了")
+    assert "之前那次梳理的摘要" in msgs[1].content
+    assert "上次聊了工作压力" in msgs[1].content
+
+    cs.session_context = SessionContext()
+    msgs_plain = ask_mod.ask_messages(cs, "thought", "被否定了")
+    assert "刚才的对话" not in msgs_plain[1].content
+    assert "之前那次梳理的摘要" not in msgs_plain[1].content
+
+
+async def test_turns_context_caps_and_excludes_last_user():
+    """历史段工具函数钉:轮数上限截断、exclude_last_user 排除本轮、role 标注。"""
+    from app.agents.ask import turns_context
+
+    turns = [Turn(role="user", text=f"u{i}") for i in range(10)]
+    ctx = turns_context(turns, exclude_last_user=True)
+    # 最近 6 轮(u4..u9)再去末条 user → u3..u8
+    assert "u9" not in ctx and "u3" in ctx and "u8" in ctx
+    assert ctx.count("用户:") >= 4
+
+    mixed = [Turn(role="user", text="u"), Turn(role="assistant", text="a")]
+    ctx_mixed = turns_context(mixed)
+    assert "小栖:a" in ctx_mixed and "用户:u" in ctx_mixed
+    assert turns_context([]) == ""
+
+
 async def test_ask_llm_failed_suspends_and_retries(monkeypatch):
     """问话 LLM 失败 → AskFailed(不发预置问句、不填格不计数);下一条输入重试成功。
     (ask_retry 置位是网关 settle 职责,挂起消费在图 prepare。)"""

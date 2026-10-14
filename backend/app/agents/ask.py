@@ -1,14 +1,22 @@
 """问话 LLM prompt(spec §4 L4 采集器规格「问题生成/进度感知」)。
 
 系统提示词规范共情陪伴者风格(建议式、口语化、不做医疗诊断);已采字段与
-剩余轮数进 prompt(进度感知由对话自然带出);语义记忆召回注入(「想起」非
-翻旧账,spec L7 问话注入通道)。target_field 由字段选择单源(collect 模块)
-定,信息需求描述进 prompt,文本不落预置。
+剩余轮数进 prompt(进度感知由对话自然带出);对话历史注入(turns 原话,热层
+过期降级回合摘要,spec L7 问话注入通道);语义记忆召回注入(「想起」非
+翻旧账)。target_field 由字段选择单源(collect 模块)定,信息需求描述进
+prompt,文本不落预置。
 """
 
 from app import config
-from app.agents.state import CollectState, FieldKey
+from app.agents.state import CollectState, FieldKey, Turn
 from app.llm import Message
+
+_HISTORY_ROUNDS = 6
+"""对话历史注入轮数上限(与风险复核 recent 6 轮同族;prompt 不落日志,原话
+进 prompt 不碰脱敏红线,截轮数即控上下文体积)。"""
+
+_HISTORY_SUMMARY_CAP = 200
+"""热层过期降级注入的回合摘要截断(与总结 prompt 同口径)。"""
 
 _SYSTEM = (
     "你是心栖阁的共情陪伴者,正在陪用户做认知梳理。你根据当前要了解的信息,"
@@ -26,6 +34,34 @@ _PROGRESS_TMPL = (
 )
 
 _EMPTY_FILLED = "(用户刚开口,还没有梳理内容——第一问,自然地开场)"
+
+
+def turns_context(turns: list[Turn], *, exclude_last_user: bool = False) -> str:
+    """对话历史段(三注入点共用):最近若干轮原话,role 标注,时间正序。
+
+    exclude_last_user=True 排除最后一条 user 轮——它是本轮回答,调用方已单独
+    注入,重复注入会让 LLM 把同一句话当两轮对话。空历史返回空串(调用方跳段)。
+    """
+    recent = list(turns)
+    if exclude_last_user and recent and recent[-1].role == "user":
+        recent = recent[:-1]
+    recent = recent[-_HISTORY_ROUNDS:]
+    if not recent:
+        return ""
+    lines = [f"{'用户' if t.role == 'user' else '小栖'}:{t.text}" for t in recent]
+    return "\n".join(lines)
+
+
+def _history_block(cs: CollectState) -> str:
+    """collect 侧历史段:turns 原话优先,末条 user 轮排除(网关先 append 再跑图,
+    它就是本轮回答,answer 参数已单独注入);turns 空(热层过期)降级注入回合摘要。"""
+    ctx = turns_context(cs.turns, exclude_last_user=True)
+    if ctx:
+        return f"\n\n刚才的对话:\n{ctx}"
+    summary = cs.session_context.history_summary
+    if summary:
+        return f"\n\n之前那次梳理的摘要:{summary[:_HISTORY_SUMMARY_CAP]}"
+    return ""
 
 
 def ask_messages(
@@ -53,7 +89,7 @@ def ask_messages(
         filled=filled,
         rounds_left=rounds_left,
     )
-    user = progress + f"\n用户本轮回答:{answer}"
+    user = progress + f"\n用户本轮回答:{answer}{_history_block(cs)}"
     if retry:
         user += "\n(这条回答比较短,轻轻接住再问,别重复催促;同主题换个更好答的问法)"
     if memories:
@@ -72,7 +108,7 @@ def chat_messages(
 
     引导回题(spec「陪聊引导」):回应后带出一句指向挂起提问信息需求的语句;
     无挂起提问(entry 前打岔等)只共情不引导。"""
-    user = f"用户这轮的话:{answer}"
+    user = f"用户这轮的话:{answer}{_history_block(cs)}"
     filled = ", ".join(
         f"{key}={value}"
         for key in ("situation", "thought", "behavior")
