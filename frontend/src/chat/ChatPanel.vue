@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 聊天面板:常态气泡(头部旁,点开抽屉)+ 抽屉完整记录(✕ 收起)。
-// 流式文本来自 chat 模块;analysis 等待期气泡显示「梳理中」提示(纯前端推断态)。
+// 等待期文案统一(T4):有旧文本显示旧文本(中间轮等待=上一问);无旧文本且回合
+// 活跃一律「小栖正在梳理你说的…」——首轮/answer 开头不再闪跳,「我在听。」分支删。
 // ADR-005:replay 帧回放——bubbles=幕布折叠(历史收横幅,展开降饱和气泡);
 // digest=小结卡片+「原话已按隐私设定抹去」;历史气泡不入 msgs,不随新回合清除。
 import { computed, ref } from 'vue'
@@ -8,16 +9,19 @@ import { chat, replay, splitStationMention } from './messages'
 import { useRoundStore } from '../state/round'
 import { openStation } from '../station/station'
 
+const THINKING_TEXT = '小栖正在梳理你说的…'
+
 const round = useRoundStore()
 const histOpen = ref(false)
 
 const bubbleText = computed(() => {
   const latest = chat.latestBotText()
   if (latest !== '') return latest.length > 64 ? `${latest.slice(0, 64)}…` : latest
-  return round.phase === 'analysis' || round.phase === 'awaiting' ? '小栖正在梳理你说的…' : '我在听。'
+  const active = round.phase !== 'idle'
+  return active ? THINKING_TEXT : ''
 })
 
-const bubbleOn = computed(() => chat.latestBotText() !== '' || round.phase === 'analysis' || round.phase === 'awaiting')
+const bubbleOn = computed(() => chat.latestBotText() !== '' || (round.phase !== 'idle' && round.phase !== 'final'))
 
 function openDrawer(): void {
   chat.openDrawer()
