@@ -2,6 +2,8 @@
 
 > 产品需求文档。描述 collect 链路「抢占保留采集态 + 陪聊不占轮次 + prompt 注入对话历史 + 等待期气泡统一 + 心情按钮组改造」的改动面。机制权威源见 [architecture-spec.md](../../architecture/architecture-spec.md)「三路路由」「L4 · 空窗期策略」;消息契约见 [ws-contract.md](../../architecture/ws-contract.md)「3.1 first_frame」「4.2 mood_select」「6.2 collect」;本 PRD 不复制其内容。
 
+> **完结(2026-10-14)**:T0~T8 全落地,区间 `1c10642..9bf35db`(分支 yxw)。实现与 Solution 的偏差两处——①T6 组号格式用 `preset-mood/crisis-{trace}`(示例的 `{ts}` 改 trace:会话内单调、日志可关联、组号与回合号可对账);②T6 组号语义收窄到回合外路径(preset-mood/crisis),**回合内等待语音不携组号**——第一版给等待语音赋 preset-wait 组号,会把同回合总结 PCM(与问话共用 tts-{trace})判成旧组迟到帧整段丢掉,实测回归后收窄(契约「3.4 audio_chunk」为现行语义)。验收 7 条钉测落点见看板 T7 纪要;回归 232 过 3 skip / 142 过。
+
 ## Problem Statement
 
 collect 链路体验五处断点(2026-10-13 检查会话逐项取证):
