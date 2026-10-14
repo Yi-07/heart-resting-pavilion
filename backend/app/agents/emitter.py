@@ -99,8 +99,8 @@ class ConnEmitter:
     def audio(self, chunk: bytes) -> None:
         """TTS 直发(wav 字节):同步门面,内部调度异步发帧;dead 或空块蒸发。
         持 task 引用(D3):防 GC 吞异常;发送前复检 dead,抢占后旧帧不落新回合。
-        预置语音(图内唯一调用点=分析期等待语音)赋 preset-wait 组号(§3.4),
-        前端按组仲裁——总结 PCM 播放中点新组接管,旧组残块不再叠声。"""
+        不携组号:图内唯一调用点=分析期等待语音,是回合内过客——若抢组号会把
+        总结 PCM(tts-{trace},与问话同组)判成旧组迟到帧整段丢掉(实测回归)。"""
         if self.dead or not chunk:
             return
         self._audio_task = asyncio.create_task(self._send_audio(chunk))
@@ -109,9 +109,7 @@ class ConnEmitter:
         if self.dead:
             return
         try:
-            await self._conn.send_audio(
-                chunk, round_id=self._conn.preset_round_id("wait")
-            )
+            await self._conn.send_audio(chunk)
         except Exception:  # noqa: BLE001 — 音频缺席无副作用(WS 断开等)
             self.log("degraded", level="WARN", reason="audio_send_failed")
 

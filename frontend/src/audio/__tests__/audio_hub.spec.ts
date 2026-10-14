@@ -279,4 +279,18 @@ describe('AudioHub wav 组仲裁', () => {
     expect(hub.roundId).toBe('tts-0') // 组号缺失不改归属
     expect(played).toEqual(['w5']) // 照常进 legacy 队列
   })
+
+  it('同回合等待语音(无组号)不破坏总结 PCM 归属——实测回归钉', () => {
+    // 时序:问话 PCM(tts-5)认领 → 等待语音 wav(无组号,回合内过客)→
+    // 总结 PCM 回归(与问话同组 tts-5)。等待语音若抢组号,总结会被判
+    // 旧组迟到帧整段丢掉(实测回归);无组号走 legacy,归属不受扰。
+    const { hub, ctx } = makeHub()
+    hub.enqueue(chunk('tts-5', 0)) // 问话 PCM:认领 tts-5
+    hub.enqueue(wav(1, undefined)) // 等待语音:legacy,不碰回合状态
+    expect(hub.roundId).toBe('tts-5')
+    const before = ctx.created.length
+    hub.enqueue(chunk('tts-5', 10)) // 总结 PCM 回归(同 trace 同组)
+    expect(hub.roundId).toBe('tts-5')
+    expect(ctx.created.length).toBeGreaterThan(before) // 总结必须出声
+  })
 })

@@ -9,6 +9,8 @@ B2 collect-复杂:首条长文本(诱发事件/躯体化/失眠/回避)
   信念字段(intermediate/core_belief)全程留白;走满采集→邀请语;seq 单调。
 B3 crisis-复杂:软埋危机长句(`从这个世界上消失`)→ 热线+横幅+TTS+审计;
   matched 含「想离开这个世界」为 acceptance 原判据(现行纯子串词表下预期实测暴露差异)。
+B4 mood 组号:独立到达 mood_select → 回执 wav 携 preset-mood-* 组号(验收 6 数据前提,
+  T6;无 first_frame,契约 §4.2)。
 跑法:backend 在跑 `uv run hrp`,然后 `uv run python tests/e2e/e2e3_b_complex.py`。
 """
 
@@ -236,6 +238,37 @@ async def crisis_complex() -> list[tuple[bool, str]]:
     return checks
 
 
+async def mood_group_id() -> list[tuple[bool, str]]:
+    """B4·验收 6 数据前提(T6):独立到达 mood_select 的回执 wav 携新组号
+    preset-mood-{trace},与 TTS 总结组 tts-* 可区分——前端 AudioHub 组仲裁
+    (同组排队/新组双链 flush)靠它收「总结 PCM 播放中点表情无叠声」。
+    WS 层只验组号语义;浏览器混音行为由前端 audio_hub.spec 钉测覆盖。"""
+    checks: list[tuple[bool, str]] = []
+    async with WsClient() as c:
+        await c.send({"type": "mood_select", "mood": "低落", "ts": int(time.time() * 1000)})
+        got = await c.wait_for(lambda m: m.get("type") == "text_delta", 15, "回执文本")
+        checks.append((got is not None, "独立到达回执 text_delta" if got else "回执文本未到达"))
+        got = await c.wait_for(
+            lambda m: m.get("type") == "audio_chunk" and m.get("format") == "wav",
+            15, "回执语音")
+        if got is None:
+            checks.append((False, "回执 audio_chunk(wav) 未到达(查 data/fillers 是否预生成)"))
+        else:
+            _, audio = got
+            rid = audio.get("round_id", "")
+            checks.append((rid.startswith("preset-mood-"),
+                           f"回执 wav 携预置组号 round_id={rid!r}" if rid.startswith("preset-mood-")
+                           else f"round_id={rid!r} 非 preset-mood-* 组号(组仲裁数据前提缺失)"))
+            checks.append((not rid.startswith("tts-"),
+                           "组号非 TTS 透传值(与总结组可区分)" if rid.startswith("preset-")
+                           else f"组号 {rid!r} 撞 TTS 命名:新组判定会与总结混淆"))
+        done = await c.wait_for(lambda m: m.get("type") == "done", 10, "回执 done")
+        checks.append((done is not None, "回执收口 done" if done else "done 未到达"))
+        ff = [m for _, m in c.frames if m.get("type") == "first_frame"]
+        checks.append((not ff, "独立到达无 first_frame(契约 §4.2)" if not ff else "独立到达发了 first_frame"))
+    return checks
+
+
 async def main() -> None:
     print("===== e2e3 用例 B·复杂双用例 =====")
     print("-- B1 answer-复杂 --", flush=True)
@@ -244,6 +277,8 @@ async def main() -> None:
     checks += await collect_complex()
     print("-- B3 crisis-复杂(软埋句) --", flush=True)
     checks += await crisis_complex()
+    print("-- B4 mood 组号(验收 6 数据前提) --", flush=True)
+    checks += await mood_group_id()
     ok = all(p for p, _ in checks)
     for passed, detail in checks:
         print(f"  {'PASS' if passed else 'FAIL'}  {detail}")

@@ -5,7 +5,7 @@
 走向,不假设固定第几轮停采。充分度路径参考:emotion .2 → situation .4 →
 thought .6 → behavior .75 ≥ 0.7 停采;max_rounds=3 兜底。
 断言:
-  1. first_frame(route=collect, mood_select=true) → 粗稿 draw
+  1. first_frame(route=collect, mood_select=false 恒) → 粗稿 draw
   2. 每轮增量 draw,seq 单调递增
   3. 停采后精稿 draw(全量)
   4. 总结 text_delta(final=true) → done ≤2s
@@ -65,7 +65,7 @@ async def main() -> None:
             checks.append((False, "first_frame 未到达"))
             return
         _, ff = got
-        checks.append((ff.get("route") == "collect" and ff.get("mood_select") is True,
+        checks.append((ff.get("route") == "collect" and ff.get("mood_select") is False,
                        (f"first_frame route={ff.get('route')} mood={ff.get('mood_select')} "
                        f"emotion={ff.get('emotion_label')!r} (首帧延迟 {got[0] - t_r1:.2f}s)")))
 

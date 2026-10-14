@@ -66,8 +66,9 @@ class AudioChunk(BaseModel):
     final: bool = False
     round_id: str | None = None
     """TTS round_id;PCM 流式下用于回合隔离(旧 round 的迟到帧前端直接丢)。
-    wav 预置语音携逻辑组号(preset-* 前缀,ws-contract §3.4):同组排队,
-    新组双链 flush 后接管,旧组迟到帧丢弃"""
+    wav 回合外预置语音(心情回执/危机话术)携逻辑组号(preset-* 前缀,
+    ws-contract §3.4):同组排队,新组双链 flush 后接管,旧组迟到帧丢弃;
+    回合内预置语音(等待话术)不携组号——抢组号会丢同回合总结 PCM"""
     audio_seq: int | None = None
     """round 内单调递增的块序号；PCM 流式下用于保序，不跨句重置"""
     sample_rate: int | None = None

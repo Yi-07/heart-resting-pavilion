@@ -57,13 +57,14 @@ async def test_live_emitter_passes_through():
     assert conn.frames == [("text", "可见", True), ("draw", "beck_formulation", False)]
 
 
-async def test_audio_carries_preset_wait_group():
-    """图内预置语音(等待话术)赋 preset-wait 组号(契约 §3.4「预置 wav 组号」)。"""
+async def test_audio_carries_no_round_id():
+    """图内预置语音(等待话术)不携组号(契约 §3.4:回合内过客——
+    若携组号会把同回合总结 PCM(tts-{trace},与问话同组)判旧组迟到帧整段丢)。"""
     conn = _FakeConn()
     em = ConnEmitter(conn, "beck_formulation")  # type: ignore[arg-type]
     em.audio(b"wav")
     await em._audio_task  # 等调度任务收尾,直测 _send_audio 落点
-    assert conn.audio == [(b"wav", "preset-wait-0")]
+    assert conn.audio == [(b"wav", "")]  # send_audio round_id 缺省 None → 桩记 ""
 
 
 async def test_stream_final_marks_last_batch():

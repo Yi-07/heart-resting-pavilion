@@ -143,7 +143,7 @@
 - **PCM 四字段**：`format=pcm_s16le` 时 `round_id`/`audio_seq`/`sample_rate`/`channels` **必填**；`format=wav` 时只有 `round_id` 可能出现，其余省略
 - **可多帧**：TTS 分块合成，一段语音拆成多个 audio_chunk（seq 单调递增），前端按序连播
 - **round_id 一致性**：同一回合的所有帧 `round_id` 相同，由后端从 TTS 服务原样透传。前端只接受 `round_id == currentRoundId` 的帧；旧回合的迟到帧直接丢（可观测）
-- **预置 wav 组号**：预置语音（等待话术/心情回执/危机话术）的 wav 帧由网关赋**逻辑组号**（`preset-*` 前缀，非 TTS 透传）：`preset-wait-{trace}`（collect 分析期等待语音）、`preset-mood-{trace}`（心情回执）、`preset-crisis-{trace}`（危机话术；安抚+热线两句**同组**，保顺播）。前端对 wav 帧按组路由，与 PCM 共用同一套回合状态：同组排队续播，未见过的新组**双链 flush 后接管**（旧回合余音淡出让位），见过的旧组迟到帧丢弃；wav 缺组号按 legacy 队列现状入队（可观测降级）
+- **预置 wav 组号**：预置语音的 wav 帧由网关赋**逻辑组号**（`preset-*` 前缀，非 TTS 透传），仅覆盖**回合外路径**：`preset-mood-{trace}`（心情回执）、`preset-crisis-{trace}`（危机话术；安抚+热线两句**同组**，保顺播）。前端对 wav 帧按组路由，与 PCM 共用同一套回合状态：同组排队续播，未见过的新组**双链 flush 后接管**（旧回合余音淡出让位），见过的旧组迟到帧丢弃；wav 缺组号按 legacy 队列现状入队（可观测降级）。**回合内预置语音（分析期等待话术）不携组号**——它是回合内过客，抢组号会把同回合总结 PCM（`tts-{trace}`，与问话同组）判成旧组迟到帧整段丢弃
 - **audio_seq**：回合内单调递增的音频块序号，**跨句连续、不重置**。它与外层 `seq` 是两套号：`seq` 是本连接全局发帧序号，`audio_seq` 是回合内音频块序
 - **final 语义**：`true` 标记本回合最后一块（单发路径如危机热线/等待语音/心情回执恒 true；流式路径恒 false，最后一块不补发）。前端当前不读该字段，不依赖它也能播
 - **时序例外**：总结语音异步流出，可在 `done` 之后到达（见「6.2 collect」）；前端播放队列独立于回合状态，旧回合余音由新回合音频首块自认领时 flush、用户发送新输入（user_sent）时即 flush（音频打断由 AudioHub/PcmPlayer 承担）

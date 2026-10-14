@@ -243,9 +243,10 @@ class Connection:
         return f"tts-{self.current_trace if trace is None else trace}"
 
     def preset_round_id(self, kind: str, trace: int | None = None) -> str:
-        """预置语音的逻辑组号(ws-contract §3.4「预置 wav 组号」)。
+        """回合外预置语音的逻辑组号(ws-contract §3.4「预置 wav 组号」)。
 
-        kind = wait/mood/crisis;trace 提供组间唯一性(危机两句同 trace 同组保顺播)。
+        kind = mood/crisis;trace 提供组间唯一性(危机两句同 trace 同组保顺播)。
+        回合内预置语音(等待话术)不在此列——携组号会丢同回合总结 PCM,实测回归。
         与 tts_round_id 前缀区分:前端按字符串相等路由,不看内部结构。
         """
         return f"preset-{kind}-{self.current_trace if trace is None else trace}"
