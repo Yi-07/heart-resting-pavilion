@@ -14,23 +14,50 @@
 | 生命周期 | 单连接承载多回合；断线重连用原 `session_id` 恢复上下文 |
 | 编码 | JSON，UTF-8，文本帧 |
 | 管理通道 | 记忆清除/趋势/模型配置走 HTTP REST（`POST /admin/clear_memory`·`GET /admin/trends`·`GET /admin/config`·`POST /admin/config`），不进 WS；WS 仅对话 9 消息（见「消息总览（9）」） |
-| 补给站通道 | 心灵补给站方案书走 HTTP REST：`POST /station/report/generate`（点击触发懒生成） · `GET /station/report/latest`（轮询，等待态"正在为你整理…"）；不进 WS |
+| 补给站通道 | 心灵补给站方案书走 HTTP REST：`POST /station/report/generate`（点击触发懒生成） · `GET /station/report/latest`（轮询，等待态"正在为你整理…"） · `GET /station/report/list`（报告列表）；不进 WS |
 | 语音转写通道 | 语音输入两步式（ADR-004）：`POST /asr/transcribe`（base64 webm/opus → 转写文本）供前端回填文本框，用户确认后按文本输入发送；不进 WS |
 
 **补给站 REST 响应**（HTTP 200，两端点同形）：
 
 ```json
-{ "status": "ready", "report_md": "# 心理成长方案\n## 睡眠与焦虑的梳理" }
+{ "status": "ready", "report_md": "# 心理成长方案\n## 睡眠与焦虑的梳理",
+  "title": "考试没有考好 · 焦虑", "updated_at": "2026-10-14T21:27:05" }
 ```
 
 | 字段 | 值 | 说明 |
 |---|---|---|
 | status | `pending` \| `ready` | pending 表示已受理/生成中 |
 | report_md | string | 仅 ready 返回；md 正文，前端预览/导出 |
+| title | string | 仅 ready 返回；取自报告自身数据（`formulation.situation` + `emotion.label`，超 16 字截断，缺失各有兜底），**不用轮次序号或自增 ID** |
+| updated_at | iso 本地时间 | 仅 ready 返回；最近一次**成功**生成/重新生成时刻（重生成不改 `created_at`，前端据此显示"更新于"） |
 
 - generate 受理即返；latest 轮询——生成中 `pending`，完成 `ready`+`report_md`
-- 错误码：`POST /station/report/generate` 无可用素材（无危机回合）→ 409；`GET /station/report/latest` 无历史记录 → 404
-- generate 无可用素材（无危机回合）→ 409；latest 无历史记录 → 404
+- **轮次维度**：`generate`/`latest` 均带 `round_id` 查询参数（collect 回合标识，由 `first_frame`/`done` 带回，§3.1/§3.5）；报告按 `(session_id, round_id)` 存取，**一轮一份逻辑报告**（主键即幂等：重复受理更新同一行，不新增条目；并发由受理层锁 + pending 鲜度窗去重）；`round_id` 缺省视为不合法请求
+- **round_id 不是"第 N 次对话"**：`round_id` 由 `round_seq` 高水位在 collect **入场**时分配，被抢占作废的入场也会消耗一个 id。因此标题与列表都不按它编号（否则会出现"只聊两轮却看到第 5 次梳理"）
+- **标题**：列表与详情共用同一 `title`，由素材推导后落库（`station_reports.title`）；素材不可得时落中性备用标题"这一次的梳理"。旧式标题（第 N 次梳理…）在服务启动时幂等重算一次（只改 title，不动正文、不删行）
+- **有效期**：报告自 collect 素材归档时刻起 7 天（`station_reports.expires_at`，与 `station:input` 的 Redis TTL 同锚点同期限）；到期后 `latest` 视为无记录返回 404，`generate` 拒绝，后台物理清理
+- 错误码：`POST /station/report/generate` 无可用素材或素材已过期 → 409；素材有效期暂时无法确认 → 503（不臆测可重新生成）；`GET /station/report/latest` 无（有效）记录 → 404
+
+**报告列表**（`GET /station/report/list?session_id=`，HTTP 200；只返回有效期内的报告，按生成时间降序）：
+
+```json
+{
+  "reports": [
+    { "round_id": "3", "title": "把对方拉黑了 · 愤怒", "status": "ready",
+      "created_at": "2026-10-12T16:40:00", "updated_at": "2026-10-12T16:52:10",
+      "expires_at": "2026-10-19T16:40:00",
+      "can_regenerate": "yes" }
+  ]
+}
+```
+
+| 字段 | 值 | 说明 |
+|---|---|---|
+| round_id | string | 轮次标识（`first_frame`/`done` 带回）；`legacy` = 升级前旧报告，轮次未知 |
+| title | string | 展示标题（如"考试没有考好 · 焦虑"）；与 `latest` 的 `title` 同源同值 |
+| status | `pending` \| `ready` | 生成中 / 可查看 |
+| created_at · updated_at · expires_at | iso 本地时间 | 首次生成 / 最近一次成功生成（含重新生成） / 到期时刻（归档 + 7 天） |
+| can_regenerate | `yes` \| `no` \| `unknown` | 素材是否可用：`no`=已过期或已被治理清除；`unknown`=Redis 暂不可用，不承诺 |
 
 **语音转写请求/响应**（ADR-004）——请求 `POST /asr/transcribe`：
 
@@ -74,6 +101,7 @@
 {
   "type": "first_frame",
   "session_id": "sess_abc",
+  "round_id": "3",
   "route": "collect",
   "template": "beck_formulation",
   "emotion_label": "疲惫",
@@ -84,6 +112,7 @@
 
 | 字段 | 值 | 说明 |
 |---|---|---|
+| round_id | string | **collect 才有（crisis 不带）**；本轮采集的稳定标识，报告素材/存档/查询寻址用（§1 补给站通道） |
 | route | `collect` \| `crisis` | **answer 型不发 first_frame**，直接 text_delta |
 | template | 模板 id | collect 才有，预告粗稿模板 |
 | emotion_label | 快速研判标签 | 喂 Live2D + 粗稿 |
@@ -139,10 +168,12 @@
 ### 3.5 done
 
 ```json
-{ "type": "done", "session_id": "sess_abc", "seq": 7 }
+{ "type": "done", "session_id": "sess_abc", "seq": 7, "round_id": "3", "station_ready": true }
 ```
 
 - 前端：收起全部等待态（心情选择器、黑板"收尾中"提示）
+- `round_id`：collect 回合结束时带回本轮标识（answer/crisis 不带）；前端据此把该轮的「心灵补给站」链接绑定到这一轮
+- `station_ready`：**仅 collect 回合正常收尾（Finish）携带**——本轮素材是否已成功归档；`false` 时前端不得启用该轮报告入口（归档失败需显式提示，不得静默进入生成）；字段缺省按旧行为处理（旧后端兼容）
 
 ### 3.6 replay（重连回放，ADR-005）
 

@@ -4,7 +4,9 @@
 本模块属性即可替身。SQLite/redis 均轻初始化,不违背懒加载分层(网关启动零模型成本)。
 """
 
+from app.memory.store import MaterialState as MaterialState
 from app.memory.store import Memory
+from app.memory.store import StationMaterial as StationMaterial
 
 _memory: Memory | None = None
 

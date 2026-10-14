@@ -25,6 +25,7 @@ import base64
 import json
 import threading
 from collections.abc import AsyncIterator, Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
@@ -75,6 +76,12 @@ _cs_adapter: TypeAdapter[CSMsg] = TypeAdapter(CSMsg)
 
 def _session_id() -> str:
     return f"sess_{uuid4().hex[:12]}"
+
+
+def _now_iso() -> str:
+    """归档时刻(报告有效期锚点);本地时区,与 reports 同基准。"""
+
+    return datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005 — 单机原型
 
 
 def _validation_brief(exc: ValidationError) -> str:
@@ -135,6 +142,7 @@ class Connection:
         mood_select: bool,
         template: TemplateId | None = None,
         emotion_label: str | None = None,
+        round_id: str | None = None,
     ) -> None:
         await self._send(
             FirstFrame(
@@ -144,9 +152,10 @@ class Connection:
                 emotion_label=emotion_label,
                 mood_select=mood_select,
                 text=text,
+                round_id=round_id,
             )
         )
-        self.log("first_frame_sent", route=route)
+        self.log("first_frame_sent", route=route, round_id=round_id)
 
     async def send_draw(self, template: TemplateId, data: TemplateData) -> None:
         await self._send(Draw(seq=self._next_seq(), template=template, data=data))
@@ -155,9 +164,16 @@ class Connection:
     async def send_text(self, text: str, *, final: bool = False) -> None:
         await self._send(TextDelta(seq=self._next_seq(), text=text, final=final))
 
-    async def send_done(self) -> None:
-        await self._send(Done(session_id=self.session_id, seq=self._next_seq()))
-        self.log("done")
+    async def send_done(self, *, round_id: str | None = None, station_ready: bool | None = None) -> None:
+        await self._send(
+            Done(
+                session_id=self.session_id,
+                seq=self._next_seq(),
+                round_id=round_id,
+                station_ready=station_ready,
+            )
+        )
+        self.log("done", round_id=round_id, station_ready=station_ready)
 
     async def send_error(self, code: ErrorCode, message: str) -> None:
         await self._send(ErrorFrame(code=code, message=message))
@@ -557,6 +573,13 @@ async def _collect_sequence(
 
         state.asset_selector = AssetSelector()
         state.session_context = await get_memory().snapshot(conn.session_id)
+        # 轮次标识=后端权威(session 级高水位,跨连接/重启/治理清除都不复用);
+        # 分配失败(如 SQLite 不可用)= None → 本轮不产素材,done 带 station_ready=false
+        from app.station.reports import (
+            get_reports,  # 懒加载:station 包只进 collect 路径
+        )
+
+        state.round_id = get_reports().next_round_id(conn.session_id)
         if state.session_context.history_summary is not None or state.session_context.recent_turns:
             conn.log(
                 "memory_restored",
@@ -577,6 +600,7 @@ async def _collect_sequence(
             emotion_label=cls.emotion_label,
             mood_select=True,
             text=soothe,
+            round_id=state.round_id,
         )
         # 安抚语语音异步合成(不阻塞 ≤300ms first_frame);抢占/收尾后蒸发
         asyncio.create_task(_speak_if_current(conn, soothe, trace))
@@ -602,12 +626,25 @@ async def _collect_sequence(
 async def _archive_round(
     memory: Memory, conn: Connection, state: CollectState,
     summary: str, trace: int, cause: FinishCause,
-) -> None:
-    """Finish 归档三动作(shield 下执行,断连取消不打断;B2 发现⑤)。"""
+) -> bool:
+    """Finish 归档三动作(shield 下执行,断连取消不打断;B2 发现⑤)。
+
+    返回素材是否归档成功(供 Done.station_ready);round_id 分配失败时跳过素材
+    写入并明确记 degraded——链接显式不可用,不静默进入生成。"""
+
+    archived = False
+    if state.round_id is None:
+        conn.log("degraded", level="WARN", trace_id=trace, reason="round_id_alloc_failed")
+    else:
+        state.collected_at = _now_iso()
+        archived = await memory.save_station_input(
+            conn.session_id,
+            state.round_id,
+            state.formulation.model_dump_json(by_alias=True),
+            summary,
+            state.collected_at,
+        )
     await memory.save_round_summary(conn.session_id, summary)
-    await memory.save_station_input(
-        conn.session_id, state.formulation.model_dump_json(by_alias=True), summary
-    )
     label = state.formulation.emotion.label
     if label:
         await memory.record_mood(
@@ -623,34 +660,42 @@ async def _archive_round(
         "round_archived",
         trace_id=trace,
         cause=cause,
+        round_id=state.round_id,
+        station_ready=archived,
         summary_len=len(summary),
     )
     if summary:
         # 总结语音异步流出(done 后到达,抢占即蒸发):不占 60s 处理窗口,
         # 长总结不再触发 timeout 兜底;ws-contract §6.2 时序措辞已同步
         asyncio.create_task(_speak_summary(conn, summary, trace))
+    return archived
 
 
 async def _settle_collect_event(
     conn: Connection, trace: int, event: CollectEvent
 ) -> None:
     if isinstance(event, Finish):
-        # 回合结束三动作(backend-plan §3.3):温层摘要 → station:input → 弃 state;
+        # 回合结束三动作(backend-plan §3.3):温层摘要 → station:input(带轮次) → 弃 state;
         # 另落研判 mood(复核后标签进冷层情绪趋势)。Escalate 不落(危机不记情绪)
         state = conn.collect_state
         conn.collect_state = None
+        station_ready: bool | None = None
         if state is not None:
             memory = get_memory()
             summary = event.summary or ""
             try:
-                await asyncio.shield(
+                station_ready = await asyncio.shield(
                     _archive_round(memory, conn, state, summary, trace, event.cause)
                 )
             except asyncio.CancelledError:
                 # 断连取消不得打断归档(B2 发现⑤):shield 让写入继续,这里只落痕
                 conn.log("degraded", level="WARN", reason="finish_archival_interrupted")
                 raise
-        await conn.send_done()
+        # station_ready 只在 collect Finish 携带:素材未归档成功时前端不启用该轮入口
+        await conn.send_done(
+            round_id=state.round_id if state is not None else None,
+            station_ready=station_ready,
+        )
     elif isinstance(event, Escalate):
         conn.collect_state = None
         conn.log("route_decided", trace_id=trace, route="crisis", via="escalate")

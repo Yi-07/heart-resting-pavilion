@@ -6,7 +6,7 @@
 import { computed, ref } from 'vue'
 import { chat, replay, splitStationMention } from './messages'
 import { useRoundStore } from '../state/round'
-import { openStation } from '../station/station'
+import { openStationRound } from '../station/station'
 
 const round = useRoundStore()
 const histOpen = ref(false)
@@ -75,9 +75,10 @@ function openDrawer(): void {
             <span
               v-if="seg.mention"
               class="st-link"
+              :class="{ off: m.roundId == null || m.stationReady !== true }"
               data-testid="station-mention"
-              title="点开看看为你整理的小方案"
-              @click="openStation()"
+              :title="m.stationReady === true ? '点开看看为你整理的小方案' : '这轮的整理还没存好'"
+              @click="openStationRound(m.roundId ?? null, m.stationReady === true)"
             >{{ seg.text }}</span>
             <template v-else>{{ seg.text }}</template>
           </template>
@@ -289,6 +290,13 @@ function openDrawer(): void {
   cursor: pointer;
   border-bottom: 1px dashed var(--primary-deep);
   transition: all 0.2s;
+}
+/* 素材未归档成功:入口置灰,点击给显式失败态(不静默生成) */
+.st-link.off {
+  color: var(--muted);
+  border-bottom-color: rgba(110, 103, 94, 0.4);
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 .st-link:hover {
   color: var(--primary);

@@ -39,7 +39,7 @@
 | llm | LLM 双源 | `LLMProvider`: `chat(messages)→str` · `stream(messages)→Iterator[str]` · `chat_json(messages, schema)→T`（`Message={role, content}`）；出错抛 LLMError，由调用方捕获后降级到话术库；DeepSeek/Ollama 同接口由 config 切换（§7） |
 | memory | 热/温/冷记忆+治理 | `snapshot(session_id)→SessionContext` · `append_turn(session_id, role, text)`（热层轮次原话，ADR-005） · `save_round_summary(session_id, summary)` · `record_mood(mood)`（同日同源 upsert，最新胜）；层介质与 TTL 见 [architecture-spec.md](architecture-spec.md)「L7 · 数据与知识层」（数值不复制） |
 | voice | 语音引擎 | `transcribe(audio: bytes)→str`（ffmpeg 转码在内）·`synthesize_stream(text)→Iterator[bytes]`（按句流式；情感标签属接口预留未接线，见 spec「L6 · 工具与执行层」）；ASR（SenseVoice；ffmpeg 转码 webm/opus→wav16k 后进引擎，只取转写文本（情感识别结果丢弃），音频即弃）·TTS（CosyVoice 2；念开场安抚/总结+邀请/危机；失败跳过音频，文字照常收尾）·fillers 为预生成等待语音文件（与 TTS 同音色；切块直发 audio_chunk，零运行时合成） |
-| station | 补给站 REST+方案书存取 | 端点见 [ws-contract.md](ws-contract.md)「连接与会话」；懒生成素材 `station:input`（§3.3）；SQLite reports 表（每会话只留最新一份） |
+| station | 补给站 REST+方案书存取 | 端点见 [ws-contract.md](ws-contract.md)「连接与会话」；懒生成素材 `station:input`（§3.3）；SQLite reports 表（**每回合一份**，主键 `(session_id, round_id)`，重复生成更新同一份；自素材归档起 7 天有效，过期后台物理清理） |
 | schema | 契约类型单源 | Pydantic 对齐 ws-contract（formulation+ws_messages）；契约对齐测试抽 ws-contract「数据对象」formulation 字段名与本端比对，防两端漂移（§11） |
 
 > **鉴权决策（原型期，显式裁定）**：station/admin REST **不鉴权是有意取舍**——依赖默认绑定 127.0.0.1 + CORS 白名单；局域网/公网暴露前必须加会话信物（D1 部署文档护栏，验收按此作答）。

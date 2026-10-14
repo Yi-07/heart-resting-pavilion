@@ -12,6 +12,7 @@ import asyncio
 import base64
 import io
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -70,7 +71,8 @@ def describe(msg: dict[str, Any]) -> str:
                 f"mood={msg.get('mood_select')} emotion={msg.get('emotion_label')!r} "
                 f"text={(msg.get('text') or '')[:30]!r}")
     if t == "done":
-        return f"done session={msg.get('session_id')} seq={msg.get('seq')}"
+        return (f"done session={msg.get('session_id')} seq={msg.get('seq')} "
+                f"round_id={msg.get('round_id')} station_ready={msg.get('station_ready')}")
     if t == "error":
         return f"error code={msg.get('code')} msg={msg.get('message')!r}"
     return json.dumps(msg, ensure_ascii=False)[:120]
@@ -166,6 +168,16 @@ def epoch() -> float:
     return time.time()
 
 
+def _log_dir() -> Path:
+    """日志目录:默认 backend/logs(与 app.logger 的 HRP_LOG_DIR 默认值一致);
+    设了 HRP_LOG_DIR(测试/CI 重定向到临时目录)就用它,两端同源。"""
+
+    override = os.environ.get("HRP_LOG_DIR")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[2] / "logs"
+
+
 def log_records(
     event: str | None = None,
     since_epoch: float | None = None,
@@ -175,7 +187,7 @@ def log_records(
 
     返回元素: {level, extra, ts, raw};截断行/非 JSON 行跳过。
     """
-    log_dir = Path(__file__).resolve().parents[2] / "logs"
+    log_dir = _log_dir()
     logs = sorted(log_dir.glob("debug_*.log"))
     out: list[dict[str, Any]] = []
     for path in reversed(logs):

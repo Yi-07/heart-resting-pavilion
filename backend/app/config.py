@@ -94,7 +94,11 @@ MOOD_RECENT_CAP = 5
 # ---- 工具(步骤9:station 方案书存取 / admin 模型配置) ----
 
 STATION_DB_PATH = os.path.join(_BACKEND_DIR, "data", "station.db")
-"""方案书 SQLite(每会话最新胜;运行时产物不入 git)"""
+"""方案书 SQLite(每会话每轮一份;运行时产物不入 git)"""
+
+STATION_RETENTION_S = MEMORY_WARM_TTL_S
+"""报告有效期:自 collect 素材归档时刻起算(与 station:input 的 Redis TTL 同锚点同期限);
+到期后不可查看、不可重新生成,后台物理清理。默认=温层 TTL 7 天。"""
 
 ADMIN_CONFIG_DB_PATH = os.path.join(_BACKEND_DIR, "data", "config.db")
 """模型配置 SQLite(api_key AES-GCM 加密落库;运行时产物不入 git)"""

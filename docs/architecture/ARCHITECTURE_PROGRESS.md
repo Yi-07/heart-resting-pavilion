@@ -75,11 +75,12 @@
 | 产品 | 日历/量表工具（方案书执行层+度量层） | research-v1 Q7 | 二期 |
 | 智能 | 真·边采边算（formulation 版本号+可取消任务） | research-v1 Q4 | 二期 |
 | 智能 | supervisor 模式 revisit（手工工具式，不用库） | research-v1 Q2 | 二期方向 |
-| 产品 | 心灵补给站历史列表（MVP 只留最新一份） | research-v1 Q3 | 二期 |
 | 智能 | BM25/重排增益实测（真语料上量后） | research-v1 Q6 | 二期 |
 | 交互 | 字级视听同步（词边界卡拉OK） | research-v1 §4 C7 | 二期 |
 | 交互 | 后端流式无缝拼接（LiveKit 式） | research-v1 §4 C7 | 二期 |
 | 智能 | SenseVoice 情感输出接入 | research-v1 §4 C7 | 二期 |
+
+> 已从本表移出（非二期）：心灵补给站历史列表（原 research-v1 Q3；因 MVP 只留最新一份而列二期）——已提前落地为「按回合一份 + 报告列表 + 自归档起 7 天有效」，字段与端点见 [ws-contract.md](ws-contract.md)「连接与会话」节。
 
 ---
 

@@ -18,3 +18,5 @@ class StationReportStatus(str, Enum):
 class StationReportResponse(BaseModel):
     status: StationReportStatus
     report_md: str | None = None  # 仅 ready 返回
+    title: str | None = None  # 仅 ready 返回;取自报告自身数据(情境 · 情绪)
+    updated_at: str | None = None  # 仅 ready 返回;最近一次成功生成/重生成时刻
