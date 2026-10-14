@@ -135,17 +135,17 @@ class Connection:
         *,
         route: Literal["collect", "crisis"],
         text: str,
-        mood_select: bool,
         template: TemplateId | None = None,
         emotion_label: str | None = None,
     ) -> None:
+        # mood_select 恒 False:自动浮出废弃,心情上报由前端「今日心情」按钮主动发
         await self._send(
             FirstFrame(
                 session_id=self.session_id,
                 route=route,
                 template=template,
                 emotion_label=emotion_label,
-                mood_select=mood_select,
+                mood_select=False,
                 text=text,
             )
         )
@@ -601,9 +601,7 @@ async def _speak_preset(conn: Connection, name: str) -> None:
 
 
 async def _crisis_sequence(conn: Connection) -> None:
-    await conn.send_first_frame(
-        route="crisis", text=phrases.CRISIS_SOOTHE, mood_select=False
-    )
+    await conn.send_first_frame(route="crisis", text=phrases.CRISIS_SOOTHE)
     # 危机话术全部预置 wav 随文同步(契约 §6.3;P10 安抚/P11 热线)
     await _speak_preset(conn, "crisis_soothe")
     await conn.send_draw("scene_crisis", SceneNoteData(note=phrases.CRISIS_SCENE_NOTE))
@@ -657,7 +655,6 @@ async def _collect_sequence(conn: Connection, trace: int, text: str, cls: Classi
             route="collect",
             template=state.template,  # first_frame 随开场板式(scene_default)
             emotion_label=cls.emotion_label,
-            mood_select=True,
             text="",  # 开场不设安抚语(契约 §3.1):第一句话由问话 LLM 生成后随流到达
         )
         conn.log("collection_start", trace_id=trace)

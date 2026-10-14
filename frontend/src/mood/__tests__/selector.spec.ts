@@ -1,64 +1,71 @@
-// mood 自动浮出链路集成测试:控制器 show/hide/select ↔ round store ↔ 浮层组件 v-if。
-// 背景:E2E 两次观察到 first_frame 后浮层未自动出现(手动点 pill 正常),钉住 App 侧同款接线。
-import { beforeEach, describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+// mood 按钮组链路集成测试(T5):控制器 select/notifyDone/setRoundActive ↔ 置灰状态
+// ↔ 浮层组件 disabled。自动浮出链路已废弃(契约「mood_select」节:首帧不再驱动)。
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
 import MoodOverlay from '../MoodSelector.vue'
-import { MoodSelector } from '../selector'
-import { useRoundStore } from '../../state/round'
-import type { FirstFrame } from '../../ws/messages'
-
-let pinia: ReturnType<typeof createPinia>
+import { MOOD_COOLDOWN_FALLBACK_MS, MoodSelector } from '../selector'
 
 beforeEach(() => {
-  pinia = createPinia()
-  setActivePinia(pinia)
+  vi.useFakeTimers()
 })
 
-function ff(moodSelect: boolean): FirstFrame {
-  return {
-    type: 'first_frame',
-    session_id: 's1',
-    route: 'collect',
-    template: 'beck_formulation',
-    emotion_label: '焦虑',
-    mood_select: moodSelect,
-    text: '我在听',
-  }
+function mountOverlay(disabled: boolean) {
+  return mount(MoodOverlay, { props: { disabled } })
 }
 
-describe('mood 自动浮出链路', () => {
-  it('控制器 show() → 浮层渲染;select() → 上报+手点写情绪+收起', async () => {
-    const round = useRoundStore()
-    const wrapper = mount(MoodOverlay, { global: { plugins: [pinia] } })
+describe('mood 按钮组链路', () => {
+  it('select() → 上报+进入冷却;notifyDone() → 解除', () => {
     const sent: string[] = []
-    const controller = new MoodSelector({ round, send: (m) => sent.push(m.mood) })
-
-    expect(wrapper.find('[data-testid="mood-overlay"]').exists()).toBe(false)
-    controller.show()
-    await nextTick()
-    expect(wrapper.find('[data-testid="mood-overlay"]').exists()).toBe(true)
+    let disabled = false
+    const controller = new MoodSelector({ setDisabled: (v) => (disabled = v), send: (m) => sent.push(m.mood) })
 
     controller.select('平静')
-    await nextTick()
-    expect(wrapper.find('[data-testid="mood-overlay"]').exists()).toBe(false)
     expect(sent).toEqual(['平静'])
-    expect(round.emotionLabel).toBe('平静')
-    expect(round.manualMood).toBe(true)
+    expect(disabled).toBe(true)
+    expect(controller.isDisabled).toBe(true)
+
+    controller.notifyDone()
+    expect(disabled).toBe(false)
+    expect(controller.isDisabled).toBe(false)
   })
 
-  it('first_frame 帧驱动:transition(mood_select=true) → moodVisible;false → 不浮', async () => {
-    const round = useRoundStore()
-    const wrapper = mount(MoodOverlay, { global: { plugins: [pinia] } })
-    round.transition({ kind: 'frame', msg: ff(true) })
-    await nextTick()
-    expect(round.moodVisible).toBe(true)
-    expect(wrapper.find('[data-testid="mood-overlay"]').exists()).toBe(true)
-    round.transition({ kind: 'user_sent' })
-    round.transition({ kind: 'frame', msg: ff(false) })
-    await nextTick()
-    expect(round.moodVisible).toBe(false)
-    expect(wrapper.find('[data-testid="mood-overlay"]').exists()).toBe(false)
+  it('冷却中重复点选不上报;done 未达时兜底计时器解除', () => {
+    const sent: string[] = []
+    const controller = new MoodSelector({ setDisabled: () => {}, send: (m) => sent.push(m.mood) })
+
+    controller.select('低落')
+    controller.select('开心') // 冷却中:忽略
+    expect(sent).toEqual(['低落'])
+
+    vi.advanceTimersByTime(MOOD_COOLDOWN_FALLBACK_MS)
+    expect(controller.isDisabled).toBe(false)
+
+    controller.select('开心') // 解除后可再点
+    expect(sent).toEqual(['低落', '开心'])
+  })
+
+  it('setRoundActive(true) 回合内置灰并打断兜底计时;false 恢复可点', () => {
+    const sent: string[] = []
+    const controller = new MoodSelector({ setDisabled: () => {}, send: (m) => sent.push(m.mood) })
+    controller.select('平静')
+
+    controller.setRoundActive(true) // 回合开始:置灰,兜底计时打断
+    vi.advanceTimersByTime(MOOD_COOLDOWN_FALLBACK_MS + 1)
+    expect(controller.isDisabled).toBe(true) // 未被兜底解除
+
+    controller.setRoundActive(false) // 回合结束:恢复可点
+    expect(controller.isDisabled).toBe(false)
+    controller.select('很好')
+    expect(sent).toEqual(['平静', '很好'])
+  })
+
+  it('浮层组件:disabled 传导按钮 disabled;点选发 select 事件', async () => {
+    const wrapper = mountOverlay(true)
+    const btn = wrapper.find('button')
+    expect(btn.attributes('disabled')).toBeDefined()
+
+    const wrapperOn = mountOverlay(false)
+    await wrapperOn.find('button').trigger('click')
+    expect(wrapperOn.emitted('select')).toEqual([['难过']])
   })
 })

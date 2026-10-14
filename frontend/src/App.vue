@@ -45,7 +45,16 @@ bindStation(() => client) // 补给站 REST 读 session_id(重连不变)
 const pcmBufferMs = Number(import.meta.env.VITE_TTS_PCM_BUFFER_MS ?? 120)
 const audio = new AudioHub({ targetBufferSeconds: pcmBufferMs / 1000 })
 if (import.meta.env.VITE_TTS_BENCH === '1') configureBench({ enabled: true })
-const mood = new MoodSelector({ round, send: (m) => client.send(m) })
+// 心情按钮组(T5):浮层可见性归本组件;冷却/回合内置灰状态经 moodDisabled 反应,
+// 控制器管冷却与上报(round.phase 变化 → watch 驱动 setRoundActive)
+const mood = new MoodSelector({ setDisabled: (v) => (moodDisabled.value = v), send: (m) => client.send(m) })
+const moodOpen = ref(false)
+const moodDisabled = ref(false)
+// 回合活跃(非 idle)= 采集/回答进行中,按钮组置灰(开场专用定位)
+watch(
+  () => round.phase,
+  (phase) => mood.setRoundActive(phase !== 'idle'),
+)
 
 const boardRef = ref<InstanceType<typeof BoardCanvas> | null>(null)
 const l2dStageEl = ref<HTMLElement | null>(null)
@@ -238,8 +247,7 @@ onMounted(() => {
     boardRef.value?.clear()
     lastTemplate.value = m.template
     chat.beginBot(m.text)
-    if (m.mood_select) mood.show()
-    else mood.hide()
+    moodOpen.value = false // 回合开始:心情浮层收起(回合内不可点)
   })
   track('draw', (m) => {
     round.transition({ kind: 'frame', msg: m })
@@ -256,7 +264,7 @@ onMounted(() => {
   track('done', (m) => {
     round.transition({ kind: 'frame', msg: m })
     chat.finalize()
-    mood.hide()
+    mood.notifyDone() // 心情按钮组冷却解除(done 驱动;watch phase 同步回合外可点)
     spoke.value = null // 回合收口:辐条一并撤(挂起态不会收到 done,防御性清理)
   })
   track('error', (m) => {
@@ -270,7 +278,6 @@ onMounted(() => {
       // timeout/server_error 等系统级失败:同样走辐条(气泡假话术废弃,PRD)
       showSpoke(m.message, true)
     }
-    mood.hide()
   })
   track('replay', (m) => {
     // ADR-005:重连回放(幕布/小结卡数据源;先于本回合 first_frame 到达)
@@ -416,13 +423,29 @@ function toggleMic(): void {
         <span class="cl" :class="{ out: chipOut, in: chipIn }">{{ chipLabel }}</span>
         <span class="state"></span>
       </button>
-      <button class="tb" type="button" @click="mood.show()">今日心情</button>
+      <button
+        class="tb"
+        type="button"
+        data-testid="mood-entry"
+        :disabled="moodDisabled"
+        :title="moodDisabled ? '对话进行中,结束后可用' : ''"
+        @click="moodOpen = !moodOpen"
+      >
+        今日心情
+      </button>
       <button class="tb" type="button" data-testid="station-entry" @click="openStation()">心灵补给站</button>
       <button class="tb" type="button" disabled title="二期">心灵练习</button>
       <button class="tb" type="button" disabled title="二期">留言墙</button>
       <button class="tb" type="button" title="模型配置与记忆" data-testid="settings-entry" @click="openSettings()">设置</button>
       <span class="sp"></span>
-      <button class="mood-pill" type="button" data-testid="mood-pill" @click="mood.show()">
+      <button
+        class="mood-pill"
+        type="button"
+        data-testid="mood-pill"
+        :disabled="moodDisabled"
+        :title="moodDisabled ? '对话进行中,结束后可用' : ''"
+        @click="moodOpen = !moodOpen"
+      >
         {{ moodPillText }}
       </button>
     </header>
@@ -453,7 +476,7 @@ function toggleMic(): void {
       </div>
 
       <ChatPanel />
-      <MoodOverlay @select="(m) => mood.select(m)" />
+      <MoodOverlay v-if="moodOpen" :disabled="moodDisabled" @select="(m) => { mood.select(m); moodOpen = false }" />
     </div>
 
     <!-- 心灵补给站:方案书懒生成(点击触发)→轮询→md 预览/导出 -->

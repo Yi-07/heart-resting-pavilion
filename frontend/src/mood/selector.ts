@@ -1,11 +1,13 @@
-// 心情选择器(frontend-plan §4):show/hide + onSelect(send mood_select 并手点写情绪)。
-// 10s 超时自动收起回工具栏 pill(pill 可点击再开);计时进度写 store.moodElapsed 供 conic 环。
+// 心情选择器(frontend-plan §4):工具栏「今日心情」点开的表情组浮层。
+// 点选 → send mood_select + Live2D 手点写情绪联动废弃(自动浮出已随 T5 废弃,
+// 详见契约「mood_select」节);点选即置灰冷却,done 解除,连接异常 ~8s 兜底。
+// 回合内置灰(采集/回答进行中不可点)由 App 经 setRoundActive 驱动。
 
 import type { MoodKey, MoodSelect } from '../ws/messages'
-import type { useRoundStore } from '../state/round'
 import { logger } from '../logger'
 
-export const MOOD_TIMEOUT_MS = 10_000
+/** 冷却兜底时长(ms):done 未达时防连接异常卡死在灰态 */
+export const MOOD_COOLDOWN_FALLBACK_MS = 8_000
 
 export interface MoodOption {
   key: MoodKey
@@ -25,44 +27,50 @@ export const MOODS: readonly MoodOption[] = [
 ]
 
 export interface MoodDeps {
-  round: ReturnType<typeof useRoundStore>
+  /** 置灰状态落点:冷却中/回合内都置灰(reactive,由组件读) */
+  setDisabled: (disabled: boolean) => void
   send: (msg: MoodSelect) => void
+  /** done 帧到达回调挂点(App 接线 done → notifyDone) */
 }
 
 export class MoodSelector {
-  private timeout = 0
-  private ticker = 0
+  private fallbackTimer = 0
+  private disabled = false
 
   constructor(private readonly deps: MoodDeps) {}
 
-  show(): void {
-    this.hideTimers()
-    this.deps.round.moodVisible = true
-    // B2 排查:浮层为瞬态(10s 自动收起),现场区分「未触发」与「已收起」
-    logger.debug('mood', '浮层显示(10s 自动收起)')
-    this.deps.round.moodElapsed = 0
-    const startedAt = Date.now()
-    this.ticker = window.setInterval(() => {
-      this.deps.round.moodElapsed = Math.min(1, (Date.now() - startedAt) / MOOD_TIMEOUT_MS)
-    }, 100)
-    this.timeout = window.setTimeout(() => this.hide(), MOOD_TIMEOUT_MS)
-  }
-
-  hide(): void {
-    this.hideTimers()
-    this.deps.round.moodVisible = false
-    logger.debug('mood', '浮层收起')
-  }
-
-  /** 选中:上报 mood_select + 手点写情绪(锁住后续 draw 覆盖)+ 收起 */
+  /** 点选表情:发 mood_select + 进冷却。回合内调用方已置灰,此处只管冷却 */
   select(mood: MoodKey): void {
+    if (this.disabled) return
     this.deps.send({ type: 'mood_select', mood, ts: Math.floor(Date.now() / 1000) })
-    this.deps.round.setManualMood(mood)
-    this.hide()
+    this.setDisabled(true)
+    // 兜底:done 未达(连接异常)时按固定时长解除
+    this.fallbackTimer = window.setTimeout(() => this.setDisabled(false), MOOD_COOLDOWN_FALLBACK_MS)
+    logger.debug('mood', `已上报:${mood}(冷却至 done)`)
   }
 
-  private hideTimers(): void {
-    window.clearTimeout(this.timeout)
-    window.clearInterval(this.ticker)
+  /** done 帧到达(App 在 done 分支接线):解除冷却 */
+  notifyDone(): void {
+    window.clearTimeout(this.fallbackTimer)
+    this.setDisabled(false)
+  }
+
+  /** 回合内置灰开关(App 由 round.phase 驱动);回合开始即打断冷却计时 */
+  setRoundActive(active: boolean): void {
+    if (active) {
+      window.clearTimeout(this.fallbackTimer)
+      this.setDisabled(true)
+    } else {
+      this.setDisabled(false)
+    }
+  }
+
+  get isDisabled(): boolean {
+    return this.disabled
+  }
+
+  private setDisabled(v: boolean): void {
+    this.disabled = v
+    this.deps.setDisabled(v)
   }
 }

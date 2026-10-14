@@ -374,7 +374,7 @@ def test_collect_placeholder_route(monkeypatch):
         first = _recv(ws)
         assert first["type"] == "first_frame"
         assert first["route"] == "collect"
-        assert first["mood_select"] is True
+        assert first["mood_select"] is False  # 恒 false:自动浮出废弃(契约「mood_select」节)
         assert first["template"] == "scene_default"  # 开场板式(接力单源在 CollectState)
 
 

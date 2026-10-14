@@ -93,7 +93,7 @@ def test_collect_full_round(monkeypatch):
         _send(ws, "最近很焦虑睡不着")
         first = _recv(ws)
         assert first["type"] == "first_frame" and first["route"] == "collect"
-        assert first["mood_select"] is True and first["template"] == "scene_default"  # 开场板式
+        assert first["mood_select"] is False and first["template"] == "scene_default"  # 恒 false(T5 自动浮出废弃)
         assert first["text"] == ""  # 开场不设安抚语(契约 §3.1)
         draft = _recv(ws)
         # entry 即提取:首条输入的实质字段直接入粗稿(PRD)

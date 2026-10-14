@@ -27,12 +27,12 @@
 |---|---|
 | ws | 连接/重连/seq 校验/消息分发（connect/on/send）；messages 为 9 种消息类型定义（严格对齐 ws-contract）；契约对齐测试抽 ws-contract「数据对象」formulation 字段名与本地类型比对（§8）；session_id 经 localStorage 持久化（ADR-005） |
 | board | `render(templateId,data,seq)` 通用渲染（读模板声明→增量绘制）·`diff(seq+新字段→动画)`·registry 为模板声明注册表（`register(decl)`/`get(templateId)`；测试模板 3 个，声明类型见 §5.1）；粉笔效果（抖动/dash-reveal/光标/滤镜）为实现细节，实施时入 docstring |
-| mood | 今日心情选择器（浮出/超时/mood_select 上报） |
+| mood | 今日心情选择器（点开浮层/冷却/mood_select 上报；首帧自动浮出已废弃） |
 | l2d | pixi-live2d-display 封装+表情映射（版本钉子见「1. 技术栈」，不重复） |
 | audio | 音频队列与播放：AudioHub 按 chunk.format 分派——`pcm_s16le` 走 PcmPlayer（round_id 隔离，未见过的新 round 自认领即隐式 flush 旧回合；flush 掐掉全部已排程 source）· `wav` 走 AudioQueue（enqueue 顺序播放 · stopAndFade）；用户发送新输入（user_sent）即 flush；onPlayback（cb） 广播播放状态；l2d 订阅播放事件驱动口型，播放不依赖立绘加载 |
 | chat | 气泡+流式文本+危机横幅（ChatPanel）；输入单源文本：文字/麦克风（录音→/asr/transcribe 转写→追加回填文本框，用户确认发送，ADR-004）（input） |
 | station | 心灵补给站：取稿轮询（生成回合末自动触发）/等待态/md 预览/导出 |
-| state | 回合状态机 `transition(event)`（§3）·持当前情绪 emotionLabel：写者按 first_frame.emotion_label → mood_select 本地写 → 精稿 draw.data.emotion.label 次序覆盖，本回合内用户手点不被精稿回退，first_frame 重置；Pinia store |
+| state | 回合状态机 `transition(event)`（见「回合状态机」节）·持当前情绪 emotionLabel：写者按 first_frame.emotion_label → 精稿 draw.data.emotion.label 次序覆盖，first_frame 重置（mood_select 手点写情绪联动已随自动浮出废弃）；Pinia store |
 | logger | console 彩色 logger（INFO/WARN/ERROR） |
 
 > **工具栏工具范围**：今日心情（即心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点开取稿（回合末已自动生成，未就绪显示等待态"正在为你整理"） + md 预览 + 导出 md；pdf 导出属二期未实现，见 station.ts 注记）** · 心灵练习 / 留言墙——前端留入口 UI + TODO 占位（二期）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
@@ -51,7 +51,7 @@
 
 > **交互模式（对齐 v7 观感）**：
 > - 聊天抽屉：常态隐藏 → 点气泡展开 + 气泡隐身 → ✕ 收起还原
-> - 心情选择器：右上浮出 · 6 标签 · 10s 超时回工具栏 pill（pill 可点击再开）
+> - 心情选择器：工具栏「今日心情」点开 · 6 标签 · 点选后置灰至 done（约 8s 兜底解除）· 回合内置灰
 > - rail：磁吸右缘可拖 · 点击开时间线
 > - 黑板：zoom 按钮全屏查看 · 粉笔逐帧绘制 + 光标跟随
 
@@ -63,7 +63,7 @@
 
 ```
 idle ──send user_input──▶ awaiting_first_frame
-awaiting_first_frame ──first_frame──▶ collecting(清黑板/重置 seq 基线/浮心情选择器)
+awaiting_first_frame ──first_frame──▶ collecting(清黑板/重置 seq 基线)
 collecting ──draw(增量)──▶ collecting(继续)
 collecting ──充分度达标(后端停采集)──▶ analysis(显示"收尾中")
 analysis ──draw(精稿)+text_delta──▶ final
@@ -74,7 +74,7 @@ final ──done──▶ idle
 
 - **抢占恢复**：采集期新输入后端**不发新 first_frame**（采集态保留，见 ws-contract「回合与中断」）——前端无清板，增量 draw 直接续画；发送（user_sent）即封口旧流式消息（chat.finalize），新回复另起一条
 
-- **心情选择器**：collecting 开始时浮出，10s 超时自动收起；crisis 不浮
+- **心情选择器**：工具栏点开表情组，回合内置灰，点选后置灰至 done（危机不浮）；自动浮出已废弃（ws-contract「mood_select」节）
 - **crisis**：first_frame（route=crisis）→ 显示热线横幅 + 支持性画面（scene_crisis）
 - **analysis**：最后回答提交 → 精稿 draw 之间，前端显示"收尾中"（纯前端推断，无专用消息）
 
@@ -112,7 +112,8 @@ onPlayback(cb: (active: boolean) => void): void   // l2d 订阅驱动口型
 
 // mood/selector.ts
 show(): void   hide(): void
-onSelect(mood: MoodKey): void            // send mood_select,并写 state.emotionLabel
+onSelect(mood: MoodKey): void            // send mood_select;点选即置灰,done 解除
+setRoundActive(active: boolean): void    // 回合内置灰开关（App 由 round.phase 驱动）
 
 // l2d/live2d.ts
 setExpression(emotionLabel: string): void   // watch state.emotionLabel 驱动;未知标签落到中性兜底表情
@@ -182,14 +183,14 @@ on WS message m:
 
 | 消息 | 前端行为 |
 |---|---|
-| first_frame | 回合重置；flush 停播当前音频；crisis→热线+scene_crisis；collect→心情选择器+空气泡等问话流 |
+| first_frame | 回合重置；flush 停播当前音频；crisis→热线+scene_crisis；collect→空气泡等问话流 |
 | draw | 渲染器增量画（按 seq）|
 | text_delta | 气泡流式追加 |
 | audio_chunk | 入队顺序播放；口型由播放事件驱动（抢占随 first_frame flush/新输入 user_sent flush） |
-| done | 收尾：收起等待态 |
+| done | 收尾：收起等待态；心情按钮组解除置灰 |
 | error | ask_llm_failed→辐条（回合挂起）；其余→辐条，回 idle |
 | user_input（发）| 触发新回合；**发送即 flush 旧回合音频**（user_sent 本地事件） |
-| mood_select（发）| 上报心情 |
+| mood_select（发）| 上报心情；点选即置灰按钮组（约 8s 兜底解除） |
 
 ---
 

@@ -23,7 +23,7 @@ class FirstFrame(BaseModel):
     route: Literal["collect", "crisis"]
     template: TemplateId | None = None  # collect 才有;crisis=None
     emotion_label: str | None = None
-    mood_select: bool  # crisis 恒 false;collect true
+    mood_select: bool = False  # 恒 false:自动浮出废弃,心情上报走「今日心情」按钮(契约「mood_select」节)
     text: str  # 安抚语(phrases 话术库)
 
 

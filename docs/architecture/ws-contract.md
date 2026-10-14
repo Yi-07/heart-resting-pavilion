@@ -87,7 +87,7 @@
 | route | `collect` \| `crisis` | **answer 型不发 first_frame**，直接 text_delta |
 | template | 模板 id | collect 才有，预告粗稿模板 |
 | emotion_label | 快速研判标签 | 喂 Live2D + 粗稿 |
-| mood_select | bool | crisis 恒 false；collect true |
+| mood_select | bool | 恒 false（心情选择器自动浮出废弃，心情上报由用户主动点「今日心情」按钮，见「mood_select」节；字段保留作协议兼容预留） |
 | text | 开场文案（可空） | collect 现行恒空串（开场不设安抚语，第一句话由问话 LLM 生成后随 text_delta 到达）；crisis 携郑重安抚文案 |
 
 **前端语义**：收到 first_frame 即**新回合起点 → 清空黑板、重置 seq 基线、收起心情选择器计时**（基线是旧帧判定起点；后端计数不重置，见 §3.2）。`text` 为空串时前端直接开空 bot 消息等待 text_delta，不渲染任何占位语。
@@ -211,8 +211,9 @@
 ```
 
 - mood 取值（6 档）：`难过 / 低落 / 平静 / 还好 / 开心 / 很好`
-- **独立到达**（无活跃回合）：后端仅更新 L7 profile，回 `text_delta`（预置回执） + `audio_chunk`（预置回执语音，预置 wav 直发，失败跳过） + `done`（**不发 first_frame**，与 §3.1 answer 一致）；Live2D 表情由前端 mood_select 本地触发
-- **回合内到达**（§6.2 采集期）：仅更新 L7 profile，不回帧，采集照常等待轮次回答
+- **来源**：用户点工具栏「今日心情」在表情组中主动选择；首帧自动浮出已废弃
+- **独立到达**（无活跃回合）：后端仅更新 L7 profile，回 `text_delta`（预置回执） + `audio_chunk`（预置回执语音，预置 wav 直发，失败跳过） + `done`（**不发 first_frame**，与 answer 一致）；Live2D 表情由前端 mood_select 本地触发；前端点选即置灰按钮组，done 解除（连接异常约 8s 兜底解除）
+- **回合内到达**（采集期）：仅更新 L7 profile，不回帧，采集照常等待轮次回答（按钮组回合内置灰，此路径为兜底语义）
 
 ---
 
@@ -275,7 +276,7 @@ S→C  done
 
 ```
 C→S  user_input (第 1 条)
-S→C  first_frame (route=collect, template=scene_default, text="", mood_select=true)
+S→C  first_frame (route=collect, template=scene_default, text="", mood_select=false)
 S→C  draw (scene_default|scene_focus, entry 提取结果: 首条输入即提取,带选材)
 S→C  text_delta ×N (问话 LLM 流式,攒批)
 S→C  audio_chunk ×N (问话逐句 TTS,句子泵,pcm_s16le 带 round_id)

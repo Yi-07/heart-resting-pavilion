@@ -1,5 +1,6 @@
 // state/round 接缝钉测试(frontend-plan §8):状态机全迁移+非法迁移忽略、
-// emotionLabel 写序(first_frame → draw → mood 手点锁,first_frame 解锁)。
+// emotionLabel 写序(first_frame → draw 覆盖,first_frame 重置;
+// mood_select 手点写情绪联动已随自动浮出废弃,T5)。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useRoundStore } from '../round'
@@ -12,8 +13,8 @@ function ff(over: Partial<FirstFrame> = {}): FirstFrame {
     route: 'collect',
     template: 'beck_formulation',
     emotion_label: '焦虑',
-    mood_select: true,
-    text: '我在听',
+    mood_select: false,
+    text: '',
     ...over,
   }
 }
@@ -51,7 +52,6 @@ describe('round 状态机', () => {
     store.transition({ kind: 'frame', msg: ff() })
     expect(store.phase).toBe('collecting')
     expect(store.crisis).toBe(false)
-    expect(store.moodVisible).toBe(true)
     expect(store.emotionLabel).toBe('焦虑')
     expect(store.roundId).toBe(1)
 
@@ -68,7 +68,6 @@ describe('round 状态机', () => {
     expect(store.phase).toBe('final')
     store.transition({ kind: 'frame', msg: { type: 'done', session_id: 's1', seq: 6 } })
     expect(store.phase).toBe('idle')
-    expect(store.moodVisible).toBe(false)
   })
 
   it('轮次连续:final 中再答(user_sent)→analysis,再 draw 回 final', () => {
@@ -114,12 +113,11 @@ describe('round 状态机', () => {
     expect(store.phase).toBe('final')
   })
 
-  it('crisis:first_frame(crisis) 不浮选择器,draw/done 走完回 idle', () => {
+  it('crisis:first_frame(crisis) 置危机态,draw/done 走完回 idle', () => {
     store.transition({ kind: 'user_sent' })
-    store.transition({ kind: 'frame', msg: ff({ route: 'crisis', template: null, mood_select: false, emotion_label: null }) })
+    store.transition({ kind: 'frame', msg: ff({ route: 'crisis', template: null, emotion_label: null }) })
     expect(store.phase).toBe('collecting')
     expect(store.crisis).toBe(true)
-    expect(store.moodVisible).toBe(false)
     store.transition({
       kind: 'frame',
       msg: { type: 'draw', seq: 1, template: 'stage_map', data: { nodes: ['现在'], current: 0, from: '你不是一个人' } },
@@ -163,7 +161,6 @@ describe('error 分派(契约 §8:ask_llm_failed 挂起,其余回 idle)', () => 
 
     store.transition({ kind: 'frame', msg: { type: 'error', code: 'ask_llm_failed', message: '辐条' } satisfies S2CMsg })
     expect(store.phase).toBe('collecting') // 挂起:状态冻结
-    expect(store.moodVisible).toBe(true) // mood 面板也不动
 
     // 下一条输入重试:user_sent 照常推进(analysis 等待),新 first_frame 重开
     store.transition({ kind: 'user_sent' })
@@ -186,24 +183,17 @@ describe('error 分派(契约 §8:ask_llm_failed 挂起,其余回 idle)', () => 
 })
 
 describe('emotionLabel 写序', () => {
-  it('first_frame 写 → draw 无手点时覆盖 → mood 手点锁住后续 draw → 新 first_frame 解锁', () => {
+  it('first_frame 写 → draw 覆盖 → 新 first_frame 重置', () => {
     store.transition({ kind: 'frame', msg: ff({ emotion_label: '焦虑' }) })
     expect(store.emotionLabel).toBe('焦虑')
 
-    // draw 复核出不同 label:未手点 → 覆盖
+    // draw 复核出不同 label → 覆盖
     store.transition({ kind: 'frame', msg: draw({ data: { situation: null, emotion: { label: '担心', intensity: 0.6 }, thought: null, behavior: null, intermediate_belief: null, core_belief: null } }) })
     expect(store.emotionLabel).toBe('担心')
 
-    // 手点:写 + 上锁
-    store.setManualMood('平静')
-    expect(store.emotionLabel).toBe('平静')
-    store.transition({ kind: 'frame', msg: draw({ seq: 2, data: { situation: null, emotion: { label: '难过', intensity: 0.8 }, thought: null, behavior: null, intermediate_belief: null, core_belief: null } }) })
-    expect(store.emotionLabel).toBe('平静') // 手点不被精稿回退
-
-    // 新回合 first_frame:重置锁
+    // 新回合 first_frame:重置
     store.transition({ kind: 'frame', msg: ff({ emotion_label: null }) })
     expect(store.emotionLabel).toBeNull()
-    expect(store.manualMood).toBe(false)
   })
 
   it('wheel/stage_map 的 draw 不触碰 emotionLabel', () => {
