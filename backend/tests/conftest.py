@@ -3,12 +3,23 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
 
 from app.agents.state import SessionContext
+from app.memory import MaterialState
+from app.memory.store import StationMaterial
 from app.station.reports import StationReports, reset_reports
+
+
+def _now() -> datetime:
+    return datetime.now()  # noqa: DTZ005 — 与 app 侧本地时区同基准
+
+
+def _now_iso() -> str:
+    return _now().isoformat(timespec="seconds")
 
 
 class FakeMemory:
@@ -43,22 +54,52 @@ class FakeMemory:
         self.calls.append(("save_round_summary", {"session_id": session_id, "summary": summary}))
 
     async def save_station_input(
-        self, session_id: str, formulation_json: str, summary: str
-    ) -> None:
+        self,
+        session_id: str,
+        round_id: str,
+        formulation_json: str,
+        summary: str,
+        collected_at: str | None = None,
+    ) -> bool:
         self.calls.append(
             (
                 "save_station_input",
                 {
                     "session_id": session_id,
+                    "round_id": round_id,
                     "formulation_json": formulation_json,
                     "summary": summary,
+                    "collected_at": collected_at,
                 },
             )
         )
+        return True
 
-    async def load_station_input(self, session_id: str) -> dict[str, Any] | None:
-        self.calls.append(("load_station_input", {"session_id": session_id}))
-        return self.station_input
+    async def load_station_input(
+        self, session_id: str, round_id: str
+    ) -> tuple[MaterialState, StationMaterial | None]:
+        self.calls.append(
+            ("load_station_input", {"session_id": session_id, "round_id": round_id})
+        )
+        if self.station_input is None:
+            return "absent", None
+        payload = dict(self.station_input)
+        payload.setdefault("collected_at", _now_iso())
+        return self.station_state, StationMaterial(
+            payload=payload, deadline=_now() + timedelta(days=7), collected_at=_now()
+        )
+
+    async def probe_station_input(self, session_id: str, round_id: str) -> MaterialState:
+        self.calls.append(
+            ("probe_station_input", {"session_id": session_id, "round_id": round_id})
+        )
+        return self.station_state if self.station_input is not None else "absent"
+
+    async def legacy_station_deadline(
+        self, session_id: str
+    ) -> tuple[MaterialState, datetime | None]:
+        self.calls.append(("legacy_station_deadline", {"session_id": session_id}))
+        return "absent", None
 
     def recent_moods(self, days: int = 7) -> list[dict[str, Any]]:
         self.calls.append(("recent_moods", {"days": days}))
@@ -125,9 +166,12 @@ def fake_memory(monkeypatch: pytest.MonkeyPatch) -> FakeMemory:
     return mem
 
 
-@pytest.fixture()
+@pytest.fixture(autouse=True)
 def tmp_reports(tmp_path: pytest.TempPathFactory) -> StationReports:
-    """station/admin 路由测试共用:临时 reports 库替身,收尾还原单例。"""
+    """station 路由/网关测试共用:临时 reports 库替身,收尾还原单例。
+
+    autouse:轮次高水位 round_seq 也在这个库里——不隔离会让测试污染真实
+    station.db(数据/运行时产物),且轮次编号跨测试串号。"""
 
     store = StationReports(str(tmp_path / "station.db"))
     reset_reports(store)

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -36,12 +37,20 @@ def _set_key(monkeypatch: pytest.MonkeyPatch, key: str) -> None:
 
 
 def test_clear_memory_clears_all_three(fake_memory: Any, tmp_reports: Any):
-    tmp_reports.upsert("s", "ready", "# 稿")
+    """治理清除:Redis+冷层+方案书;轮次高水位不重置(D8)。"""
+    now = datetime.now()  # noqa: DTZ005 — 与 app 侧同基准
+    tmp_reports.begin_generation(
+        "s", "1", "t", collected_at=now, expires_at=now + timedelta(days=7), title="t"
+    )
     res = client.post("/admin/clear_memory")
     assert res.status_code == 200
     assert res.json() == {"ok": True, "redis_keys": 2, "mood_rows": 3, "reports": 1}
-    assert tmp_reports.get("s") is None
+    assert tmp_reports.list_by_session("s") == []
     assert ("clear_all", {}) in fake_memory.calls
+    # D8:高水位不复用——旧聊天链接不会指向同号新报告
+    assert tmp_reports.next_round_id("s") == "1"
+    tmp_reports.clear_all()
+    assert tmp_reports.next_round_id("s") == "2"  # 高水位不复用
 
 
 def test_clear_memory_failure_503(
