@@ -26,7 +26,7 @@ import BoardCanvas from './board/BoardCanvas.vue'
 import ChatPanel from './chat/ChatPanel.vue'
 import MoodOverlay from './mood/MoodSelector.vue'
 import StationPanel from './station/StationPanel.vue'
-import { bindStation, openStation } from './station/station'
+import { bindStation, openStationList } from './station/station'
 import { appendDraft, transcribeAudio } from './voice/asr'
 import SettingsPanel from './admin/SettingsPanel.vue'
 import { openSettings } from './admin/settings'
@@ -224,7 +224,7 @@ onMounted(() => {
     round.transition({ kind: 'frame', msg: m })
     boardRef.value?.clear()
     lastTemplate.value = m.template
-    chat.beginBot(m.text)
+    chat.beginBot(m.text, m.round_id ?? null)  // 本条消息绑定本轮轮次标识
     if (m.mood_select) mood.show()
     else mood.hide()
   })
@@ -235,13 +235,16 @@ onMounted(() => {
   })
   track('text_delta', (m) => {
     round.transition({ kind: 'frame', msg: m })
-    chat.appendDelta(m.text)
+    chat.appendDelta(m.text, round.backendRoundId)  // 用户发言后开的新消息也要绑本轮
   })
   track('audio_chunk', (m) => {
     audio.enqueue(m)
   })
   track('done', (m) => {
     round.transition({ kind: 'frame', msg: m })
+    // 素材归档完成信号:只点亮属于这一轮的消息(邀请语链接据此启用)
+    const archivedRound = m.round_id ?? null
+    if (archivedRound !== null && m.station_ready === true) chat.markStationReady(archivedRound)
     chat.finalize()
     mood.hide()
   })
@@ -382,7 +385,7 @@ function toggleMic(): void {
         <span class="state"></span>
       </button>
       <button class="tb" type="button" @click="mood.show()">今日心情</button>
-      <button class="tb" type="button" data-testid="station-entry" @click="openStation()">心灵补给站</button>
+      <button class="tb" type="button" data-testid="station-entry" @click="openStationList()">心灵补给站</button>
       <button class="tb" type="button" disabled title="二期">心灵练习</button>
       <button class="tb" type="button" disabled title="二期">留言墙</button>
       <button class="tb" type="button" title="模型配置 · 记忆治理" data-testid="settings-entry" @click="openSettings()">设置</button>

@@ -26,6 +26,13 @@ export const useRoundStore = defineStore('round', {
     manualMood: false,
     /** first_frame 递增,驱动黑板清板 */
     roundId: 0,
+    /** 后端下发的本轮稳定标识(first_frame.round_id/collect 才有);
+     *  报告寻址一律以它为准——前端不自造编号。done 帧时同步到 lastCollectRoundId。 */
+    backendRoundId: null as string | null,
+    /** 最近一个 collect 回合结束时的 round_id(供回合结束后定位) */
+    lastCollectRoundId: null as string | null,
+    /** 最近一个 collect 回合的素材是否归档成功(done.station_ready) */
+    stationReady: false,
   }),
   actions: {
     transition(event: RSEvent): void {
@@ -86,6 +93,16 @@ export const useRoundStore = defineStore('round', {
           }
           this.phase = 'idle'
           this.moodVisible = false
+          const roundId = msg.round_id ?? null
+          if (roundId !== null) {
+            this.lastCollectRoundId = roundId
+            this.stationReady = msg.station_ready !== false
+          } else {
+            // answer/crisis 支线回合结束:done 不带轮次 → 清掉当前轮次,
+            // 免得支流的文本消息(走 appendDelta 兜底)继承上一轮 collect 的编号
+            this.backendRoundId = null
+            this.stationReady = false
+          }
           break
         case 'error':
           this.phase = 'idle'
@@ -102,6 +119,8 @@ export const useRoundStore = defineStore('round', {
       this.moodElapsed = 0
       this.emotionLabel = msg.emotion_label
       this.manualMood = false
+      this.backendRoundId = msg.round_id ?? null  // 后端权威:报告寻址用它
+      this.stationReady = false  // 回合未结束前不可认为素材已归档
     },
     /** draw 的 formulation.emotion 覆盖(手点锁时不覆盖;wheel/stage 无此字段) */
     applyEmotion(data: TemplateData): void {
