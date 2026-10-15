@@ -89,7 +89,10 @@ async def delete_memory(memory_id: str) -> dict[str, Any]:
 
 @router.get("/trends")
 async def trends(days: int = Query(7, ge=1, le=90)) -> dict[str, Any]:
-    return {"moods": get_memory().recent_moods(days)}
+    """情绪趋势(治理视图口径):只回 mood_select 用户自我报告(R7 裁定,
+    2026-10-15 分支会话);研判是系统分析产物,展示位在方案书/黑板。"""
+
+    return {"moods": get_memory().recent_moods(days, source="mood_select")}
 
 
 class LegacyLLMConfigIn(BaseModel):

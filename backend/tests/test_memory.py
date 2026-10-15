@@ -59,6 +59,21 @@ async def test_record_mood_upsert_same_day_same_source(mem: Memory):
     assert by_source["mood_select"]["intensity"] is None
 
 
+async def test_recent_moods_source_filter_and_date_window(mem: Memory):
+    """R7 裁定钉:source 过滤只回自我报告;days=日期窗口非 LIMIT 行数
+    (旧实现同日双源时 7 行≈3.5 天,2026-10-15 修正)。"""
+
+    await mem.record_mood("平静", source="mood_select")
+    await mem.record_mood("焦虑", source="研判", intensity=0.8)
+    # 同日两源两行:days=7 若按行数 LIMIT 会截掉一行;按日期窗口则全回
+    assert len(mem.recent_moods(days=7)) == 2
+    assert len(mem.recent_moods(days=1)) == 2  # 同日:窗口 1 天仍含全部
+    # source 过滤:治理趋势只看 mood_select
+    rows = mem.recent_moods(source="mood_select")
+    assert [r["mood_label"] for r in rows] == ["平静"]
+    assert [r["mood_label"] for r in mem.recent_moods(source="研判")] == ["焦虑"]
+
+
 async def test_mood_recent_rolls_in_hot_layer(mem: Memory):
     sid = "sess_m2"
     for mood in ["难过", "低落", "平静", "还好", "开心", "很好", "难过"]:

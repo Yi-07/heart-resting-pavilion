@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, cast
 
 import redis.asyncio as aioredis
@@ -115,15 +115,26 @@ class Memory:
         if session_id is not None:
             await self._push_mood_recent(session_id, mood_label)
 
-    def recent_moods(self, days: int = 7) -> list[dict[str, Any]]:
-        """冷层情绪趋势查看(治理/后续 admin 用;date 降序)。"""
+    def recent_moods(self, days: int = 7, *, source: str | None = None) -> list[dict[str, Any]]:
+        """冷层情绪趋势查看(治理/后续 admin 用;date 降序)。
 
+        days=日期窗口(含当天往前 days-1 天;早实现误作 LIMIT 行数,同日双源时
+        会截半天,2026-10-15 修正为按 date 过滤)。source 过滤:治理趋势只看
+        mood_select(用户自我报告;研判是系统分析产物,展示位在方案书)。
+        """
+
+        cutoff = (_now_local() - timedelta(days=days - 1)).date().isoformat()
+        sql = (
+            "SELECT date, source, mood_label, intensity FROM mood_daily "
+            "WHERE date >= ?"
+        )
+        params: list[Any] = [cutoff]
+        if source is not None:
+            sql += " AND source = ?"
+            params.append(source)
+        sql += " ORDER BY date DESC, updated_at DESC"
         with sqlite3.connect(self._db_path) as conn:
-            rows = conn.execute(
-                "SELECT date, source, mood_label, intensity FROM mood_daily "
-                "ORDER BY date DESC, updated_at DESC LIMIT ?",
-                (days,),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [
             {"date": r[0], "source": r[1], "mood_label": r[2], "intensity": r[3]}
             for r in rows

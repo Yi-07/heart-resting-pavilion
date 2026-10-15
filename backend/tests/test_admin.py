@@ -73,7 +73,19 @@ def test_trends_shape(fake_memory: Any):
     assert res.status_code == 200
     assert res.json() == {"moods": fake_memory.moods}
     res = client.get("/admin/trends", params={"days": 30})
-    assert fake_memory.calls[-1] == ("recent_moods", {"days": 30})
+    assert fake_memory.calls[-1] == ("recent_moods", {"days": 30, "source": "mood_select"})
+
+
+def test_trends_only_mood_select_source(fake_memory: Any):
+    """R7 裁定:治理趋势只回用户自我报告;研判不入趋势(展示位在方案书)。"""
+
+    fake_memory.moods = [
+        {"date": "2026-10-15", "source": "mood_select", "mood_label": "平静", "intensity": None},
+        {"date": "2026-10-15", "source": "研判", "mood_label": "焦虑", "intensity": 0.8},
+    ]
+    res = client.get("/admin/trends")
+    labels = [m["mood_label"] for m in res.json()["moods"]]
+    assert labels == ["平静"]
 
 
 # ---- config ----

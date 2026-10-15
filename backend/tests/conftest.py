@@ -70,9 +70,10 @@ class FakeMemory:
         self.calls.append(("load_station_input", {"session_id": session_id}))
         return self.station_input
 
-    def recent_moods(self, days: int = 7) -> list[dict[str, Any]]:
-        self.calls.append(("recent_moods", {"days": days}))
-        return [dict(m) for m in self.moods]
+    def recent_moods(self, days: int = 7, *, source: str | None = None) -> list[dict[str, Any]]:
+        self.calls.append(("recent_moods", {"days": days, "source": source}))
+        rows = [dict(m) for m in self.moods]
+        return rows if source is None else [m for m in rows if m["source"] == source]
 
     async def clear_all(self) -> dict[str, int]:
         self.calls.append(("clear_all", {}))
