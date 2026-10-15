@@ -843,7 +843,7 @@ async def _settle_collect_event(
         conn.log("route_decided", trace_id=trace, route="crisis", via="escalate")
         await _crisis_sequence(conn)
     elif isinstance(event, AskFailed):
-        # 问话 LLM 失败(ws-contract §3.7/§8):error 帧 + 采集态挂起待重试;
+        # 问话 LLM 失败(ws-contract §3.8/§8):error 帧 + 采集态挂起待重试;
         # 不发预置问句兜底(不掩盖错误),也不弃 state——下一条输入重试
         state = conn.collect_state
         if state is not None:

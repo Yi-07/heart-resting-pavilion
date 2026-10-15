@@ -33,7 +33,7 @@
 | chat | 气泡+流式文本+危机横幅（ChatPanel）；输入单源文本：文字/麦克风（录音→/asr/transcribe 转写→追加回填文本框，用户确认发送，ADR-004）（input） |
 | station | 心灵补给站：取稿轮询（生成回合末自动触发）/等待态/md 预览/导出 |
 | practice | 心灵练习：舒缓、方形、4·7·8 三种呼吸模式；切换模式重置计时 |
-| wall | 留言墙：留言提交、回信轮询、未读提示、清空失败保留原内容 |
+| wall | 留言墙：留言提交、回复推送刷新（WS `wall_reply` 通知触发拉取，无轮询）、未读提示、清空失败保留原内容 |
 | admin | 设置：模型配置（多服务商 profiles + 实时模型发现；需要密钥的服务商必须填写 API Key）+ 隐私 / 记忆治理（语义记忆列表查看 + 单条删除；含用户删除权） |
 | state | 回合状态机 `transition(event)`（见「回合状态机」节）·持当前情绪 emotionLabel：写者按 first_frame.emotion_label → 精稿 draw.data.emotion.label 次序覆盖，first_frame 重置（mood_select 手点写情绪联动已随自动浮出废弃）；Pinia store |
 | logger | console 彩色 logger（INFO/WARN/ERROR） |
@@ -171,11 +171,11 @@ on WS message m:
   switch m.type:
     first_frame: audio.flush(); round.reset(); round.enter("collecting")
                  if m.route == "crisis": showHotline()   # scene_crisis 由后续 draw 帧渲染
-                 else: mood.show(); board.render(m.template, m.text 为空串则只开空气泡)
+                 else: mood.close(); board.render(m.template, m.text 为空串则只开空气泡)
     draw:        board.render(m.template, m.data)
     text_delta:  chat.append(m.text); if m.final: chat.finalize()
     audio_chunk: audio.enqueue(m)
-    done:        round.enter("idle"); mood.hide()
+    done:        round.enter("idle"); mood.notifyDone()
     error:       if m.code == "ask_llm_failed": 辐条提示(不入对话气泡); round 挂起不动
                  else: round.enter("idle"); 辐条提示
 ```
@@ -192,6 +192,8 @@ on WS message m:
 | audio_chunk | 入队顺序播放；口型由播放事件驱动（抢占随 first_frame flush/新输入 user_sent flush） |
 | done | 收尾：收起等待态；心情按钮组解除置灰 |
 | error | ask_llm_failed→辐条（回合挂起）；其余→辐条，回 idle |
+| replay | 幕布折叠回放/小结卡（ADR-005；先于本回合 first_frame 到达） |
+| wall_reply | 留言墙回复就绪：面板开着即拉 `/wall` 刷新，关着只亮未读小红点（面板内部处理） |
 | user_input（发）| 触发新回合；**发送即 flush 旧回合音频**（user_sent 本地事件） |
 | mood_select（发）| 上报心情；点选即置灰按钮组（约 8s 兜底解除） |
 

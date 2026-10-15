@@ -16,7 +16,7 @@
 | 日志 | loguru（双输出：控制台彩色 + 文件结构化）|
 | 存储 | SQLite（冷层）+ Redis（热/温层）|
 | 语音 | GPT-SoVITS（TTS，remote PCM 流式；情感标签）+ SenseVoice（ASR，含情感识别）|
-| LLM | DeepSeek（OpenAI 兼容）+ Ollama 本地，双源抽象 |
+| LLM | DeepSeek（OpenAI 兼容）+ Ollama 本地，litellm 统一传输层（模型运行时选择见「7. LLM 接入层」） |
 
 ---
 
@@ -27,19 +27,20 @@
 
 | 模块 | 职责 | 关键接口 |
 |---|---|---|
-| app/main | 入口装配 | 挂 /ws·/station·/admin |
+| app/main | 入口装配 | 挂 /ws·/station·/admin·/wall·/asr·/v1/tts/bench |
 | ws_gateway | 连接/发号/抢占/消息分发 | 每条 user_input 先过闸门；S→C 帧统一盖章即发（发号与帧映射见「WS 网关」）；error 帧收口 |
-| admin | 管理通道 REST | — |
-| config | 模型配置 | LLM/ASR/TTS 读环境变量；config 传递 emitter |
+| admin | 管理通道 REST | 模型配置 profiles 单源 `/admin/llm/*`（端点唯一记录处见 [ws-contract.md](ws-contract.md)「模型服务通道」）；记忆清除/趋势/语义记忆治理 |
+| config | 运行配置与环境变量 | 模型运行时读环境变量与激活 profile（`ACTIVE_*` 热切换槽位）；config 传递 emitter |
 | logger | 日志与审计 | 双输出+危机审计（见「日志（双输出，对齐 ws-contract）」） |
 | router | 闸门+分类+话术 | `gate.check(text)→GateResult{hit, matched: list[str], severity: float}`（hit 即 severity≥阈值，阈值走配置；matched 供审计；词典与打分为实现细节，实施时入 docstring） · `classifier→{route,label,conf}` · phrases 为预设话术库（危机话术/邀请语/心情回执/等待语音文案，预置文本+预生成 wav 同步直发；问话不落预置——归 LLM 流式，见 spec「L4」采集器规格）；隔离约束见 [architecture-spec.md](architecture-spec.md)「L3 · 智能路由决策器」 |
 | collect | 采集三件 | 字段选择/问序（预置结构单源）/充分度（`sufficiency(f)→float`，权重表为实现细节实施时入 docstring）/三降级检测；问话归 LLM 流式生成，见 [architecture-spec.md](architecture-spec.md)「L4 · 空窗期策略（横切编排）+ 多轮采集器」 |
 | agents | 图编排+共享黑板 | CollectState 17 字段（§3，answer/collect 共用）·图出口为 CollectEvent（§3.4）·确定性条件边分派；Agent 名单见 [architecture-spec.md](architecture-spec.md)「L5 · 异步推理层 · 多 Agent」 |
 | rag | 检索三件套（混合知识库） | `retrieve(query, k=None, *, library=CASE)`·`ingest(refs, *, library, reset=False)`·`RagLibrary{KNOWLEDGE, CASE}`；`Ref={id, question, answer, score, category}`（k=None 走配置默认）；两 Chroma 集合为 hrp_kb_knowledge（科普知识库，answer 直答用）·hrp_kb_case（案例库，collect/station 用）；Chroma+bge-m3·BM25+jieba·bge-reranker-v2-m3；深模块：两库/召回融合重排/分批/BM25 回建藏模块内，调用方只传 library；ingest 脚本与 Chroma collection 归本模块，数据对接见 [data-contract.md](data-contract.md)（换 embedding 模型即重跑 ingest，代码不动） |
-| llm | LLM 双源 | `LLMProvider`: `chat(messages)→str` · `stream(messages)→Iterator[str]` · `chat_json(messages, schema)→T`（`Message={role, content}`）；出错抛 LLMError，由调用方捕获降级（问话失败走 error 帧+辐条，不落预置话术——见 spec「L4」问话失败行）；DeepSeek/Ollama 同接口由 config 切换（§7） |
+| llm | LLM 统一传输层 | `LLMProvider`: `chat(messages)→str` · `stream(messages)→Iterator[str]` · `chat_json(messages, schema)→T`（`Message={role, content}`）；litellm-core 原生路由（懒加载，重试全关），运行时模型取激活 profile、无激活回落 env 双源（模型配置唯一记录处见 [ws-contract.md](ws-contract.md)「模型服务通道」）；出错抛 LLMError，由调用方捕获降级（问话失败走 error 帧+辐条，不落预置话术——见 spec「L4」问话失败行） |
 | memory | 热/温/冷记忆+治理 | `snapshot(session_id)→SessionContext` · `append_turn(session_id, role, text)`（热层轮次原话，ADR-005） · `save_round_summary(session_id, summary)` · `record_mood(mood)`（同日同源 upsert，最新胜）；层介质与 TTL 见 [architecture-spec.md](architecture-spec.md)「L7 · 数据与知识层」（数值不复制） |
 | voice | 语音引擎 | `transcribe(audio: bytes)→str`（ffmpeg 转码在内）·`synthesize_stream(text)→Iterator[bytes]`（按句流式；情感标签属接口预留未接线，见 spec「L6 · 工具与执行层」）·`synthesize_pcm_stream(text)→Iterator[PcmChunk]`（PCM 流式，round_id 透传）；ASR（SenseVoice；ffmpeg 转码 webm/opus→wav16k 后进引擎，只取转写文本（情感识别结果丢弃），音频即弃）·TTS（GPT-SoVITS remote；问话逐句/总结+邀请/危机；失败跳过音频，文字照常收尾）·fillers 为预生成等待语音文件（与 TTS 同音色；切块直发 audio_chunk，零运行时合成） |
 | station | 补给站 REST+方案书存取 | 端点见 [ws-contract.md](ws-contract.md)「连接与会话」；生成素材 `station:input`（§3.3，回合末随归档触发生成）；SQLite reports 表（主键 (session_id, round_id)，历史保留——同会话每回合一份，latest 取最新回合） |
+| wall | 留言墙 REST+异步回复 | 端点见 [ws-contract.md](ws-contract.md)「留言墙通道」；独立 SQLite（wall.db）；worker 30s 巡检生成回复——留言先过危机闸门（命中落审计 WARN+热线话术单源回复），普通留言交当前激活 LLM；回复就绪经 `push_wall_reply` 推送（见「WS 网关」） |
 | schema | 契约类型单源 | Pydantic 对齐 ws-contract（formulation+ws_messages）；契约对齐测试抽 ws-contract「数据对象」formulation 字段名与本端比对，防两端漂移（§11） |
 
 > **鉴权决策（原型期，显式裁定）**：station/admin REST **不鉴权是有意取舍**——依赖默认绑定 127.0.0.1 + CORS 白名单；局域网/公网暴露前必须加会话信物（D1 部署文档护栏，验收按此作答）。
@@ -164,13 +165,14 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 
 ---
 
-## 7. LLM 双源抽象
+## 7. LLM 接入层
 
 ```python
-# llm/provider.py —— OpenAI 兼容统一入口
+# llm/provider.py —— OpenAI 兼容统一传输层(litellm-core 原生路由)
+# 运行时模型选择:激活 profile(/admin/llm/* 保存+验证+激活,模型配置
+# 唯一记录处见 ws-contract「模型服务通道」);无激活 profile 回落 env 双源
 # DeepSeek: base_url=https://api.deepseek.com, model=deepseek-flash
 # Ollama:   base_url=http://localhost:11434/v1, model=qwen3:8b(示例)
-# 由 config.py 切换;R3 配置 UI 后续接管
 ```
 
 > **provider 策略（mock 边界）**：
@@ -185,7 +187,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 ## 8. WS 网关
 
 - 每连接：建 session_id；`user_input/mood_select` 入口；输入单源文本（语音经 `/asr/transcribe` REST 转写预览、用户确认后按文本发送，ADR-004；网关无 audio 分支）
-- **发号**：所有 S→C 帧经网关发送函数，盖章即发送（seq 预增，首帧为 1）；仅 draw/text_delta/audio_chunk/done 消耗号，first_frame/error 不带不消耗；计数器为连接对象内存（会话内全局递增，ws-contract「3.2 draw」）
+- **发号**：所有 S→C 帧经网关发送函数，盖章即发送（seq 预增，首帧为 1）；仅 draw/text_delta/audio_chunk/done 消耗号，first_frame/error/replay/wall_reply 不带不消耗；计数器为连接对象内存（会话内全局递增，ws-contract「3.2 draw」）
 - **两条来路**：网关直发（first_frame/危机序列/error/done）；图内 emitter 注入（config 传递，不进 state）发 draw/text_delta/audio_chunk——Emitter 协议三方法：draw（formulation） · text（s） · audio（chunk）
 - 抢占：**采集态保留**（新输入由图当本轮回答消费，无 first_frame，黑板续画）；取消当前图调用，旧 emitter 标记 dead（未发帧蒸发）；前端淡出停播（frontend-plan「6. WS 消息 → 前端行为」）
 - 非法消息 → `error(invalid_message)`；超时（锚点见 [ws-contract.md](ws-contract.md)「回合与中断」）→ `error(timeout)` + 降级话术 + done；异常 → `error(server_error)`
@@ -203,6 +205,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 
 - 危机序列（网关，闸门任意命中）：first_frame（crisis） → draw（scene_crisis） → text_delta（热线话术） → audio_chunk（预置 wav，失败跳过） → done + WARN 审计（§6）
 - mood_select：独立到达时回预置回执 text_delta + 预置语音 + done；回合内到达仅更新 profile 不回帧（ws-contract「4.2 mood_select」）
+- wall_reply 推送：`push_wall_reply(session_id)` 查连接注册表推帧；离线静默（留言保留未读态），发送失败摘除注册表防泄漏；worker 30s 巡检写回复后调用（ws-contract「3.7 wall_reply」）
 
 ---
 

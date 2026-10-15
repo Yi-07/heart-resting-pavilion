@@ -1,7 +1,7 @@
-"""9 种 WS 消息(ws-contract §2/§3/§4),判别字段 type。
+"""10 种 WS 消息(ws-contract §2/§3/§4),判别字段 type。
 
 seq:会话内全局递增,仅 draw/text_delta/audio_chunk/done 携带(§3.2);
-first_frame/error/replay 不带不消耗。session_id 随 first_frame/done 带回(§1),
+first_frame/error/replay/wall_reply 不带不消耗。session_id 随 first_frame/done 带回(§1),
 C→S 侧重连时带原 id、首条可省(连接即建会话,由网关按连接补全)。
 """
 
@@ -86,7 +86,7 @@ class Done(BaseModel):
 
 
 class ErrorFrame(BaseModel):
-    """§3.7 错误帧;不带 seq 不消耗号"""
+    """§3.8 错误帧;不带 seq 不消耗号"""
 
     type: Literal["error"] = "error"
     code: ErrorCode

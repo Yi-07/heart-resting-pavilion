@@ -1,4 +1,4 @@
-// 9 种 WS 消息类型定义,严格对齐 docs/architecture/ws-contract.md(类型单源)。
+// 10 种 WS 消息类型定义,严格对齐 docs/architecture/ws-contract.md(类型单源)。
 // 改契约先改 ws-contract,再同步本文件与 backend/app/schema/。
 
 /** 路由三值(契约 §5.2) */
@@ -73,7 +73,7 @@ export interface FirstFrame {
   route: Exclude<Route, 'answer'>
   template: TemplateId | null // collect 才有;crisis=null
   emotion_label: string | null
-  mood_select: boolean // crisis 恒 false;collect true
+  mood_select: boolean // 恒 false:自动浮出已废弃,心情上报走「今日心情」按钮(契约 §3.1/§4.2)
   text: string
 }
 

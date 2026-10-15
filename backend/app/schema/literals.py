@@ -12,10 +12,11 @@ TemplateId = Literal[
     "beck_formulation", "emotion_wheel", "stage_map",
     "scene_default", "scene_focus", "scene_answer", "scene_crisis",
 ]
-"""模板 id;beck=MVP 采集默认,wheel/stage_map=测试模板,scene_*=黑板场景化板式(blackboard-v1)"""
+"""模板 id;beck 从 collect 链路退役枚举保留作几何测试模板,wheel/stage_map=测试模板,
+scene_*=黑板场景化板式(blackboard-v1),scene_default 兼 collect 开场(§5.2)"""
 
 MoodKey = Literal["难过", "低落", "平静", "还好", "开心", "很好"]
 """心情六档(§4.2)"""
 
 ErrorCode = Literal["invalid_message", "timeout", "server_error", "ask_llm_failed"]
-"""error 帧 code(§3.7);ask_llm_failed=问话 LLM 失败,采集态挂起待重试"""
+"""error 帧 code(§3.8);ask_llm_failed=问话 LLM 失败,采集态挂起待重试"""

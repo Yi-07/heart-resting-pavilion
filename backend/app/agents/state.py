@@ -120,7 +120,7 @@ class Escalate:
 @dataclass(frozen=True)
 class AskFailed:
     """问话/陪聊 LLM 失败:网关发 error(ask_llm_failed)+ 采集态挂起待重试
-    (ws-contract §3.7/§8;不发预置问句兜底)。挂起=ask_retry 置位,下一条输入重试。"""
+    (ws-contract §3.8/§8;不发预置问句兜底)。挂起=ask_retry 置位,下一条输入重试。"""
 
     source: Literal["ask", "chat"] = "ask"
 

@@ -1,6 +1,6 @@
 """契约对齐接缝:抽 ws-contract §5.1 字段名与 schema 比对,防两端漂移(backend-plan §11)。
 
-同时把契约 §3/§4 的 fenced JSON 示例全部喂给消息联合解析——8 种消息示例
+同时把契约 §3/§4 的 fenced JSON 示例全部喂给消息联合解析——10 种消息示例
 本身即回归样本,契约改动即刻在此炸。
 """
 
@@ -75,7 +75,7 @@ def test_template_data_keys_match_contract():
 def test_contract_examples_parse():
     text = WS_CONTRACT.read_text(encoding="utf-8")
     blocks = list(_fenced_json_blocks(text))
-    assert {b["type"] for b in blocks} == S2C_TYPES | CS_TYPES  # 9 种消息示例全覆盖(ADR-005 +replay)
+    assert {b["type"] for b in blocks} == S2C_TYPES | CS_TYPES  # 10 种消息示例全覆盖(含 replay/wall_reply)
 
     s2c = TypeAdapter(S2CMsg)
     cs = TypeAdapter(CSMsg)
