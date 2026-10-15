@@ -17,20 +17,17 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app import config
 from app import logger as app_logger
 from app.admin.config_store import (
     ActiveProfileError,
     ConfigKeyError,
     Profile,
-    StoredLLMConfig,
     apply_active,
-    apply_llm_config,
     get_config_store,
 )
 from app.llm import catalog as llm_catalog
@@ -93,39 +90,6 @@ async def trends(days: int = Query(7, ge=1, le=90)) -> dict[str, Any]:
     2026-10-15 分支会话);研判是系统分析产物,展示位在方案书/黑板。"""
 
     return {"moods": get_memory().recent_moods(days, source="mood_select")}
-
-
-class LegacyLLMConfigIn(BaseModel):
-    provider: Literal["deepseek", "ollama"]
-    model: str | None = None
-    base_url: str | None = None
-    api_key: str | None = None
-
-
-@router.get("/config")
-async def get_legacy_config() -> dict[str, Any]:
-    """旧设置页兼容口；新设置页使用 /admin/llm/*。"""
-
-    active = config.LLM_PROVIDER
-    return {
-        "provider": active,
-        "api_key_set": bool(config.DEEPSEEK_API_KEY) if active == "deepseek" else False,
-        "providers": [
-            {"id": "deepseek", "model": config.DEEPSEEK_MODEL, "base_url": config.DEEPSEEK_BASE_URL},
-            {"id": "ollama", "model": config.OLLAMA_MODEL, "base_url": config.OLLAMA_URL},
-        ],
-    }
-
-
-@router.post("/config")
-async def set_legacy_config(body: LegacyLLMConfigIn) -> dict[str, Any]:
-    stored = StoredLLMConfig(body.provider, body.model, body.base_url, body.api_key)
-    try:
-        get_config_store().save(stored)
-    except ConfigKeyError as exc:
-        raise HTTPException(status_code=400, detail="未配置可用的加密密钥,无法保存 API Key。") from exc
-    apply_llm_config(stored)
-    return {"ok": True, "provider": body.provider, "model": body.model}
 
 
 # ---- LLM 模型服务(/admin/llm/*) ----

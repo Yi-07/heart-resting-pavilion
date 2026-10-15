@@ -47,16 +47,6 @@ class ActiveProfileError(Exception):
 
 
 @dataclass(frozen=True)
-class StoredLLMConfig:
-    """旧版 /admin/config 兼容记录；新界面使用 profiles 表。"""
-
-    provider: str
-    model: str | None = None
-    base_url: str | None = None
-    api_key: str | None = None
-
-
-@dataclass(frozen=True)
 class Profile:
     id: str
     provider_id: str
@@ -141,14 +131,6 @@ CREATE TABLE IF NOT EXISTS active_profile (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     profile_id TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS llm_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    provider TEXT NOT NULL,
-    model TEXT,
-    base_url TEXT,
-    api_key_enc TEXT,
-    updated_at TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS llm_profile_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -183,33 +165,6 @@ class ConfigStore:
                     "INSERT INTO llm_profile_meta (key, value) VALUES (?, ?)",
                     ("default_deepseek_seeded", "1"),
                 )
-
-    def save(self, cfg: StoredLLMConfig) -> None:
-        """兼容旧 /admin/config 的单行 AES-GCM 配置。"""
-
-        with sqlite3.connect(self._db_path) as conn:
-            old = conn.execute("SELECT api_key_enc FROM llm_config WHERE id = 1").fetchone()
-            encrypted = _encrypt(cfg.api_key) if cfg.api_key else (old[0] if old else None)
-            conn.execute(
-                "INSERT INTO llm_config (id, provider, model, base_url, api_key_enc, updated_at) "
-                "VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET provider=excluded.provider, "
-                "model=excluded.model, base_url=excluded.base_url, api_key_enc=excluded.api_key_enc, "
-                "updated_at=excluded.updated_at",
-                (cfg.provider, cfg.model, cfg.base_url, encrypted, _now()),
-            )
-
-    def load(self) -> StoredLLMConfig | None:
-        with sqlite3.connect(self._db_path) as conn:
-            row = conn.execute("SELECT provider, model, base_url, api_key_enc FROM llm_config WHERE id = 1").fetchone()
-        if row is None:
-            return None
-        key: str | None = None
-        if row[3]:
-            try:
-                key = _decrypt(row[3])
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("degraded", layer="config_decrypt", reason=str(exc)[:120])
-        return StoredLLMConfig(row[0], row[1], row[2], key)
 
     @contextmanager
     def _txn(self) -> Iterator[sqlite3.Connection]:
@@ -417,24 +372,6 @@ def apply_active(profile: Profile | None) -> None:
     config.ACTIVE_BASE_URL = preset.base_url if preset is not None and preset.api_base_supported else ""
 
 
-def apply_llm_config(cfg: StoredLLMConfig) -> None:
-    """旧配置接口应用到环境回落槽位；激活 profile 仍具有更高优先级。"""
-
-    config.LLM_PROVIDER = cfg.provider
-    if cfg.provider == "deepseek":
-        if cfg.model:
-            config.DEEPSEEK_MODEL = cfg.model
-        if cfg.base_url:
-            config.DEEPSEEK_BASE_URL = cfg.base_url
-        if cfg.api_key:
-            config.DEEPSEEK_API_KEY = cfg.api_key
-    elif cfg.provider == "ollama":
-        if cfg.model:
-            config.OLLAMA_MODEL = cfg.model
-        if cfg.base_url:
-            config.OLLAMA_URL = cfg.base_url
-
-
 _store: ConfigStore | None = None
 
 
@@ -467,8 +404,3 @@ def load_and_apply() -> None:
             "config_applied", profile_id=profile.id, provider=profile.provider_id,
             model=profile.model_id, has_key=profile.api_key is not None,
         )
-        return
-    legacy = store.load()
-    if legacy is not None:
-        apply_llm_config(legacy)
-        logger.info("legacy_config_applied", provider=legacy.provider)

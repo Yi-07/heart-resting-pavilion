@@ -4,13 +4,11 @@
 
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config
 from app.admin import get_config_store, reset_config_store
 from app.admin.config_store import ConfigStore
 from app.main import app
@@ -88,85 +86,7 @@ def test_trends_only_mood_select_source(fake_memory: Any):
     assert labels == ["平静"]
 
 
-# ---- config ----
-
-
-def test_config_save_encrypt_and_apply(
-    cfg_store: ConfigStore, monkeypatch: pytest.MonkeyPatch
-):
-    _set_key(monkeypatch, _KEY_HEX)
-    monkeypatch.setattr(config, "LLM_PROVIDER", config.LLM_PROVIDER)  # 登记恢复
-    monkeypatch.setattr(config, "DEEPSEEK_MODEL", config.DEEPSEEK_MODEL)
-
-    res = client.post(
-        "/admin/config",
-        json={"provider": "deepseek", "model": "m1", "api_key": "sk-plain-text"},
-    )
-    assert res.status_code == 200
-    assert res.json() == {"ok": True, "provider": "deepseek", "model": "m1"}  # 无密钥回显
-
-    # 明文绝不落库:原始行里只有密文
-    with sqlite3.connect(cfg_store._db_path) as conn:
-        row = conn.execute(
-            "SELECT provider, model, api_key_enc FROM llm_config WHERE id = 1"
-        ).fetchone()
-    assert row is not None
-    assert row[0] == "deepseek" and row[1] == "m1"
-    assert row[2] is not None and "sk-plain-text" not in row[2]
-
-    loaded = cfg_store.load()
-    assert loaded is not None
-    assert loaded.api_key == "sk-plain-text"  # 解密回读 roundtrip
-    assert config.LLM_PROVIDER == "deepseek" and config.DEEPSEEK_MODEL == "m1"  # 进程内应用
-
-
-def test_config_rejects_api_key_without_aes_key(
-    cfg_store: ConfigStore, monkeypatch: pytest.MonkeyPatch
-):
-    _set_key(monkeypatch, "")
-    monkeypatch.setattr(config, "LLM_PROVIDER", config.LLM_PROVIDER)
-    res = client.post(
-        "/admin/config", json={"provider": "ollama", "model": "q", "api_key": "sk-x"}
-    )
-    assert res.status_code == 400
-    assert cfg_store.load() is None  # 整体未落
-
-
-def test_config_without_key_field_ok(
-    cfg_store: ConfigStore, monkeypatch: pytest.MonkeyPatch
-):
-    _set_key(monkeypatch, "")
-    monkeypatch.setattr(config, "LLM_PROVIDER", config.LLM_PROVIDER)
-    res = client.post("/admin/config", json={"provider": "ollama", "model": "qwen3:8b"})
-    assert res.status_code == 200
-    loaded = cfg_store.load()
-    assert loaded is not None and loaded.model == "qwen3:8b"
-    assert config.LLM_PROVIDER == "ollama"
-
-
-def test_config_invalid_provider_422(cfg_store: ConfigStore):
-    res = client.post("/admin/config", json={"provider": "openai"})
-    assert res.status_code == 422
-
-
-def test_config_get_shape_no_key(monkeypatch: pytest.MonkeyPatch):
-    """GET /admin/config:形状正确,providers 两源,api_key 只给布尔绝不回显。"""
-
-    monkeypatch.setattr(config, "LLM_PROVIDER", "deepseek")
-    monkeypatch.setattr(config, "DEEPSEEK_MODEL", "m1")
-    monkeypatch.setattr(config, "DEEPSEEK_API_KEY", "sk-plain-text")
-    monkeypatch.setattr(config, "OLLAMA_MODEL", "qwen3:8b")
-
-    res = client.get("/admin/config")
-    assert res.status_code == 200
-    body = res.json()
-    assert body["provider"] == "deepseek"
-    assert body["api_key_set"] is True
-    ids = {p["id"]: p for p in body["providers"]}
-    assert ids["deepseek"]["model"] == "m1"
-    assert ids["ollama"]["model"] == "qwen3:8b"
-    # 无密钥回显:任何字段都不含明文
-    assert "sk-plain-text" not in res.text
+# ---- config store(旧 /admin/config 双源口已随 T4 清理;仅存 store 单例守卫) ----
 
 
 def test_config_store_singleton_reset_guard():

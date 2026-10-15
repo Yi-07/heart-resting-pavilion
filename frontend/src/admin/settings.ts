@@ -1,5 +1,7 @@
 // admin/settings.ts —— 设置面板控制器(frontend-plan §2 设置行):
-//  模型配置(读当前预填→编辑保存)+ 记忆治理(情绪趋势 + 一键清除带 GitHub 删库式两步确认)。
+// 记忆治理(情绪趋势 R7 口径 mood_select 单源 + 语义记忆列表查看/单条删除
+// + 一键清除带 GitHub 删库式两步确认)。模型配置走 /admin/llm/*(面板组件内直连,
+// profiles 多配置+单激活),旧 /admin/config 双源口已随 T4 清理移除。
 // REST 基址由 VITE_WS_URL 换算(同 station.ts);全局 admin 操作无需 session_id,不必 bindStation。
 // 状态为模块级响应式单例;确认门:confirmInput === CONFIRM_PHRASE 才真正调 clear。
 
@@ -8,19 +10,6 @@ import { logger } from '../logger'
 import { clearPersistedSession } from '../ws/client'
 
 export type SettingsPhase = 'idle' | 'loading' | 'saved' | 'error'
-export type LlmProvider = 'deepseek' | 'ollama'
-
-export interface ProviderConfig {
-  id: LlmProvider
-  model: string
-  base_url: string
-}
-
-interface ConfigGetBody {
-  provider: LlmProvider
-  api_key_set: boolean
-  providers: ProviderConfig[]
-}
 
 interface TrendRow {
   date: string
@@ -44,12 +33,6 @@ const REST_BASE = new URL(WS_URL.replace(/^ws/, 'http')).origin
 export const settings = reactive({
   open: false,
   phase: 'idle' as SettingsPhase,
-  provider: 'deepseek' as LlmProvider,
-  model: '',
-  baseUrl: '',
-  apiKey: '',
-  apiKeySet: false,
-  providers: [] as ProviderConfig[],
   trends: [] as TrendRow[],
   memories: [] as MemoryItem[],
   message: '',
@@ -81,7 +64,6 @@ function errorDetail(body: unknown): string {
 export function openSettings(): void {
   settings.open = true
   settings.phase = 'idle'
-  void getConfig()
   void loadTrends()
   void loadMemories()
 }
@@ -89,53 +71,6 @@ export function openSettings(): void {
 export function closeSettings(): void {
   settings.open = false
   settings.confirmOpen = false
-}
-
-export async function getConfig(): Promise<void> {
-  const { status, body } = await requestJson<ConfigGetBody>('/admin/config')
-  if (status !== 200 || body === null) {
-    settings.phase = 'error'
-    settings.message = '读取模型配置失败,请确认后端已启动。'
-    return
-  }
-  settings.provider = body.provider
-  settings.apiKeySet = body.api_key_set
-  settings.providers = body.providers
-  const cur = body.providers.find((p) => p.id === body.provider)
-  settings.model = cur?.model ?? ''
-  settings.baseUrl = cur?.base_url ?? ''
-}
-
-export function switchProvider(id: LlmProvider): void {
-  settings.provider = id
-  const cur = settings.providers.find((p) => p.id === id)
-  settings.model = cur?.model ?? ''
-  settings.baseUrl = cur?.base_url ?? ''
-  settings.apiKey = ''
-}
-
-export async function saveConfig(): Promise<void> {
-  settings.phase = 'loading'
-  const payload: { provider: LlmProvider; model: string; base_url: string; api_key?: string } = {
-    provider: settings.provider,
-    model: settings.model,
-    base_url: settings.baseUrl,
-  }
-  if (settings.apiKey.trim() !== '') payload.api_key = settings.apiKey.trim()
-  const { status, body } = await requestJson<{ ok?: boolean; detail?: string }>('/admin/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (status === 200) {
-    settings.phase = 'saved'
-    settings.message = '已保存并生效。'
-    settings.apiKey = ''
-    void getConfig() // 刷新 api_key_set / 预填
-  } else {
-    settings.phase = 'error'
-    settings.message = body !== null && body.detail ? body.detail : errorDetail(body)
-  }
 }
 
 export async function loadTrends(): Promise<void> {
@@ -217,12 +152,6 @@ export async function clearMemory(): Promise<void> {
 export function resetSettingsForTest(): void {
   settings.open = false
   settings.phase = 'idle'
-  settings.provider = 'deepseek'
-  settings.model = ''
-  settings.baseUrl = ''
-  settings.apiKey = ''
-  settings.apiKeySet = false
-  settings.providers = []
   settings.trends = []
   settings.memories = []
   settings.message = ''
