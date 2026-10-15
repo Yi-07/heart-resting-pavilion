@@ -28,3 +28,6 @@ data/*.db
 
 # fillers 预生成语音(运行时产物,重生成=删目录跑 -m app.voice.fillers)
 data/fillers/
+
+# AES 自举密钥(ensure_aes_key 未设 CONFIG_AES_KEY 时生成;凭证不入库,红线 §6.2)
+.hrp_config_key

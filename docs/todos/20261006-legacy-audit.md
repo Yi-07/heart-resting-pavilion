@@ -32,7 +32,7 @@
 
 - 等待体验补全（15s「还在处理」提示、等待卡死 15s 补播第二句）：backlog「原 kanban 待办池迁入」已挂；ws-contract「15s 无消息」条款与 backend-plan 补播注记同源，三处表述一致。
 - answer 空窗桥接语「让我查一下资料——」：Inspiration.md 设计（RAG 检索约 1.7s 空白），前后端 grep 零命中，待实现。
-- ASR/TTS 引擎配置化：spec「L7 · 数据与知识层」节「模型配置存储」段声称 LLM/ASR/TTS 统一可配，`/admin/config` 实际仅 LLM，`frontend/src/admin/SettingsPanel.vue` 中 ASR/TTS 只读展示。
+- ASR/TTS 引擎配置化：spec「L7 · 数据与知识层」节「模型配置存储」段声称 LLM/ASR/TTS 统一可配，`/admin/config` 实际仅 LLM，`frontend/src/admin/SettingsPanel.vue` 中 ASR/TTS 只读展示。（2026-10-15 处置：旧 `/admin/config` 口已随 PR #3 融合 T4 清理退场，模型配置走 `/admin/llm/*` profiles 仍仅 LLM，spec「模型配置存储」段已同步为 LLM profiles；ASR/TTS 配置化仍留位未实现，本条对 ASR/TTS 部分继续有效）
 - station/admin 鉴权：backlog「C1 审查留档项」已挂 WS session 信物项；backend-plan 注明局域网/公网暴露前必须加，现无任何鉴权。
 - 非医疗声明补「AI 非专业咨询 / 对话会被记录」告知文案：Inspiration.md 挂 21号令语境告知义务，前后端文案均未写。
 

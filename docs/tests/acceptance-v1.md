@@ -104,8 +104,8 @@
 
 - [ ] `POST /station/report/generate` → 200,懒生成;轮询 `GET /station/report/latest` 至就绪
 - [ ] 危机回合后 generate → 不产素材(契约约束)
-- [ ] `GET /admin/trends`、`GET /admin/config` → 200 且**响应零密钥回显**
-- [ ] `POST /admin/config` 配 api_key → 落库为 AES-GCM 密文(`HRP_CONFIG_AES_KEY`)
+- [ ] `GET /admin/trends` → 200(只回 mood_select 源);`GET /admin/llm/profiles`、`GET /admin/llm/catalog` → 200 且**任何响应零密钥回显**
+- [ ] `POST /admin/llm/profiles` 配 api_key → 落库为 AES-GCM 密文(`HRP_CONFIG_AES_KEY`,不设则自举 `.hrp_config_key`);激活前真实最小调用验证通过才翻内存
 
 ### 6.1 心灵练习、留言墙、模型设置
 

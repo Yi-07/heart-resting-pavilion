@@ -13,7 +13,9 @@
 | 会话 | 连接即建 `session_id`（服务端生成，随 `first_frame`/`done` 带回）|
 | 生命周期 | 单连接承载多回合；断线重连用原 `session_id` 恢复上下文 |
 | 编码 | JSON，UTF-8，文本帧 |
-| 管理通道 | 记忆清除/趋势/模型配置走 HTTP REST（`POST /admin/clear_memory`·`GET /admin/trends`·`GET /admin/config`·`POST /admin/config`），不进 WS；WS 仅对话 9 消息（见「消息总览（9）」） |
+| 管理通道 | 记忆清除/趋势走 HTTP REST（`POST /admin/clear_memory`·`GET /admin/trends?days=7`，趋势只回 mood_select 源）；不进 WS；WS 仅对话 9 消息（见「消息总览（9）」） |
+| 模型服务通道 | 模型配置走 HTTP REST `/admin/llm/*`（多服务商 profiles+单激活）：`GET /admin/llm/catalog`（服务商+离线候选目录）· `POST /admin/llm/models`（实时模型发现，探测失败仍回候选+live_error）· `GET /admin/llm/profiles`（列表+active_id）· `POST /admin/llm/profiles`（保存待启动）· `PUT /admin/llm/profiles/{id}`（编辑；api_key 留空即保留旧密钥）· `POST /admin/llm/profiles/{id}/verify`（真实最小调用验证，不激活）· `POST /admin/llm/profiles/{id}/activate`（验证通过才切换）· `DELETE /admin/llm/profiles/{id}`（运行中不可删）；同一服务商仅一条配置（409）；**任何响应零密钥回显**；不进 WS |
+| 留言墙通道 | 留言墙走 HTTP REST `/wall/*`（本地单用户，七日生命周期）：`GET /wall?session_id=`（列表+unread 计数）· `POST /wall`（创建，≤2000 字）· `POST /wall/read?session_id=`（打开后清未读）· `GET /wall/unread?session_id=`· `DELETE /wall?session_id=`（清空）；回复由后台 worker 30s 巡检异步生成——留言先过危机闸门，命中落审计 WARN（`wall_crisis_hit`）+热线话术单源回复，普通留言交当前激活 LLM；不进 WS |
 | 语义记忆治理通道 | 语义记忆查看/单条删除走 HTTP REST：`GET /admin/memories`（列表） · `DELETE /admin/memories/{id}`（单条删除，成功 200）；不进 WS |
 | 补给站通道 | 心灵补给站方案书走 HTTP REST：回合末自动触发生成（Finish 归档时后台启动，无需点击）；`POST /station/report/generate` 保留为手动重生成入口 · `GET /station/report/latest`（轮询取稿，等待态"正在为你整理…"）；不进 WS |
 | 语音转写通道 | 语音输入两步式（ADR-004）：`POST /asr/transcribe`（base64 webm/opus → 转写文本）供前端回填文本框，用户确认后按文本输入发送；不进 WS |

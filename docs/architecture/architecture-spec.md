@@ -153,7 +153,8 @@
 **语义记忆检索**：回答管线同步召回 top-3（余弦噪声闸门 + 超期降权），注入 collect 的 Finish 总结与 answer 回答与 collect 问话的 prompt（总结与问话是 collect 侧仅有的两个注入通道——研判为分类器非 LLM prompt）；召回在危机闸门判定之后，历史记忆不参与路由与危机判定（判定只吃本轮输入）。写入仅 collect 回合；状态闭环（回合末 LLM 判「本轮化解了哪些」回写 settled）+ LLM 临场否决兜底。治理：`GET/DELETE /admin/memories`（契约见 ws-contract「管理通道」）；`clear_all` 连语义层一起清；全部读写降级不杀回合。
 
 **治理层**：Key 隔离 + 版本号 · 音频不落库 · 用户可查看/一键清除。
-**模型配置存储**：LLM/ASR/TTS 引擎配置，AES-GCM 字段加密存 SQLite；密钥环境变量注入不入库；前端零密钥；日志脱敏。
+**模型配置存储**：多服务商 profiles（`llm_profiles` 表 + `active_profile` 单行激活指针，端点唯一记录处见 [ws-contract.md](ws-contract.md)「模型服务通道」）+ ASR/TTS 引擎配置，AES-GCM 字段加密存 SQLite；密钥环境变量注入不入库（未设则自举生成 `.hrp_config_key`，gitignore）；前端零密钥（任何响应零密钥回显）；日志脱敏。写操作按顺序铁律走单事务：内存构造候选、对所选模型真实最小调用验证、单事务落库、提交成功才翻内存（`ACTIVE_*` 热切换槽位）；任一步失败库与内存双不动。无激活 profile 回落 env 双源（DeepSeek/Ollama）。
+**留言墙**：本地单用户留言，独立 SQLite（`wall.db`，用户自建内容豁免原文脱敏，七日生命周期 worker 巡检清理）；回复后台异步——留言先过危机闸门，命中落审计 WARN（`wall_crisis_hit`，红线同网关危机审计）且回复热线话术（`phrases.CRISIS_*` 单源），普通留言交当前激活 LLM。
 
 ---
 
