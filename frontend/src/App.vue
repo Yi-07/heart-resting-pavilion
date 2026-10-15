@@ -71,7 +71,7 @@ let l2d: Live2DController | null = null
 let l2dEntry: ModelEntry | null = null
 const wsStatus = ref<'connecting' | 'open' | 'closed'>('connecting')
 const wsReconnecting = ref(false)
-// 提示辐条(契约 §3.7/§8:系统状态提示,不入对话气泡;形态参考 .ws-banner)
+// 提示辐条(契约 §3.8/§8:系统状态提示,不入对话气泡;形态参考 .ws-banner)
 const spoke = ref<{ text: string; autoHide: boolean } | null>(null)
 let spokeTimer: ReturnType<typeof setTimeout> | null = null
 const draft = ref('')
@@ -82,6 +82,7 @@ const frames = ref<{ kind: string; brief: string }[]>([])
 const practiceOpen = ref(false)
 const wallOpen = ref(false)
 const wallUnread = ref(false)
+const wallPanelRef = ref<InstanceType<typeof WallPanel> | null>(null)
 type ToastTone = 'success' | 'error' | 'info'
 const toast = ref<{ message: string; tone: ToastTone } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
@@ -160,6 +161,8 @@ function brief(msg: S2CMsg): string {
       return `seq=${msg.seq}`
     case 'replay':
       return `mode=${msg.mode} turns=${msg.turns?.length ?? 0}`
+    case 'wall_reply':
+      return `session=${msg.session_id}`
     case 'error':
       return `code=${msg.code} ${msg.message}`
   }
@@ -297,6 +300,10 @@ onMounted(() => {
   track('replay', (m) => {
     // ADR-005:重连回放(幕布/小结卡数据源;先于本回合 first_frame 到达)
     chat.applyReplay(m.mode, m.turns ?? [], m.summary)
+  })
+  track('wall_reply', () => {
+    // 留言墙回复就绪(契约 §3.7):面板开着即刷新,关着只亮未读小红点(面板内部处理)
+    wallPanelRef.value?.onWallReply()
   })
 
   client
@@ -501,7 +508,7 @@ function toggleMic(): void {
     <!-- 设置:模型配置 + 记忆治理(趋势/一键清除带两步确认) -->
     <SettingsPanel @toast="showToast" />
     <PracticePanel :open="practiceOpen" @close="practiceOpen = false" />
-    <WallPanel :open="wallOpen" @close="wallOpen = false" @unread="wallUnread = $event" />
+    <WallPanel ref="wallPanelRef" :open="wallOpen" @close="wallOpen = false" @unread="wallUnread = $event" />
 
     <!-- 输入条:薄玻璃 + 发送钮「液芽分体」(goo 剪影只在动画瞬间显形;文字骑在滤镜上) -->
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
@@ -546,7 +553,7 @@ function toggleMic(): void {
   <!-- 危机横幅 + 审计标签(后端规则硬判才出现,前端零判定逻辑) -->
   <div v-if="wsReconnecting" class="ws-banner" data-testid="ws-banner">连接断开了，正在重连…</div>
   <div v-if="l2dFailed" class="ws-banner" data-testid="l2d-error-banner">立绘加载失败了，已启用备用形象，稍后可点「⇄」重试</div>
-  <!-- 提示辐条(契约 §3.7/§8):error 帧系统状态提示,不入对话气泡 -->
+  <!-- 提示辐条(契约 §3.8/§8):error 帧系统状态提示,不入对话气泡 -->
   <div v-if="spoke" class="ws-banner spoke" data-testid="spoke">{{ spoke.text }}</div>
   <div v-if="toast" class="app-toast" :class="`tone-${toast.tone}`" role="status" aria-live="polite">
     <CheckCircle2 v-if="toast.tone === 'success'" :size="15" />

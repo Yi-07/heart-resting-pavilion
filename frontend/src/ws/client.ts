@@ -46,6 +46,7 @@ const KNOWN_TYPES: ReadonlySet<WSMsgType> = new Set<WSMsgType>([
   'audio_chunk',
   'done',
   'replay',
+  'wall_reply',
   'error',
   'user_input',
   'mood_select',

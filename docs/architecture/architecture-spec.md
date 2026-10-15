@@ -79,7 +79,7 @@
 ### L2 · 接入与网关层
 
 - **职责**：一条可靠连接承载整个流水线；实时感由应用层实现
-- **数据契约**：**9 种消息**（JSON 文本帧）：S→C `first_frame / text_delta / draw / audio_chunk / done / replay / error`；C→S `user_input / mood_select`（消息格式唯一记录处见 [ws-contract.md](ws-contract.md)「消息总览（9）」）
+- **数据契约**：**10 种消息**（JSON 文本帧）：S→C `first_frame / text_delta / draw / audio_chunk / done / replay / wall_reply / error`；C→S `user_input / mood_select`（消息格式唯一记录处见 [ws-contract.md](ws-contract.md)「消息总览（10）」）
 
 - `draw.seq` 递增：前端增量绘制 + **中断判定**（新请求 seq 更高 → 作废旧画面，开启新回合）
 
@@ -255,7 +255,7 @@
 | 后端 | FastAPI + LangGraph 1.x（确定性 StateGraph） + Chroma + SQLite + Redis |
 | 前端 | Vue3/Vite + TS + SVG 黑板（自研渲染器）+ Live2D |
 | 语音 | GPT-SoVITS（remote PCM 流式）+ SenseVoice（FunASR）（语音输入走录音→ASR→文字）|
-| 传输 | WebSocket 单连接（9 种消息）|
+| 传输 | WebSocket 单连接（10 种消息）|
 | 交付 | 浏览器起步 / Tauri 客户端收官 |
 
 ---

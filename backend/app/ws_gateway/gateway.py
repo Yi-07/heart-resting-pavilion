@@ -66,6 +66,7 @@ from app.schema import (
     TemplateId,
     TextDelta,
     UserInput,
+    WallReply,
 )
 
 if TYPE_CHECKING:
@@ -269,6 +270,43 @@ class Connection:
         ).start()
         self.log("tts_cancel_sent", round_id=rid, cascade=cascade)
 
+    async def send_wall_reply(self) -> None:
+        """留言墙回复通知(§3.7);无 seq 不进回合计数。发帧失败由调用方兜底。"""
+        await self._send(WallReply(session_id=self.session_id))
+
+
+# ---- 在线连接注册表(wall worker 推 wall_reply 用;跨模块只经这两个口) ----
+
+_connections: dict[str, Connection] = {}
+"""session_id → 活跃连接;同 id 重连以新代旧,断连摘除。"""
+
+
+def register_connection(conn: Connection) -> None:
+    _connections[conn.session_id] = conn
+
+
+def unregister_connection(session_id: str) -> None:
+    _connections.pop(session_id, None)
+
+
+async def push_wall_reply(session_id: str) -> bool:
+    """wall worker 协程内调:向该会话在线连接推 wall_reply(§3.7)。
+
+    worker 与连接同在 lifespan 主事件循环(asyncio.create_task),直接 await。
+    返回是否推到;无连接返回 False。发送失败视为连接已死:摘除注册表防泄漏,
+    worker 静默跳过(留言保留未读态,下次打开拉列表)。
+    """
+
+    conn = _connections.get(session_id)
+    if conn is None:
+        return False
+    try:
+        await conn.send_wall_reply()
+        return True
+    except Exception:  # noqa: BLE001 — 连接已死:摘除防泄漏
+        unregister_connection(session_id)
+        return False
+
 
 # ---- 入口 ----
 
@@ -277,6 +315,7 @@ async def handle_connection(ws: WebSocket) -> None:
     await ws.accept()
     conn = Connection(ws)
     conn.log("session_open")
+    register_connection(conn)
     try:
         while True:
             try:
@@ -291,6 +330,7 @@ async def handle_connection(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         if conn.current is not None and not conn.current.done():
             conn.current.cancel()
+        unregister_connection(conn.session_id)
         conn.log("session_close")
 
 

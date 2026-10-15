@@ -25,7 +25,7 @@
 
 | 模块 | 职责与接口 |
 |---|---|
-| ws | 连接/重连/seq 校验/消息分发（connect/on/send）；messages 为 9 种消息类型定义（严格对齐 ws-contract）；契约对齐测试抽 ws-contract「数据对象」formulation 字段名与本地类型比对（§8）；session_id 经 localStorage 持久化（ADR-005） |
+| ws | 连接/重连/seq 校验/消息分发（connect/on/send）；messages 为 10 种消息类型定义（严格对齐 ws-contract）；契约对齐测试抽 ws-contract「数据对象」formulation 字段名与本地类型比对（§8）；session_id 经 localStorage 持久化（ADR-005） |
 | board | `render(templateId,data,seq)` 通用渲染（读模板声明→增量绘制）·`diff(seq+新字段→动画)`·registry 为模板声明注册表（`register(decl)`/`get(templateId)`；测试模板 3 个，声明类型见 §5.1）；粉笔效果（抖动/dash-reveal/光标/滤镜）为实现细节，实施时入 docstring |
 | mood | 今日心情选择器（点开浮层/冷却/mood_select 上报；首帧自动浮出已废弃） |
 | l2d | pixi-live2d-display 封装+表情映射（版本钉子见「1. 技术栈」，不重复） |

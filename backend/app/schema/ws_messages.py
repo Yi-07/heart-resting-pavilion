@@ -114,11 +114,22 @@ class ReplayFrame(BaseModel):
     session_id: str
 
 
+class WallReply(BaseModel):
+    """§3.7 留言墙回复就绪通知;无 seq 不进回合计数、不进回放(replay 同语义)。
+
+    不携留言内容(内容单源在 REST /wall 列表);worker 写回复后按 session_id
+    查在线连接推送,无连接静默跳过。前端收到后拉 GET /wall 刷新。
+    """
+
+    type: Literal["wall_reply"] = "wall_reply"
+    session_id: str
+
+
 S2CMsg = Annotated[
-    FirstFrame | Draw | TextDelta | AudioChunk | Done | ErrorFrame | ReplayFrame,
+    FirstFrame | Draw | TextDelta | AudioChunk | Done | ErrorFrame | ReplayFrame | WallReply,
     Field(discriminator="type"),
 ]
-"""S→C 消息联合(7 种),按 type 判别"""
+"""S→C 消息联合(8 种),按 type 判别"""
 
 
 # ---------- C→S ----------

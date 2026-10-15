@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+// 留言墙面板(契约 §3.7):刷新时机=挂载/打开/收到 wall_reply 推送/提交后;
+// 无轮询(原 3s 轮询产生 access log 噪音,PR 作者遗留,WS 推送替代)。
+// session_id 与 WS 会话同源(hrp.session,ADR-005),推送按此路由到在线连接。
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Eraser, LoaderCircle, MessageCircleHeart, Send, X } from 'lucide-vue-next'
+import { loadPersistedSession } from '../ws/client'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
 const REST_BASE = new URL(WS_URL.replace(/^ws/, 'http')).origin
-const sessionKey = 'hrp:wall:session'
-const sessionId = localStorage.getItem(sessionKey) ?? (() => {
-  const value = `wall_${crypto.randomUUID()}`
-  localStorage.setItem(sessionKey, value)
-  return value
-})()
+// 与 WS 会话同一身份:推送按 session_id 路由,两套身份会收不到推送。
+// WS 未学到 id 前(首帧前)持久化值为 null → 退化用本地 wall_* 占位,首帧后拉取自然对齐。
+const sessionId = loadPersistedSession() ?? `wall_${crypto.randomUUID()}`
 
 interface WallMessage {
   id: string
@@ -29,7 +30,6 @@ const clearing = ref(false)
 const error = ref('')
 const confirmClear = ref(false)
 const hasUnread = computed(() => messages.value.some((message) => message.unread))
-let poll: ReturnType<typeof setTimeout> | null = null
 let loading = false
 
 async function load(): Promise<void> {
@@ -54,13 +54,12 @@ async function load(): Promise<void> {
   }
 }
 
-function schedulePoll(delay = 3000): void {
-  if (poll !== null) clearTimeout(poll)
-  poll = setTimeout(async () => {
-    await load()
-    schedulePoll()
-  }, delay)
+/** 父组件(App)收 wall_reply 帧转发入口:开着即刷新,关着按未读拉取亮小红点 */
+function onWallReply(): void {
+  void load()
 }
+
+defineExpose({ onWallReply })
 
 async function submit(): Promise<void> {
   const text = draft.value.trim()
@@ -78,7 +77,6 @@ async function submit(): Promise<void> {
     draft.value = ''
     messages.value = [payload.message, ...messages.value.filter((message) => message.id !== payload.message.id)]
     await load()
-    schedulePoll(0)
   } catch {
     error.value = '这句话还没有放好，稍后再试。'
   } finally {
@@ -96,7 +94,6 @@ async function clear(): Promise<void> {
     confirmClear.value = false
     messages.value = []
     emit('unread', false)
-    schedulePoll()
   } catch {
     error.value = '留言没有清空，稍后再试。'
   } finally {
@@ -108,18 +105,13 @@ function formatTime(value: string): string {
   return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 
-onMounted(() => {
-  void load().finally(() => schedulePoll())
-})
+onMounted(() => { void load() })
 watch(() => props.open, (open) => {
   if (open) {
     emit('unread', false)
-    void load().finally(() => schedulePoll(0))
-  } else {
-    schedulePoll()
+    void load()
   }
 })
-onUnmounted(() => { if (poll !== null) clearTimeout(poll) })
 </script>
 
 <template>

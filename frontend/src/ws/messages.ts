@@ -10,7 +10,7 @@ export type TemplateId = 'beck_formulation' | 'emotion_wheel' | 'stage_map' | 's
 /** 心情六档(契约 §4.2) */
 export type MoodKey = '难过' | '低落' | '平静' | '还好' | '开心' | '很好'
 
-/** error 帧 code(契约 §3.7) */
+/** error 帧 code(契约 §3.8) */
 export type ErrorCode = 'invalid_message' | 'timeout' | 'server_error' | 'ask_llm_failed'
 
 // ---------- 数据对象(契约 §5.1) ----------
@@ -137,7 +137,22 @@ export interface ReplayFrame {
   session_id: string
 }
 
-export type S2CMsg = FirstFrame | Draw | TextDelta | AudioChunk | Done | ErrorFrame | ReplayFrame
+/** 留言墙回复就绪通知(契约 §3.7);无 seq 不进回合计数、不进回放。
+ * 不携留言内容(内容单源 REST /wall 列表),收到即拉取刷新 */
+export interface WallReplyFrame {
+  type: 'wall_reply'
+  session_id: string
+}
+
+export type S2CMsg =
+  | FirstFrame
+  | Draw
+  | TextDelta
+  | AudioChunk
+  | Done
+  | ErrorFrame
+  | ReplayFrame
+  | WallReplyFrame
 
 // ---------- C→S(契约 §4) ----------
 

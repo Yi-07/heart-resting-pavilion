@@ -13,6 +13,7 @@ from app import logger as app_logger
 from app.llm import LLMError, Message, get_provider
 from app.router import phrases
 from app.router.gate import check
+from app.ws_gateway import push_wall_reply
 
 from .store import get_store
 
@@ -46,6 +47,9 @@ async def _handle(item: dict[str, str]) -> None:
             logger.warning("wall_reply_failed", message_id=item["id"], reason=str(exc)[:120])
             return
     store.reply(item["id"], reply)
+    # 回复就绪推 wall_reply(§3.7):在线则前端即时刷新,离线静默(未读态兜底)
+    if await push_wall_reply(item["session_id"]):
+        logger.info("wall_reply_pushed", message_id=item["id"])
 
 
 async def _run() -> None:

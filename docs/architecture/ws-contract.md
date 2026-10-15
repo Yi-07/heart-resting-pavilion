@@ -13,7 +13,7 @@
 | 会话 | 连接即建 `session_id`（服务端生成，随 `first_frame`/`done` 带回）|
 | 生命周期 | 单连接承载多回合；断线重连用原 `session_id` 恢复上下文 |
 | 编码 | JSON，UTF-8，文本帧 |
-| 管理通道 | 记忆清除/趋势走 HTTP REST（`POST /admin/clear_memory`·`GET /admin/trends?days=7`，趋势只回 mood_select 源）；不进 WS；WS 仅对话 9 消息（见「消息总览（9）」） |
+| 管理通道 | 记忆清除/趋势走 HTTP REST（`POST /admin/clear_memory`·`GET /admin/trends?days=7`，趋势只回 mood_select 源）；不进 WS；WS 对话 10 消息（见「消息总览（10）」） |
 | 模型服务通道 | 模型配置走 HTTP REST `/admin/llm/*`（多服务商 profiles+单激活）：`GET /admin/llm/catalog`（服务商+离线候选目录）· `POST /admin/llm/models`（实时模型发现，探测失败仍回候选+live_error）· `GET /admin/llm/profiles`（列表+active_id）· `POST /admin/llm/profiles`（保存待启动）· `PUT /admin/llm/profiles/{id}`（编辑；api_key 留空即保留旧密钥）· `POST /admin/llm/profiles/{id}/verify`（真实最小调用验证，不激活）· `POST /admin/llm/profiles/{id}/activate`（验证通过才切换）· `DELETE /admin/llm/profiles/{id}`（运行中不可删）；同一服务商仅一条配置（409）；**任何响应零密钥回显**；不进 WS |
 | 留言墙通道 | 留言墙走 HTTP REST `/wall/*`（本地单用户，七日生命周期）：`GET /wall?session_id=`（列表+unread 计数）· `POST /wall`（创建，≤2000 字）· `POST /wall/read?session_id=`（打开后清未读）· `GET /wall/unread?session_id=`· `DELETE /wall?session_id=`（清空）；回复由后台 worker 30s 巡检异步生成——留言先过危机闸门，命中落审计 WARN（`wall_crisis_hit`）+热线话术单源回复，普通留言交当前激活 LLM；不进 WS |
 | 语义记忆治理通道 | 语义记忆查看/单条删除走 HTTP REST：`GET /admin/memories`（列表） · `DELETE /admin/memories/{id}`（单条删除，成功 200）；不进 WS |
@@ -52,7 +52,7 @@
 
 ---
 
-## 2. 消息总览（9）
+## 2. 消息总览（10）
 
 | 方向 | 类型 | 触发方 | 说明 |
 |---|---|---|---|
@@ -62,6 +62,7 @@
 | S→C | audio_chunk | 后端 | TTS 音频块（base64）|
 | S→C | done | 后端 | 回合结束 |
 | S→C | replay | 后端 | 重连回放（历史气泡/小结卡，ADR-005；无 seq）|
+| S→C | wall_reply | 后端 | 留言墙回复就绪通知（不占 seq、不进回放；收到后拉取 `/wall` 刷新）|
 | C→S | user_input | 前端 | 用户文本输入（ADR-004 输入单源）；采集轮次回答也用它 |
 | C→S | mood_select | 前端 | 心情选择上报 |
 | S→C | error | 后端 | 错误帧（见 §8）|
@@ -171,7 +172,18 @@
 - 无 `seq`，不进回合计数（同 first_frame/error 语义）
 - 治理联动：`POST /admin/clear_memory` 由前端先清浏览器存的身份，再调本端点
 
-### 3.7 error
+### 3.7 wall_reply（留言墙回复通知）
+
+```json
+{ "type": "wall_reply", "session_id": "sess_abc" }
+```
+
+- **触发**：留言墙 worker 写入回复后按 `session_id` 查在线连接推送；无在线连接则静默跳过（留言保留未读态，用户下次打开留言墙拉取）
+- 前端收到后调 `GET /wall?session_id=` 刷新列表与未读小红点；本帧不携留言内容（内容单源在 REST 列表）
+- 无 `seq`，不进回合计数、不进重连回放（同 replay 语义）
+- 身份约定：wall 的 REST `session_id` 与 WS 会话 id 同源（前端统一取 WS 身份，不再自造 `wall_*`）
+
+### 3.8 error
 
 ```json
 { "type": "error", "code": "invalid_message", "message": "字段缺失: text" }
@@ -394,7 +406,7 @@ S→C  done
 ## 10. 前后端各自实现清单（开工检查）
 
 **前端**
-1. WS 客户端（9 种消息解析、seq 校验、断线重连）
+1. WS 客户端（10 种消息解析、seq 校验、断线重连）
 2. first_frame → 清黑板/重置/收起选择器
 3. draw → 增量渲染（新字段动画；scene 模板 asset 渲染——未知 id 跳过兜底，subject 与 zones 声明都在才画）
 4. mood_select 上报（含独立到达）
