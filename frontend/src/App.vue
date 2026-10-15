@@ -4,6 +4,7 @@
 //   draw:黑板增量渲染;text_delta:气泡/抽屉流式;audio_chunk:入队;done/error:收口回 idle
 // 工具栏 route-tabs 为被动指示(路由只在后端判定);Live2D/语音留位(步骤 7/8)。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { AlertCircle, CheckCircle2, Info } from 'lucide-vue-next'
 import { logger } from './logger'
 import { WSClient } from './ws/client'
 import type { S2CMsg } from './ws/messages'
@@ -31,6 +32,8 @@ import { bindStation, openStation } from './station/station'
 import { appendDraft, transcribeAudio } from './voice/asr'
 import SettingsPanel from './admin/SettingsPanel.vue'
 import { openSettings } from './admin/settings'
+import WallPanel from './wall/WallPanel.vue'
+import PracticePanel from './practice/PracticePanel.vue'
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
 
@@ -76,8 +79,20 @@ const lastTemplate = ref<string | null>(null)
 const protoOpen = ref(false)
 const isDev = import.meta.env.DEV
 const frames = ref<{ kind: string; brief: string }[]>([])
+const practiceOpen = ref(false)
+const wallOpen = ref(false)
+const wallUnread = ref(false)
+type ToastTone = 'success' | 'error' | 'info'
+const toast = ref<{ message: string; tone: ToastTone } | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
 
 const avatar = computed(() => avatarSvg(expressionFor(round.emotionLabel)))
+
+function showToast(payload: { message: string; tone?: ToastTone }): void {
+  toast.value = { message: payload.message, tone: payload.tone ?? 'success' }
+  if (toastTimer !== null) clearTimeout(toastTimer)
+  toastTimer = setTimeout(() => { toast.value = null; toastTimer = null }, 3200)
+}
 
 // ── 状态 chip(prototypes/ui-taste 定稿):图标+英文链路+状态灯,三部分同步切换 ──
 // answer 无 first_frame 帧信号(契约 §3.1),chip 显示 idle/collect/crisis 三态,与旧 route-tabs 同局限。
@@ -317,6 +332,7 @@ watch(
 onUnmounted(() => {
   disposeLive2D()
   l2d = null
+  if (toastTimer !== null) clearTimeout(toastTimer)
 })
 
 /** 辐条提示:autoHide=true 数秒后自动收起(超时/异常类);false 常驻待下一帧覆盖 */
@@ -434,9 +450,9 @@ function toggleMic(): void {
         今日心情
       </button>
       <button class="tb" type="button" data-testid="station-entry" @click="openStation()">心灵补给站</button>
-      <button class="tb" type="button" disabled title="二期">心灵练习</button>
-      <button class="tb" type="button" disabled title="二期">留言墙</button>
-      <button class="tb" type="button" title="模型配置与记忆" data-testid="settings-entry" @click="openSettings()">设置</button>
+      <button class="tb" type="button" data-testid="practice-entry" :class="{ active: practiceOpen }" @click="practiceOpen = true">心灵练习</button>
+      <button class="tb" type="button" data-testid="wall-entry" :class="{ active: wallOpen }" @click="wallOpen = true">留言墙<span v-if="wallUnread" class="wall-dot" aria-label="有新的留言回复"></span></button>
+      <button class="tb" type="button" title="模型配置 · 记忆治理" data-testid="settings-entry" @click="openSettings()">设置</button>
       <span class="sp"></span>
       <button
         class="mood-pill"
@@ -483,7 +499,9 @@ function toggleMic(): void {
     <StationPanel />
 
     <!-- 设置:模型配置 + 记忆治理(趋势/一键清除带两步确认) -->
-    <SettingsPanel />
+    <SettingsPanel @toast="showToast" />
+    <PracticePanel :open="practiceOpen" @close="practiceOpen = false" />
+    <WallPanel :open="wallOpen" @close="wallOpen = false" @unread="wallUnread = $event" />
 
     <!-- 输入条:薄玻璃 + 发送钮「液芽分体」(goo 剪影只在动画瞬间显形;文字骑在滤镜上) -->
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
@@ -530,6 +548,12 @@ function toggleMic(): void {
   <div v-if="l2dFailed" class="ws-banner" data-testid="l2d-error-banner">立绘加载失败了，已启用备用形象，稍后可点「⇄」重试</div>
   <!-- 提示辐条(契约 §3.7/§8):error 帧系统状态提示,不入对话气泡 -->
   <div v-if="spoke" class="ws-banner spoke" data-testid="spoke">{{ spoke.text }}</div>
+  <div v-if="toast" class="app-toast" :class="`tone-${toast.tone}`" role="status" aria-live="polite">
+    <CheckCircle2 v-if="toast.tone === 'success'" :size="15" />
+    <AlertCircle v-else-if="toast.tone === 'error'" :size="15" />
+    <Info v-else :size="15" />
+    <span>{{ toast.message }}</span>
+  </div>
   <div v-if="round.crisis" class="crisis-banner" data-testid="crisis-banner">
     <span class="cb-ic">
       <svg viewBox="0 0 24 24">
@@ -579,6 +603,8 @@ function toggleMic(): void {
   position: relative;
   z-index: 30;
 }
+.tb.active{color:var(--primary-deep);background:rgba(227,237,226,.72)}
+.wall-dot{display:inline-block;width:6px;height:6px;margin-left:5px;border-radius:50%;background:#df856e;vertical-align:middle;box-shadow:0 0 0 3px rgba(223,133,110,.12)}
 .logo {
   font-family: var(--serif);
   font-weight: 700;
@@ -1154,6 +1180,29 @@ function toggleMic(): void {
   border-color: rgba(196, 154, 84, 0.55);
   color: #7a6a4f;
 }
+.app-toast {
+  position: fixed;
+  top: 112px;
+  left: 50%;
+  z-index: 66;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 9px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  color: #587060;
+  background: rgba(248, 252, 248, 0.94);
+  box-shadow: 0 14px 34px -18px rgba(57, 74, 61, 0.5);
+  backdrop-filter: blur(18px) saturate(1.25);
+  transform: translateX(-50%);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+.app-toast.tone-error { color: #a45a4e; background: rgba(255, 246, 241, 0.96); }
+.app-toast.tone-info { color: #66756c; }
 
 /* ── 危机横幅 + 审计 ── */
 .crisis-banner {

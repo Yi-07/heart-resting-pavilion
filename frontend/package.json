@@ -16,6 +16,7 @@
     "lint:eslint": "eslint . --fix --cache"
   },
   "dependencies": {
+    "lucide-vue-next": "^1.0.0",
     "pinia": "^4.0.2",
     "pixi-live2d-display": "0.4.0",
     "pixi.js": "6.5.10",

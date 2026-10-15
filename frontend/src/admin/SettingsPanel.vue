@@ -1,654 +1,92 @@
 <script setup lang="ts">
-// 设置面板(frontend-plan §2 设置行):模型配置(读当前预填→编辑保存)+ 记忆治理
-// (情绪趋势 + 一键清除带 GitHub 删库式两步确认)。材质=prototypes/ui-taste 定稿:
-// 薄玻璃面板/分组卡/分段药丸/tinted 玻璃按钮+流光/确认弹窗居中。
-import { computed } from 'vue'
-import {
-  settings,
-  closeSettings,
-  saveConfig,
-  switchProvider,
-  requestClear,
-  cancelClear,
-  clearMemory,
-  confirmMatches,
-  loadMemories,
-  deleteMemory,
-  CONFIRM_PHRASE,
-} from './settings'
+import { computed, ref, watch } from 'vue'
+import { Activity, AlertCircle, ChevronLeft, CircleCheck, LoaderCircle, Pencil, PlugZap, Plus, Play, RefreshCw, Search, Settings2, ShieldCheck, Trash2, X } from 'lucide-vue-next'
+import { CONFIRM_PHRASE, cancelClear, clearMemory, confirmMatches, requestClear, settings } from './settings'
 
-const confirmEnabled = computed(() => confirmMatches(settings.confirmInput))
+const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws'
+const REST_BASE = new URL(WS_URL.replace(/^ws/, 'http')).origin
+type View = 'hub' | 'models' | 'memory'
+interface ModelOption { id: string; name: string; source?: string }
+interface Provider { id: string; name: string; base_url: string; needs_key: boolean; models: ModelOption[] }
+interface Profile { id: string; provider_id: string; model_id: string; display_name: string; api_key_set: boolean; verified: boolean; active: boolean }
+interface LiveModelsResult { provider_id: string; models: ModelOption[]; live_error: string | null; api_key_source: 'submitted' | 'saved' | 'none' }
+type ToastTone = 'success' | 'error' | 'info'
+
+const view = ref<View>('hub'); const providers = ref<Provider[]>([]); const profiles = ref<Profile[]>([]); const activeId = ref<string | null>(null)
+const DEFAULT_PROVIDER = 'deepseek'; const DEFAULT_MODEL = 'deepseek-v4-flash'
+const dialogOpen = ref(false); const dialogProfile = ref<Profile | null>(null); const dialogProvider = ref(DEFAULT_PROVIDER); const dialogModel = ref(''); const dialogKey = ref(''); const dialogKeyTouched = ref(false); const modelSearch = ref(''); const saving = ref(false); const activatingId = ref<string | null>(null); const verifyingId = ref<string | null>(null); const discovering = ref(false); const message = ref(''); const messageError = ref(false); const dialogError = ref(''); const deleteTarget = ref<Profile | null>(null)
+const emit = defineEmits<{ toast: [payload: { message: string; tone?: ToastTone }] }>()
+const visible = computed(() => settings.open); const activeProfile = computed(() => profiles.value.find((p) => p.id === activeId.value)); const selectedProvider = computed(() => providers.value.find((p) => p.id === dialogProvider.value)); const providerChoices = computed(() => providers.value.filter((provider) => dialogProfile.value?.provider_id === provider.id || !profiles.value.some((profile) => profile.provider_id === provider.id))); const filteredModels = computed(() => selectedProvider.value?.models ?? [])
+function modelOptionLabel(model: ModelOption): string {
+  const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return normalize(model.name) === normalize(model.id) ? model.name : `${model.name} · ${model.id}`
+}
+watch(modelSearch, (value) => { if (dialogOpen.value) dialogModel.value = value.trim() })
+async function json<T>(path: string, init?: RequestInit): Promise<T> { const response = await fetch(`${REST_BASE}${path}`, init); if (!response.ok) throw new Error(((await response.json().catch(() => null)) as { detail?: string } | null)?.detail ?? '请求失败'); return await response.json() as T }
+type ModelAction = 'save' | 'activate' | 'verify' | 'discover' | 'delete'
+function errorText(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+function friendlyError(error: unknown, action: ModelAction): string {
+  const detail = errorText(error)
+  const lower = detail.toLowerCase()
+  if (detail.includes('未配置可用的加密密钥')) return '本机加密配置还没有准备好，请先补充服务配置。'
+  if (detail.includes('同一服务商只能配置一个模型胶囊')) return '这个服务商已经配置过模型了，请编辑现有模型。'
+  if (detail.includes('模型 ID 格式') || detail.includes('模型') && (detail.includes('不支持') || detail.includes('不存在')) || lower.includes('model not found') || lower.includes('does not exist') || lower.includes('unsupported model') || lower.includes('invalid model') || lower.includes('unknown model') || lower.includes('you passed')) return '模型名称不可用，请检查模型 ID 后重试。'
+  if (detail.includes('需要 API Key')) return '该服务商需要 API Key，请填写后保存。'
+  if (lower.includes('401') || lower.includes('403') || lower.includes('api key') || lower.includes('apikey') || detail.includes('密钥') || lower.includes('unauthorized') || lower.includes('authentication')) return '连接未通过，请检查 API Key 是否正确。'
+  if (lower.includes('429') || lower.includes('503') || lower.includes('timeout') || lower.includes('timed out') || lower.includes('rate limit') || lower.includes('限流')) return '服务响应有点慢，请稍后再试。'
+  if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('econnrefused') || lower.includes('enotfound') || lower.includes('连接不上')) return '暂时连接不上服务商，请检查网络或服务地址。'
+  if (action === 'activate') return '模型连接未通过，尚未切换当前模型。'
+  if (action === 'verify') return '连接没有通过，请检查模型配置后重试。'
+  if (action === 'discover') return '暂时拿不到最新模型列表，将继续使用内置候选。'
+  if (action === 'delete') return '模型没有删除，请稍后再试。'
+  return '模型配置没有保存，请检查后重试。'
+}
+async function loadModels(): Promise<void> { try { const [catalog, saved] = await Promise.all([json<{ providers: Provider[] }>('/admin/llm/catalog'), json<{ active_id: string | null; profiles: Profile[] }>('/admin/llm/profiles')]); providers.value = catalog.providers.sort((a, b) => a.id === DEFAULT_PROVIDER ? -1 : b.id === DEFAULT_PROVIDER ? 1 : 0); profiles.value = saved.profiles; activeId.value = saved.active_id } catch (err) { setMessage(err instanceof Error ? err.message : '模型服务暂时不可用。', true) } }
+function go(next: View): void { view.value = next; if (next === 'models') void loadModels() }
+function close(): void { settings.open = false; view.value = 'hub'; dialogOpen.value = false }
+function setMessage(value: string, isError = false): void { message.value = value; messageError.value = isError }
+function notify(messageText: string, tone: ToastTone = 'success'): void { emit('toast', { message: messageText, tone }) }
+function openDialog(profile: Profile | null = null): void { dialogProfile.value = profile; const available = providers.value.find((provider) => !profiles.value.some((saved) => saved.provider_id === provider.id)); const providerId = profile?.provider_id ?? available?.id ?? DEFAULT_PROVIDER; dialogProvider.value = providerId; const models = providers.value.find((p) => p.id === providerId)?.models ?? []; dialogModel.value = profile?.model_id ?? (models.some((m) => m.id === DEFAULT_MODEL) ? DEFAULT_MODEL : models[0]?.id ?? DEFAULT_MODEL); dialogKey.value = ''; dialogKeyTouched.value = false; modelSearch.value = dialogModel.value; dialogError.value = ''; setMessage(''); dialogOpen.value = true }
+function selectProvider(id: string): void { dialogProvider.value = id; const models = providers.value.find((p) => p.id === id)?.models ?? []; dialogModel.value = models[0]?.id ?? ''; modelSearch.value = dialogModel.value }
+async function discoverModels(): Promise<void> { if (discovering.value || !dialogProvider.value) return; discovering.value = true; dialogError.value = ''; try { const apiKey = dialogKey.value.trim(); const body: { provider_id: string; profile_id?: string; api_key?: string } = { provider_id: dialogProvider.value }; if (apiKey) body.api_key = apiKey; else if (dialogProfile.value && !dialogKeyTouched.value) body.profile_id = dialogProfile.value.id; const result = await json<LiveModelsResult>('/admin/llm/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const provider = providers.value.find((item) => item.id === result.provider_id); if (provider) provider.models = result.models; if (!dialogModel.value && result.models.length > 0) { dialogModel.value = result.models[0]?.id ?? ''; modelSearch.value = dialogModel.value } const messageText = result.live_error ? friendlyError(result.live_error, 'discover') : result.api_key_source === 'saved' ? `已使用已保存的 API Key 更新 ${result.models.length} 个模型候选。` : `已更新 ${result.models.length} 个模型候选。`; setMessage(messageText, Boolean(result.live_error)); if (result.live_error) dialogError.value = result.live_error } catch (err) { const detail = errorText(err); const messageText = friendlyError(err, 'discover'); dialogError.value = detail; setMessage(messageText, true); notify(messageText, 'error') } finally { discovering.value = false } }
+async function saveModel(): Promise<void> { const apiKey = dialogKey.value.trim(); const requiresKey = selectedProvider.value?.needs_key ?? true; if (!dialogModel.value || saving.value || (!dialogProfile.value && requiresKey && !apiKey)) return; const wasActive = dialogProfile.value?.active ?? false; saving.value = true; dialogError.value = ''; try { const keyPayload = apiKey ? { api_key: apiKey } : {}; const body = { provider_id: dialogProvider.value, model_id: dialogModel.value, ...keyPayload }; if (dialogProfile.value) await json(`/admin/llm/profiles/${dialogProfile.value.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id: dialogModel.value, ...keyPayload }) }); else await json('/admin/llm/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); dialogOpen.value = false; setMessage(wasActive ? '运行中的模型已验证并应用。' : '模型胶囊已保存，请点击启动应用。'); notify(wasActive ? '模型配置已保存并应用。' : '模型配置已保存。'); await loadModels() } catch (err) { const detail = errorText(err); const messageText = friendlyError(err, 'save'); dialogError.value = detail; setMessage(messageText, true); notify(messageText, 'error') } finally { saving.value = false } }
+const canSave = computed(() => Boolean(dialogModel.value) && !saving.value && (Boolean(dialogProfile.value) || !(selectedProvider.value?.needs_key ?? true) || Boolean(dialogKey.value.trim())))
+async function activate(profile: Profile): Promise<void> { if (activatingId.value !== null || verifyingId.value !== null || profile.active) return; activatingId.value = profile.id; setMessage(''); const startedAt = performance.now(); try { await json(`/admin/llm/profiles/${profile.id}/activate`, { method: 'POST' }); const latency = Math.max(0, Math.round(performance.now() - startedAt)); setMessage(`${displayProvider(profile.provider_id)} 已启动。`); notify(`${displayProvider(profile.provider_id)} 已切换 · ${latency} ms`); await loadModels() } catch (err) { const messageText = friendlyError(err, 'activate'); setMessage(messageText, true); notify(messageText, 'error') } finally { activatingId.value = null } }
+async function verify(profile: Profile): Promise<void> { if (verifyingId.value !== null || activatingId.value !== null) return; verifyingId.value = profile.id; setMessage(''); const startedAt = performance.now(); try { await json(`/admin/llm/profiles/${profile.id}/verify`, { method: 'POST' }); const latency = Math.max(0, Math.round(performance.now() - startedAt)); setMessage(profile.active ? `${displayProvider(profile.provider_id)} 连接成功，当前模型仍在运行。` : `${displayProvider(profile.provider_id)} 连接成功，已验证但尚未启动。`); notify(`${displayProvider(profile.provider_id)} 连接成功 · ${latency} ms`); await loadModels() } catch (err) { const messageText = friendlyError(err, 'verify'); setMessage(messageText, true); notify(messageText, 'error') } finally { verifyingId.value = null } }
+async function remove(): Promise<void> { if (!deleteTarget.value) return; try { await json(`/admin/llm/profiles/${deleteTarget.value.id}`, { method: 'DELETE' }); deleteTarget.value = null; setMessage('模型胶囊已删除。'); notify('模型配置已删除。'); await loadModels() } catch (err) { const messageText = friendlyError(err, 'delete'); setMessage(messageText, true); notify(messageText, 'error') } }
+function displayProvider(id: string): string { return providers.value.find((p) => p.id === id)?.name ?? id }
+function providerNeedsKey(id: string): boolean { return providers.value.find((p) => p.id === id)?.needs_key ?? true }
+function profileStatus(profile: Profile): string { if (profile.active) return '运行中'; if (providerNeedsKey(profile.provider_id) && !profile.api_key_set) return '待配置'; if (!profile.verified) return '已配置，待验证'; return '待启动' }
+function providerIcon(id: string): string { return `/provider-icons/${id}.svg` }
+function fallbackIcon(event: Event): void {
+  const image = event.target as HTMLImageElement
+  image.style.display = 'none'
+  const fallback = image.nextElementSibling as HTMLElement | null
+  if (fallback !== null) fallback.style.display = 'block'
+}
+watch(() => settings.open, (open) => { if (open) void loadModels() })
 </script>
 
 <template>
-  <section class="set" :class="{ open: settings.open }" data-testid="settings-panel">
-    <header class="set-h">
-      设置
-      <button
-        class="set-x"
-        title="收起"
-        data-testid="settings-close"
-        @click="closeSettings()"
-      >✕</button>
-    </header>
-
-    <div class="set-body">
-      <p v-if="settings.message" class="set-status" :data-phase="settings.phase" data-testid="cfg-msg">
-        {{ settings.message }}
-      </p>
-
-      <!-- 模型配置 -->
-      <div class="sec">
-        <div class="g-t">模型配置</div>
-        <div class="f">
-          <span>LLM 服务</span>
-          <div class="seg" :class="{ right: settings.provider === 'ollama' }" data-testid="cfg-provider">
-            <div class="thumb"></div>
-            <button
-              type="button"
-              :class="{ on: settings.provider === 'deepseek' }"
-              @click="switchProvider('deepseek')"
-            >DeepSeek</button>
-            <button
-              type="button"
-              :class="{ on: settings.provider === 'ollama' }"
-              @click="switchProvider('ollama')"
-            >Ollama</button>
-          </div>
-        </div>
-        <div class="f">
-          <span>模型</span>
-          <input v-model="settings.model" data-testid="cfg-model" placeholder="模型名称" />
-        </div>
-        <div class="f">
-          <span>API 地址</span>
-          <input v-model="settings.baseUrl" data-testid="cfg-base" placeholder="服务地址" />
-        </div>
-        <div class="f">
-          <span>API Key</span>
-          <input
-            v-model="settings.apiKey"
-            type="password"
-            data-testid="cfg-key"
-            :placeholder="settings.apiKeySet ? '已配置 · 留空即不改' : '未配置'"
-          />
-        </div>
-        <div class="voice">
-          <div class="v"><b>ASR</b> SenseVoice 本地 · 转写即弃</div>
-          <div class="v"><b>TTS</b> CosyVoice2 · sidecar 进程隔离</div>
-        </div>
-        <div class="set-actions">
-          <button
-            type="button"
-            class="btn-main"
-            :disabled="settings.phase === 'loading'"
-            data-testid="cfg-save"
-            @click="saveConfig()"
-          >保存并生效</button>
-        </div>
-      </div>
-
-      <!-- 记忆治理 -->
-      <div class="sec">
-        <div class="g-t">记忆</div>
-        <div class="trends" data-testid="trends">
-          <p v-if="settings.trends.length === 0" class="muted">暂无情绪记录。</p>
-          <div v-for="(t, i) in settings.trends" :key="`${t.date}-${i}`" class="t-row">
-            <span class="t-d">{{ t.date }}</span>
-            <span class="t-l">{{ t.mood_label }}</span>
-          </div>
-        </div>
-        <div class="mem-head">
-          <span class="mem-cap">记住了这些(可单条删除)</span>
-          <button
-            type="button"
-            class="mem-refresh"
-            title="刷新列表"
-            data-testid="mem-refresh"
-            @click="loadMemories()"
-          >↻</button>
-        </div>
-        <div class="mems" data-testid="memories">
-          <p v-if="settings.memories.length === 0" class="muted">暂无记忆条目。</p>
-          <div v-for="m in settings.memories" :key="m.id" class="m-row">
-            <span class="m-d">{{ m.date }}</span>
-            <span class="m-t">{{ m.text }}</span>
-            <button
-              type="button"
-              class="m-del"
-              title="删除这条记忆"
-              :data-testid="`mem-del-${m.id}`"
-              @click="deleteMemory(m.id)"
-            >✕</button>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="btn-danger"
-          data-testid="cfg-clear"
-          @click="requestClear()"
-        >一键清除记忆</button>
-      </div>
-    </div>
-
-    <!-- 清除确认(高危,两步;文字与按钮居中) -->
-    <div v-if="settings.confirmOpen" class="confirm" data-testid="cfg-confirm">
-      <h4>确认清除全部记忆?</h4>
-      <p class="cf-note">将永久删除:当前会话记忆、对话摘要、心情趋势、已生成方案书。<b>不可恢复。</b></p>
-      <p class="cf-p">请输入 <code>{{ CONFIRM_PHRASE }}</code> 确认</p>
-      <input
-        v-model="settings.confirmInput"
-        data-testid="cfg-confirm-input"
-        :placeholder="CONFIRM_PHRASE"
-      />
-      <div class="cf-actions">
-        <button type="button" class="btn-ghost" data-testid="cfg-confirm-cancel" @click="cancelClear()">取消</button>
-        <button
-          type="button"
-          class="btn-danger ok"
-          :disabled="!confirmEnabled"
-          data-testid="cfg-confirm-ok"
-          @click="clearMemory()"
-        >确认清除</button>
-      </div>
-    </div>
-  </section>
+  <aside class="settings-panel" :class="{ open: visible }" aria-label="设置">
+    <header class="settings-head"><button v-if="view !== 'hub'" class="icon-button" type="button" title="返回设置" aria-label="返回设置" @click="view = 'hub'"><ChevronLeft :size="17" /></button><div><h2>设置</h2><p v-if="view === 'hub'">照顾好陪伴，也照顾好记忆。</p><p v-else-if="view === 'models'">选择此刻要陪你说话的模型。</p><p v-else>看看留下了什么，也决定留下什么。</p></div><button class="icon-button" type="button" title="关闭设置" aria-label="关闭设置" @click="close"><X :size="17" /></button></header>
+    <div v-if="message" class="settings-message" :class="{ error: messageError }"><AlertCircle v-if="messageError" :size="14" /><CircleCheck v-else :size="14" />{{ message }}</div>
+    <div v-if="view === 'hub'" class="settings-hub"><button class="settings-card" type="button" @click="go('models')"><span class="card-icon model"><Settings2 :size="19" /></span><span><b>模型服务</b><small>{{ activeProfile?.display_name ?? '默认：DeepSeek · deepseek-v4-flash' }}</small></span><ChevronLeft class="right-arrow" :size="17" /></button><button class="settings-card" type="button" @click="go('memory')"><span class="card-icon memory"><ShieldCheck :size="19" /></span><span><b>记忆治理</b><small>情绪趋势与记忆清除</small></span><ChevronLeft class="right-arrow" :size="17" /></button></div>
+    <div v-else-if="view === 'models'" class="settings-body"><div class="model-toolbar"><span class="section-label">已保存的模型</span><button class="round-add" type="button" title="添加模型厂商" aria-label="添加模型厂商" :disabled="providerChoices.length === 0" @click="openDialog()"><Plus :size="16" /></button></div><p v-if="profiles.length === 0" class="settings-empty">暂无模型配置。</p><article v-for="profile in profiles" :key="profile.id" class="model-card" :class="{ active: profile.active }"><div class="provider-icon"><img :src="providerIcon(profile.provider_id)" :alt="displayProvider(profile.provider_id)" @error="fallbackIcon"><span>{{ displayProvider(profile.provider_id).slice(0, 1) }}</span></div><div class="model-copy"><b>{{ displayProvider(profile.provider_id) }}</b><small>{{ profile.model_id }}</small><span><i :class="{ on: profile.active }"></i>{{ profileStatus(profile) }}</span></div><div class="model-actions"><button class="icon-action" type="button" :disabled="verifyingId !== null || activatingId !== null || (!profile.api_key_set && providerNeedsKey(profile.provider_id))" :title="!profile.api_key_set && providerNeedsKey(profile.provider_id) ? '配置 API Key 后可测试' : '测试连接'" :aria-label="!profile.api_key_set && providerNeedsKey(profile.provider_id) ? '配置 API Key 后可测试' : '测试连接'" @click="verify(profile)"><LoaderCircle v-if="verifyingId === profile.id" class="spin" :size="16" /><PlugZap v-else :size="16" /></button><button class="icon-action" type="button" :disabled="profile.active || activatingId !== null || verifyingId !== null || (!profile.api_key_set && providerNeedsKey(profile.provider_id))" :title="profile.active ? '运行中' : !profile.api_key_set && providerNeedsKey(profile.provider_id) ? '配置 API Key 后可启动' : '启动模型'" :aria-label="profile.active ? '运行中' : !profile.api_key_set && providerNeedsKey(profile.provider_id) ? '配置 API Key 后可启动' : '启动模型'" @click="activate(profile)"><LoaderCircle v-if="activatingId === profile.id" class="spin" :size="16" /><Play v-else :size="16" /></button><button class="icon-action" type="button" title="设置模型" aria-label="设置模型" @click="openDialog(profile)"><Pencil :size="16" /></button><button class="icon-action danger" type="button" :disabled="profile.active || verifyingId !== null || activatingId !== null" :title="profile.active ? '运行中的模型不可删除' : '删除模型'" :aria-label="profile.active ? '运行中的模型不可删除' : '删除模型'" @click="deleteTarget = profile"><Trash2 :size="16" /></button></div></article><p class="settings-tip"><Activity :size="14" />启动后会置顶，并作为项目当前使用的 LLM。</p></div>
+    <div v-else class="settings-body memory-view"><div class="section-label">情绪趋势</div><div class="trends"><p v-if="settings.trends.length === 0" class="settings-empty">暂无情绪记录。</p><div v-for="(trend, index) in settings.trends" :key="`${trend.date}-${index}`" class="trend-row"><span>{{ trend.date }}</span><b>{{ trend.mood_label }}</b><small>{{ trend.source }}</small></div></div><div class="memory-danger"><p>清除后不可恢复。</p><button type="button" @click="requestClear"><Trash2 :size="14" />一键清除记忆</button></div></div>
+    <Teleport to="body">
+        <div v-if="dialogOpen" class="model-dialog"><div class="dialog-card"><header><div><span class="dialog-eyebrow">模型服务 · {{ dialogProfile ? '编辑' : '新增' }}</span><h3>{{ dialogProfile ? '设置模型' : '添加模型厂商' }}</h3><p>{{ dialogProfile ? '当前厂商不可更换，只修改 API Key 或模型 ID。运行中的模型会先验证，成功后立即应用。' : '选择厂商和模型，再保存本机的 API Key。配置不会显示在页面上。' }}</p></div><button class="icon-button dialog-close" type="button" title="关闭" aria-label="关闭" @click="dialogOpen = false"><X :size="16" /></button></header><div v-if="!dialogProfile" class="dialog-section"><span class="dialog-section-title">模型厂商</span><div class="provider-select"><button v-for="provider in providerChoices" :key="provider.id" type="button" :class="{ selected: dialogProvider === provider.id }" @click="selectProvider(provider.id)">{{ provider.name }}</button><p v-if="providerChoices.length === 0" class="settings-empty">已为每个厂商配置模型。</p></div></div><p v-else class="dialog-provider-current">当前厂商：{{ displayProvider(dialogProvider) }}</p><label class="dialog-field">API Key<input v-model="dialogKey" type="password" :placeholder="dialogProfile?.api_key_set ? '已配置 · 留空保持不变' : selectedProvider?.needs_key ? '请输入 API Key 后可搜索实时模型' : '本地服务无需 API Key'" @input="dialogKeyTouched = true" /></label><p v-if="dialogProfile && dialogKeyTouched && !dialogKey.trim()" class="dialog-key-note">已清空本次输入，刷新不会使用已保存的 API Key；保存时仍保留原 Key。</p><label class="dialog-field">模型名称<div class="search-row"><div class="search-input"><Search :size="15" /><input v-model="modelSearch" list="model-options" autocomplete="off" placeholder="搜索或输入模型 ID" /><span>{{ filteredModels.length }}</span></div><button class="icon-action refresh-action" type="button" :disabled="discovering" title="从服务商获取最新模型" aria-label="从服务商获取最新模型" @click="discoverModels"><LoaderCircle v-if="discovering" class="spin" :size="15" /><RefreshCw v-else :size="15" /></button></div><datalist id="model-options"><option v-for="model in filteredModels" :key="model.id" :value="model.id">{{ modelOptionLabel(model) }}{{ model.source === 'live' ? ' · 实时' : '' }}</option></datalist><select v-model="dialogModel" class="legacy-model-select"><option v-for="model in filteredModels" :key="`legacy-${model.id}`" :value="model.id">{{ model.id }}</option></select></label><p v-if="!dialogProfile && (selectedProvider?.needs_key ?? true) && !dialogKey.trim()" class="dialog-key-note">该服务商需要 API Key，填写后才能保存。</p><p v-if="dialogError" class="dialog-error"><AlertCircle :size="14" />{{ dialogError }}</p><div class="dialog-actions"><button class="secondary-action" type="button" @click="dialogOpen = false">取消</button><button class="primary-action" type="button" :disabled="!canSave" @click="saveModel"><LoaderCircle v-if="saving" class="spin" />保存模型</button></div></div></div>
+      <div v-if="deleteTarget" class="model-dialog delete-dialog"><div class="confirm-card"><div class="confirm-icon"><Trash2 :size="17" /></div><span class="dialog-eyebrow">模型服务 · 删除</span><h3>要把这个模型请出列表吗？</h3><p>{{ deleteTarget.display_name }} 的本地配置会被移除。正在运行的模型不能删除。</p><div class="dialog-actions"><button class="secondary-action" type="button" @click="deleteTarget = null">先留着</button><button class="danger-action" type="button" @click="remove"><Trash2 :size="14" />确认删除</button></div></div></div>
+    </Teleport>
+    <div v-if="settings.confirmOpen" class="memory-confirm"><h3>确认清除全部记忆？</h3><p>当前会话、摘要、心情趋势和方案书都会被清除。</p><code>{{ CONFIRM_PHRASE }}</code><input v-model="settings.confirmInput" :placeholder="CONFIRM_PHRASE" /><div class="dialog-actions"><button class="secondary-action" type="button" @click="cancelClear">取消</button><button class="danger-action" type="button" :disabled="!confirmMatches(settings.confirmInput)" @click="clearMemory">确认清除</button></div></div>
+  </aside>
 </template>
 
 <style scoped>
-/* 材质单源=prototypes/ui-taste 定稿:面板=重玻璃(厚),控件=轻玻璃(薄) */
-.set {
-  position: fixed;
-  top: 74px;
-  right: 16px;
-  z-index: 55;
-  width: min(368px, 92vw);
-  max-height: calc(100vh - 170px);
-  border-radius: 22px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.82));
-  backdrop-filter: blur(28px) saturate(1.6);
-  -webkit-backdrop-filter: blur(28px) saturate(1.6);
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 30px 80px -36px rgba(62, 58, 53, 0.45);
-  opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
-  transform: scale(0.97) translateY(-6px);
-  transform-origin: 85% 0;
-  transition:
-    opacity 0.2s var(--ease),
-    transform 0.2s var(--ease),
-    visibility 0.2s;
-}
-.set.open {
-  opacity: 1;
-  pointer-events: auto;
-  visibility: visible;
-  transform: none;
-}
-.set-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  font-family: var(--serif);
-  margin-bottom: 12px;
-  flex: none;
-}
-.set-h::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #a3b18a;
-}
-.set-x {
-  margin-left: auto;
-  border: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.75);
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 15px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
-  transition: all 0.2s;
-}
-.set-x:active {
-  transform: scale(0.9);
-}
-.set-x:hover {
-  background: var(--primary-deep);
-  color: #fff;
-}
-.set-body {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-  font-size: 12.5px;
-  color: var(--ink);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.set-body::-webkit-scrollbar {
-  width: 6px;
-}
-.set-body::-webkit-scrollbar-thumb {
-  background: rgba(110, 147, 124, 0.3);
-  border-radius: 3px;
-}
-.set-status {
-  font-size: 12px;
-  color: var(--primary-deep);
-  background: rgba(227, 237, 226, 0.8);
-  border-radius: 10px;
-  padding: 7px 10px;
-}
-.set-status[data-phase='error'] {
-  color: #a2563b;
-  background: rgba(248, 235, 229, 0.95);
-}
-/* 分组卡 */
-.sec {
-  padding: 13px 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.5);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85);
-}
-.g-t {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--primary-deep);
-  margin-bottom: 11px;
-}
-/* 表单行 */
-.f {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-bottom: 11px;
-}
-.f span {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--muted);
-}
-.f input {
-  border: 1px solid rgba(110, 147, 124, 0.22);
-  border-radius: 11px;
-  padding: 9px 12px;
-  font-size: 13px;
-  font-family: var(--sans);
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.62);
-  outline: none;
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    background 0.18s ease;
-}
-.f input:focus {
-  border-color: var(--primary-deep);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 3px rgba(110, 147, 124, 0.14);
-}
-/* 分段药丸(iOS segmented,ui-taste 定稿) */
-.seg {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 3px;
-  border-radius: 999px;
-  background: rgba(110, 147, 124, 0.12);
-  box-shadow: inset 0 1px 3px rgba(47, 58, 49, 0.08);
-}
-.seg .thumb {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc(50% - 3px);
-  border-radius: 999px;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.78));
-  box-shadow:
-    0 2px 8px -2px rgba(47, 58, 49, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  transition: transform 0.3s var(--ease);
-  will-change: transform;
-}
-.seg.right .thumb {
-  transform: translateX(100%);
-}
-.seg button {
-  position: relative;
-  z-index: 1;
-  border: 0;
-  background: transparent;
-  padding: 7px 0;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-  letter-spacing: 0.02em;
-  transition: color 0.25s;
-}
-.seg button.on {
-  color: var(--primary-deep);
-}
-/* 语音只读卡 */
-.voice {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 4px 0 2px;
-}
-.voice .v {
-  padding: 9px 11px;
-  border-radius: 11px;
-  background: rgba(227, 237, 226, 0.55);
-  font-size: 10.5px;
-  color: #6b7568;
-  line-height: 1.55;
-}
-.voice .v b {
-  color: var(--primary-deep);
-  margin-right: 4px;
-}
-/* tinted 薄玻璃按钮(主/危险)+ 流光 */
-.set-actions {
-  margin-top: 10px;
-}
-.set button {
-  font-family: var(--sans);
-}
-.btn-main {
-  position: relative;
-  width: 100%;
-  border: 0;
-  padding: 10px 0;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: #3d5a49;
-  background: linear-gradient(180deg, rgba(163, 177, 138, 0.3), rgba(110, 147, 124, 0.16));
-  backdrop-filter: blur(10px) saturate(1.4);
-  box-shadow:
-    inset 0 0 0 1px rgba(163, 177, 138, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 6px 16px -10px rgba(94, 127, 106, 0.5);
-  transition:
-    transform 0.1s ease-out,
-    background 0.2s;
-}
-.btn-main:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(163, 177, 138, 0.42), rgba(110, 147, 124, 0.26));
-}
-.btn-main:active:not(:disabled) {
-  transform: scale(0.97);
-}
-.btn-main:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.btn-danger {
-  position: relative;
-  width: 100%;
-  border: 0;
-  margin-top: 12px;
-  padding: 10px 0;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: #8a4a2c;
-  background: linear-gradient(180deg, rgba(230, 190, 160, 0.38), rgba(213, 138, 99, 0.2));
-  backdrop-filter: blur(10px) saturate(1.4);
-  box-shadow:
-    inset 0 0 0 1px rgba(213, 138, 99, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    0 6px 16px -10px rgba(201, 122, 82, 0.45);
-  transition:
-    transform 0.1s ease-out,
-    background 0.2s;
-}
-.btn-danger:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(230, 190, 160, 0.5), rgba(213, 138, 99, 0.3));
-}
-.btn-danger:active:not(:disabled) {
-  transform: scale(0.97);
-}
-.btn-danger::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1.2px;
-  background: conic-gradient(
-    from var(--ang),
-    transparent 0deg,
-    transparent 108deg,
-    rgba(224, 163, 124, 0.7) 187deg,
-    rgba(255, 236, 220, 0.85) 240deg,
-    transparent 342deg
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  clip-path: inset(0 round 999px);
-  animation: orbit 2s linear infinite;
-  pointer-events: none;
-}
-.btn-ghost {
-  border: 0;
-  padding: 10px 18px;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.65);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
-  transition: transform 0.1s ease-out;
-}
-.btn-ghost:active {
-  transform: scale(0.96);
-}
-/* 趋势行 */
-.trends {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  max-height: 150px;
-  overflow-y: auto;
-  margin-bottom: 2px;
-}
-.trends::-webkit-scrollbar {
-  width: 5px;
-}
-.trends::-webkit-scrollbar-thumb {
-  background: rgba(110, 147, 124, 0.3);
-  border-radius: 3px;
-}
-.muted {
-  color: var(--muted);
-}
-.t-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  padding: 5px 9px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
-}
-.t-d {
-  color: var(--muted);
-  font-family: ui-monospace, monospace;
-  font-size: 10px;
-}
-.t-l {
-  font-weight: 700;
-  color: var(--primary-deep);
-}
-/* 语义记忆列表(查看+单条删除,治理「用户可查看」兑现) */
-.mem-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 9px 0 5px;
-}
-.mem-cap {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-}
-.mem-refresh {
-  border: 0;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  cursor: pointer;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
-  font-size: 12px;
-  line-height: 1;
-}
-.mems {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 170px;
-  overflow-y: auto;
-  margin-bottom: 4px;
-}
-.mems::-webkit-scrollbar {
-  width: 5px;
-}
-.mems::-webkit-scrollbar-thumb {
-  background: rgba(110, 147, 124, 0.3);
-  border-radius: 3px;
-}
-.m-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  font-size: 11px;
-  line-height: 1.5;
-  padding: 6px 8px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
-}
-.m-d {
-  flex: none;
-  color: var(--muted);
-  font-family: ui-monospace, monospace;
-  font-size: 9.5px;
-  padding-top: 1px;
-}
-.m-t {
-  flex: 1;
-  color: var(--ink);
-  word-break: break-all;
-}
-.m-del {
-  flex: none;
-  border: 0;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  cursor: pointer;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.8);
-  font-size: 10px;
-  line-height: 1;
-  transition: all 0.15s;
-}
-.m-del:hover {
-  color: #a2563b;
-  background: rgba(213, 138, 99, 0.15);
-}
-/* 确认层:文字与按钮居中(高危两步) */
-.confirm {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  border-radius: inherit;
-  padding: 20px;
-  background: rgba(250, 247, 240, 0.94);
-  backdrop-filter: blur(8px);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 9px;
-  text-align: center;
-  animation: fadeup 0.2s var(--ease);
-}
-.confirm h4 {
-  font-size: 14px;
-  font-weight: 700;
-  font-family: var(--serif);
-}
-.cf-note {
-  font-size: 11.5px;
-  color: var(--muted);
-  line-height: 1.7;
-}
-.cf-p {
-  font-size: 11px;
-  color: var(--muted);
-}
-.cf-p code {
-  font-family: ui-monospace, monospace;
-  color: #a2563b;
-  background: rgba(213, 138, 99, 0.12);
-  padding: 1px 6px;
-  border-radius: 6px;
-}
-.confirm input {
-  border: 1px solid rgba(213, 138, 99, 0.4);
-  border-radius: 10px;
-  padding: 9px 11px;
-  font-size: 12.5px;
-  outline: none;
-  text-align: center;
-}
-.confirm input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(213, 138, 99, 0.15);
-}
-.cf-actions {
-  display: flex;
-  gap: 24px;
-  justify-content: center;
-  margin-top: 12px;
-}
-.confirm .ok {
-  width: auto;
-  margin: 0;
-  padding: 10px 18px;
-}
-@keyframes orbit {
-  to {
-    --ang: 360deg;
-  }
-}
+.settings-panel{position:fixed;top:74px;right:16px;z-index:55;width:min(430px,calc(100vw - 32px));max-height:calc(100vh - 96px);overflow:auto;padding:20px;border:1px solid rgba(255,255,255,.92);border-radius:24px;background:rgba(249,252,249,.94);backdrop-filter:blur(28px) saturate(1.45);box-shadow:0 30px 80px -35px rgba(62,74,65,.45);opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-8px) scale(.98);transition:.2s ease}.settings-panel.open{opacity:1;visibility:visible;pointer-events:auto;transform:none}.settings-head{display:flex;align-items:flex-start;gap:9px}.settings-head>div{flex:1}.settings-head h2{margin:0;color:#26352c;font:700 19px/1.1 Georgia,serif}.settings-head p{margin:5px 0 0;color:#7d897f;font-size:11px}.icon-button,.round-add{display:grid;place-items:center;width:30px;height:30px;border:0;border-radius:50%;background:rgba(255,255,255,.75);color:#6e7d72;cursor:pointer}.round-add{background:#e5f0e6;color:#4f795b}.settings-message{display:flex;align-items:center;gap:7px;margin:14px 0 0;padding:9px 11px;border-radius:11px;background:#edf5ee;color:#5a7b65;font-size:11px}.settings-hub{display:flex;flex-direction:column;gap:10px;margin-top:20px}.settings-card{display:flex;align-items:center;gap:12px;width:100%;padding:14px;border:1px solid rgba(255,255,255,.9);border-radius:16px;background:rgba(255,255,255,.7);color:#344238;text-align:left;cursor:pointer}.settings-card span:nth-child(2){display:flex;flex:1;flex-direction:column;gap:4px}.settings-card b{font-size:13px}.settings-card small{color:#849087;font-size:10px}.card-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:12px}.card-icon.model{background:#e8f2e8;color:#557a60}.card-icon.memory{background:#f5ede2;color:#98785d}.right-arrow{transform:rotate(180deg);color:#a2aca4}.settings-body{margin-top:20px}.model-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.section-label{color:#78907e;font-size:10px;font-weight:700;letter-spacing:.08em}.model-card{display:flex;align-items:center;gap:10px;margin-bottom:9px;padding:12px;border-radius:16px;background:rgba(255,255,255,.68);box-shadow:inset 0 0 0 1px rgba(255,255,255,.9)}.model-card.active{background:#edf6ee;box-shadow:inset 0 0 0 1px #b8d3bc}.provider-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:#fff;color:#5d6f63;font-weight:700;box-shadow:0 6px 12px rgba(78,98,82,.1)}.model-copy{display:flex;flex:1;flex-direction:column;gap:3px}.model-copy b{color:#324137;font-size:13px}.model-copy small{color:#75847a;font-size:11px}.model-copy span{display:flex;align-items:center;gap:5px;color:#85938a;font-size:10px}.model-copy i{width:6px;height:6px;border-radius:50%;background:#c4cbc5}.model-copy i.on{background:#75a482}.model-actions{display:flex;gap:2px}.icon-action{display:grid;place-items:center;width:29px;height:29px;border:0;border-radius:9px;background:transparent;color:#77847b;cursor:pointer}.icon-action:hover:not(:disabled){background:#e9f1ea;color:#50745a}.icon-action.danger:hover:not(:disabled){background:#f8e9e4;color:#a35e49}.icon-action:disabled{opacity:.35;cursor:not-allowed}.settings-tip{display:flex;gap:7px;margin:14px 2px;color:#8d9990;font-size:10px;line-height:1.6}.settings-empty{padding:25px 8px;text-align:center;color:#98a39b;font-size:11px}.memory-view{display:flex;flex-direction:column;gap:12px}.trends{display:flex;flex-direction:column;gap:6px}.trend-row{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:11px;background:rgba(255,255,255,.7);color:#8b968e;font-size:10px}.trend-row b{color:#5b7d64;font-size:12px}.trend-row small{margin-left:auto}.memory-danger{margin-top:8px;padding:13px;border-radius:14px;background:#fcf1eb}.memory-danger p{margin:0;color:#956b5b;font-size:11px}.memory-danger button,.danger-action{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:999px;padding:9px 12px;background:#f3ddd3;color:#9a5d48;font-size:11px;cursor:pointer}.model-dialog,.memory-confirm{position:absolute;inset:0;z-index:3;display:grid;place-items:center;padding:18px;border-radius:24px;background:rgba(248,247,242,.75);backdrop-filter:blur(12px)}.dialog-card,.confirm-card{width:100%;padding:18px;border-radius:18px;background:rgba(255,255,255,.94);box-shadow:0 20px 55px rgba(74,75,68,.18)}.dialog-card header{display:flex;gap:8px}.dialog-card header>div{flex:1}.dialog-card h3,.confirm-card h3{margin:0;color:#344238;font:700 16px Georgia,serif}.dialog-card p,.confirm-card p{margin:7px 0 14px;color:#7e8981;font-size:11px;line-height:1.6}.dialog-card label{display:block;margin-top:12px;color:#718078;font-size:10px}.dialog-card input,.dialog-card select,.search-input{box-sizing:border-box;width:100%;margin-top:6px;border:1px solid #e0e9e0;border-radius:10px;padding:9px 10px;background:#f8fbf8;color:#39493e;font-size:12px;outline:0}.provider-select{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.provider-select button{border:1px solid #e2eae2;border-radius:999px;padding:7px 9px;background:#f8fbf8;color:#718078;font-size:10px;cursor:pointer}.provider-select button.selected{border-color:#a8c5ad;background:#e4f0e5;color:#4e7659}.search-input{display:flex;align-items:center;gap:6px;padding:0 10px}.search-input input{margin:0;border:0;background:transparent;padding:9px 0}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.primary-action,.secondary-action{display:inline-flex;align-items:center;gap:6px;border:0;border-radius:999px;padding:9px 13px;font-size:11px;cursor:pointer}.primary-action{background:#dcecdf;color:#4c7458}.secondary-action{background:#f0f4ef;color:#69776d}.primary-action:disabled,.danger-action:disabled{opacity:.45;cursor:not-allowed}.memory-confirm{text-align:center}.memory-confirm p{color:#7e8981;font-size:11px}.memory-confirm code{display:inline-block;margin:2px 0 8px;padding:4px 8px;border-radius:6px;background:#f8eae2;color:#a05f4b;font-size:11px}.memory-confirm input{width:100%;box-sizing:border-box;padding:9px;border:1px solid #e2c0b4;border-radius:10px;text-align:center;outline:0}.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.provider-icon{overflow:hidden}.provider-icon img{width:30px;height:30px;object-fit:contain}.provider-icon img + span{display:none}.model-dialog{position:fixed;inset:0;z-index:1000;border-radius:0;padding:24px;background:rgba(61,71,63,.16);backdrop-filter:blur(14px) saturate(1.2);isolation:isolate}.dialog-card{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:24px;border:1px solid rgba(255,255,255,.86);border-radius:23px;background:rgba(255,252,245,.96);box-shadow:0 28px 90px rgba(51,70,55,.28)}.dialog-card header{align-items:center;justify-content:space-between;min-height:38px}.dialog-card header .icon-button{flex:0 0 30px}.search-row{display:flex;align-items:center;gap:7px;margin-top:6px}.search-row .search-input{margin-top:0;flex:1}.search-input span{margin-left:auto;color:#91a096;font-size:10px}.refresh-action{flex:0 0 34px;width:34px;height:34px;border:1px solid #e0e9e0;background:#f8fbf8}.confirm-card{width:min(410px,calc(100vw - 48px));padding:24px;border:1px solid rgba(255,255,255,.86);border-radius:23px;background:rgba(255,252,245,.97);box-shadow:0 28px 90px rgba(51,70,55,.26)}.confirm-card .dialog-actions{margin-top:20px}
+.provider-icon{overflow:hidden}.provider-icon img{width:30px;height:30px;object-fit:contain}.provider-icon img + span{display:none}.model-dialog{position:fixed;inset:0;border-radius:0;padding:24px;background:rgba(61,71,63,.16);backdrop-filter:blur(14px) saturate(1.2)}.dialog-card{width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:24px;border:1px solid rgba(255,255,255,.86);border-radius:23px;background:rgba(255,252,245,.96);box-shadow:0 28px 90px rgba(51,70,55,.28)}.dialog-card header{align-items:center;justify-content:space-between;min-height:38px}.dialog-card header .icon-button{flex:0 0 30px}.search-row{display:flex;align-items:center;gap:7px;margin-top:6px}.search-row .search-input{margin-top:0;flex:1}.search-input span{margin-left:auto;color:#91a096;font-size:10px}.refresh-action{flex:0 0 34px;width:34px;height:34px;border:1px solid #e0e9e0;background:#f8fbf8}.confirm-card{width:min(410px,calc(100vw - 48px));padding:24px;border:1px solid rgba(255,255,255,.86);border-radius:23px;background:rgba(255,252,245,.97);box-shadow:0 28px 90px rgba(51,70,55,.26)}.confirm-card .dialog-actions{margin-top:20px}
+.model-actions{flex:0 0 auto;display:flex;align-items:center;gap:4px;white-space:nowrap}.model-actions .icon-action{flex:0 0 30px}.dialog-card header{display:flex;gap:16px}.dialog-card h3{margin:4px 0 0;font:600 22px/1.18 -apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;letter-spacing:-.02em;color:#26352c}.dialog-eyebrow{display:block;color:#78907e;font-size:10px;font-weight:700;letter-spacing:.08em}.dialog-card p{max-width:420px;margin:8px 0 0;color:#7e8981;font-size:11px;line-height:1.65}.dialog-close{flex:0 0 30px}.dialog-section{margin-top:21px;padding:14px;border:1px solid rgba(225,234,226,.86);border-radius:16px;background:rgba(241,247,242,.6)}.dialog-section-title{display:block;color:#718078;font-size:10px;font-weight:700}.dialog-field{display:block;margin-top:16px;color:#718078;font-size:10px;font-weight:700}.dialog-field input,.dialog-field select{font-weight:400}.dialog-actions{padding-top:4px}.delete-dialog .confirm-card{text-align:center}.confirm-icon{display:grid;place-items:center;width:42px;height:42px;margin:0 auto 12px;border-radius:14px;color:#a45a4e;background:#fff0e9;box-shadow:inset 0 0 0 1px rgba(201,112,91,.12)}.delete-dialog .confirm-card h3{margin:5px 0 0;font:600 19px/1.25 -apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;color:#26352c}.delete-dialog .confirm-card p{margin:9px auto 0}.delete-dialog .dialog-actions{justify-content:center}.delete-dialog .danger-action{background:#b96555;color:#fff;box-shadow:0 7px 16px rgba(185,101,85,.2)}
+@media(max-width:560px){.model-dialog{padding:14px}.dialog-card{width:100%;max-height:calc(100vh - 28px);padding:20px}.model-card{gap:8px;padding:10px}.model-actions{gap:1px}.model-actions .icon-action{width:28px;height:28px}.model-copy{min-width:0}.provider-icon{width:40px;height:40px;flex:0 0 40px}}
+.settings-message.error{background:#fff0eb;color:#a45a4e}.dialog-provider-current{margin:16px 0 0;padding:10px 12px;border-radius:12px;background:#f1f7f2;color:#5d7965;font-size:11px}.dialog-error{display:flex;align-items:flex-start;gap:7px;margin:14px 0 0!important;padding:10px 12px;border-radius:12px;background:#fff0eb;color:#a45a4e!important;font-size:11px!important;line-height:1.55!important}.dialog-error svg{flex:0 0 auto;margin-top:1px}.legacy-model-select{display:none}
 </style>

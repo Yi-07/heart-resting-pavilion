@@ -32,10 +32,13 @@
 | audio | 音频队列与播放：AudioHub 按 chunk.format 分派——`pcm_s16le` 走 PcmPlayer（round_id 隔离，未见过的新 round 自认领即隐式 flush 旧回合；flush 掐掉全部已排程 source）· `wav` 走 AudioQueue（enqueue 顺序播放 · stopAndFade）并按组号路由（与 PCM 共用回合状态：同组排队续播，未见过的新组双链 flush 后接管，旧组迟到帧丢弃，见 ws-contract「3.4 audio_chunk」）；用户发送新输入（user_sent）即 flush；onPlayback（cb） 广播播放状态；l2d 订阅播放事件驱动口型，播放不依赖立绘加载 |
 | chat | 气泡+流式文本+危机横幅（ChatPanel）；输入单源文本：文字/麦克风（录音→/asr/transcribe 转写→追加回填文本框，用户确认发送，ADR-004）（input） |
 | station | 心灵补给站：取稿轮询（生成回合末自动触发）/等待态/md 预览/导出 |
+| practice | 心灵练习：舒缓、方形、4·7·8 三种呼吸模式；切换模式重置计时 |
+| wall | 留言墙：留言提交、回信轮询、未读提示、清空失败保留原内容 |
+| admin | 设置：模型配置（多服务商 profiles + 实时模型发现；需要密钥的服务商必须填写 API Key）+ 隐私 / 记忆治理（语义记忆列表查看 + 单条删除；含用户删除权） |
 | state | 回合状态机 `transition(event)`（见「回合状态机」节）·持当前情绪 emotionLabel：写者按 first_frame.emotion_label → 精稿 draw.data.emotion.label 次序覆盖，first_frame 重置（mood_select 手点写情绪联动已随自动浮出废弃）；Pinia store |
 | logger | console 彩色 logger（INFO/WARN/ERROR） |
 
-> **工具栏工具范围**：今日心情（即心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点开取稿（回合末已自动生成，未就绪显示等待态"正在为你整理"） + md 预览 + 导出 md；pdf 导出属二期未实现，见 station.ts 注记）** · 心灵练习 / 留言墙——前端留入口 UI + TODO 占位（二期）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
+> **工具栏工具范围**：今日心情（即心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点开取稿（回合末已自动生成，未就绪显示等待态"正在为你整理"） + md 预览 + 导出 md；pdf 导出属二期未实现，见 station.ts 注记）** · 心灵练习 / 留言墙（MVP）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
 
 > **UI 参考**：默认实现见 `preview/l1-ui-mockup-v7.html`。黑板左 64% 横向（细橡木+HUD+呼吸+粉笔手绘）· Live2D 叠右下 · 气泡头部旁；聊天抽屉点气泡展开；心情右上 10s；rail 磁吸右缘。**接口固定，视觉可替换。**
 >
