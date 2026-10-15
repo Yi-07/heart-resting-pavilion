@@ -286,7 +286,7 @@ async def llm_profiles_create(body: ProfileIn) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="该服务商需要 API Key，保存前请先填写。")
     async with _activate_lock:
         if any(profile.provider_id == body.provider_id for profile in store.list_profiles()):
-            raise HTTPException(status_code=409, detail="同一服务商只能配置一个模型胶囊")
+            raise HTTPException(status_code=409, detail="同一服务商只能配置一个")
         try:
             profile = _persist(store.create_profile, body.provider_id, body.model_id, body.api_key)
         except ConfigKeyError as exc:
