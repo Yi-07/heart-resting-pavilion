@@ -31,14 +31,14 @@
 | l2d | pixi-live2d-display 封装+表情映射（版本钉子见「1. 技术栈」，不重复） |
 | audio | 音频队列与播放：AudioHub 按 chunk.format 分派——`pcm_s16le` 走 PcmPlayer（round_id 隔离，未见过的新 round 自认领即隐式 flush 旧回合；flush 掐掉全部已排程 source）· `wav` 走 AudioQueue（enqueue 顺序播放 · stopAndFade）并按组号路由（与 PCM 共用回合状态：同组排队续播，未见过的新组双链 flush 后接管，旧组迟到帧丢弃，见 ws-contract「3.4 audio_chunk」）；用户发送新输入（user_sent）即 flush；onPlayback（cb） 广播播放状态；l2d 订阅播放事件驱动口型，播放不依赖立绘加载 |
 | chat | 气泡+流式文本+危机横幅（ChatPanel）；输入单源文本：文字/麦克风（录音→/asr/transcribe 转写→追加回填文本框，用户确认发送，ADR-004）（input） |
-| station | 心灵补给站：取稿轮询（生成回合末自动触发）/等待态/md 预览/导出 |
+| station | 心灵补给站：报告列表（按回合，一回合一条）+ 详情视图（视图切换，不另建详情组件）+ 取稿轮询（生成回合末自动触发，邀请语链接按消息绑定的 round_id 定位该轮）/等待态/md 预览/导出（文件名用报告标题）+ 重新生成（更新同一份，不新增条目，失败保留旧稿可查看）+ 有效期提示（自素材归档起 7 天） |
 | practice | 心灵练习：舒缓、方形、4·7·8 三种呼吸模式；切换模式重置计时 |
 | wall | 留言墙：留言提交、回复推送刷新（WS `wall_reply` 通知触发拉取，无轮询）、未读提示、清空失败保留原内容 |
 | admin | 设置：模型配置（多服务商 profiles + 实时模型发现；需要密钥的服务商必须填写 API Key）+ 隐私 / 记忆治理（语义记忆列表查看 + 单条删除；含用户删除权） |
 | state | 回合状态机 `transition(event)`（见「回合状态机」节）·持当前情绪 emotionLabel：写者按 first_frame.emotion_label → 精稿 draw.data.emotion.label 次序覆盖，first_frame 重置（mood_select 手点写情绪联动已随自动浮出废弃）；Pinia store |
 | logger | console 彩色 logger（INFO/WARN/ERROR） |
 
-> **工具栏工具范围**：今日心情（即心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：点开取稿（回合末已自动生成，未就绪显示等待态"正在为你整理"） + md 预览 + 导出 md；pdf 导出属二期未实现，见 station.ts 注记）** · 心灵练习 / 留言墙（MVP）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
+> **工具栏工具范围**：今日心情（即心情选择器，MVP，mood_select）· **心灵补给站（方案书入口，MVP：工具栏进报告列表（按回合，一回合一条）+ 点行/邀请语进详情 + 等待态"正在为你整理" + md 预览 + 导出 md（文件名用报告标题）+ 重新生成（更新同一份）+ 有效期提示（自素材归档起 7 天）；pdf 导出属二期未实现，见 station.ts 注记）** · 心灵练习 / 留言墙（MVP）· 设置——模型配置（MVP）+ 隐私 / 记忆治理（MVP，含用户删除权）+ 偏好 / 通知（二期 TODO）
 
 > **UI 参考**：默认实现见 `preview/l1-ui-mockup-v7.html`。黑板左 64% 横向（细橡木+HUD+呼吸+粉笔手绘）· Live2D 叠右下 · 气泡头部旁；聊天抽屉点气泡展开；心情右上 10s；rail 磁吸右缘。**接口固定，视觉可替换。**
 >
@@ -202,7 +202,7 @@ on WS message m:
 ## 7. 验收（前端视角，3 用例）
 
 1. **answer**：输入"什么是正念" → 无黑板，气泡流式文本，结束
-2. **collect**：输入"最近很焦虑睡不着" → 第一帧（text 空）→ 心情选择器（10s 超时回退）→ 黑板粗稿（entry 提取带选材）→ 逐轮增量 → 精稿补全 → 分析总结+心灵补给站邀请语（方案书回合末已自动生成，点开取稿）
+2. **collect**：输入"最近很焦虑睡不着" → 第一帧（text 空，携 round_id）→ 黑板粗稿（entry 提取带选材）→ 逐轮增量 → 精稿补全 → 分析总结+心灵补给站邀请语（done.station_ready 置真后该轮链接启用；方案书回合末已自动生成，点链接按 round_id 取稿）
 3. **crisis**：输入"我不想活了" → 热线横幅 + scene_crisis，不弹心情选择器
 
 ---

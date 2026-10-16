@@ -17,22 +17,48 @@
 | 模型服务通道 | 模型配置走 HTTP REST `/admin/llm/*`（多服务商 profiles+单激活）：`GET /admin/llm/catalog`（服务商+离线候选目录）· `POST /admin/llm/models`（实时模型发现，探测失败仍回候选+live_error）· `GET /admin/llm/profiles`（列表+active_id）· `POST /admin/llm/profiles`（保存待启动）· `PUT /admin/llm/profiles/{id}`（编辑；api_key 留空即保留旧密钥）· `POST /admin/llm/profiles/{id}/verify`（真实最小调用验证，不激活）· `POST /admin/llm/profiles/{id}/activate`（验证通过才切换）· `DELETE /admin/llm/profiles/{id}`（运行中不可删）；同一服务商仅一条配置（409）；**任何响应零密钥回显**；不进 WS |
 | 留言墙通道 | 留言墙走 HTTP REST `/wall/*`（本地单用户，七日生命周期）：`GET /wall?session_id=`（列表+unread 计数）· `POST /wall`（创建，≤2000 字）· `POST /wall/read?session_id=`（打开后清未读）· `GET /wall/unread?session_id=`· `DELETE /wall?session_id=`（清空）；回复由后台 worker 30s 巡检异步生成——留言先过危机闸门，命中落审计 WARN（`wall_crisis_hit`）+热线话术单源回复，普通留言交当前激活 LLM；不进 WS |
 | 语义记忆治理通道 | 语义记忆查看/单条删除走 HTTP REST：`GET /admin/memories`（列表） · `DELETE /admin/memories/{id}`（单条删除，成功 200）；不进 WS |
-| 补给站通道 | 心灵补给站方案书走 HTTP REST：回合末自动触发生成（Finish 归档时后台启动，无需点击）；`POST /station/report/generate` 保留为手动重生成入口 · `GET /station/report/latest`（轮询取稿，等待态"正在为你整理…"）；不进 WS |
+| 补给站通道 | 心灵补给站方案书走 HTTP REST，按回合寻址（`round_id` 必填查询参数，缺 → 422）：回合末自动触发生成（Finish 归档时后台启动，无需点击）；`POST /station/report/generate`（兜底受理 + 手动重生成）· `GET /station/report/latest`（按轮取稿/轮询，等待态「正在为你整理…」）· `GET /station/report/list`（报告列表，只含有效期内报告）；不进 WS |
 | 语音转写通道 | 语音输入两步式（ADR-004）：`POST /asr/transcribe`（base64 webm/opus → 转写文本）供前端回填文本框，用户确认后按文本输入发送；不进 WS |
 
-**补给站 REST 响应**（HTTP 200，两端点同形）：
+**补给站 REST 响应**（HTTP 200，generate/latest 两端点同形）：
 
 ```json
-{ "status": "ready", "report_md": "# 心理成长方案\n## 睡眠与焦虑的梳理" }
+{ "status": "ready", "report_md": "# 心理成长方案\n## 睡眠与焦虑的梳理",
+  "title": "考试没有考好 · 焦虑", "updated_at": "2026-10-16T21:27:05" }
 ```
 
 | 字段 | 值 | 说明 |
 |---|---|---|
 | status | `pending` \| `ready` | pending 表示已受理/生成中 |
 | report_md | string | 仅 ready 返回；md 正文，前端预览/导出 |
+| title | string | 仅 ready 返回；取自报告自身数据（`formulation.situation` + `emotion.label`，情境超 16 字截断，缺失各有兜底），**不用轮次序号或自增 ID** |
+| updated_at | iso 本地时间 | 仅 ready 返回；最近一次**成功**生成/重新生成时刻（重生成不改 `created_at`，前端据此显示「更新于」） |
 
-- generate 受理即返；latest 轮询——生成中 `pending`，完成 `ready`+`report_md`
-- generate 无可用素材（本会话未完成过 collect 回合，危机回合不写素材）→ 409；latest 无历史记录 → 404
+- **轮次维度**：generate/latest 均按 `(session_id, round_id)` 存取，**一回合一份逻辑报告**（主键即幂等：重复受理/重复点击/并发更新同一行，不新增条目；并发由受理层锁 + pending 鲜度窗 + `gen_token` 条件写入去重）
+- **round_id 不是「第 N 次对话」**：round_id 由 round_seq 高水位在 collect 入场时分配（持久，重连/重启不复位，治理清除不复位——防残留旧链接指向同号新报告）；被抢占作废的入场也消耗一个 id，故标题与列表都不按它编号
+- **有效期**：报告自该回合素材归档时刻起 7 天（`expires_at`，与 station:input 素材 Redis TTL 同锚点同期限；重新生成**不延长**）；到期后 latest 视为无记录返 404，generate 拒绝，后台物理清理
+- generate 受理即返；latest 轮询——生成中 `pending`，完成 `ready`+`report_md`。回合末自动生成已受理时点击链接直接进入轮询，不重复起任务
+- 错误码：`POST /station/report/generate` 无素材或素材已过期 → 409；素材有效期暂时无法确认（Redis 异常/键无 TTL）→ 503（不臆测可重新生成）；`GET /station/report/latest` 无（有效）记录 → 404
+
+**报告列表**（`GET /station/report/list?session_id=`，HTTP 200；只返回有效期内的报告，按生成时间降序）：
+
+```json
+{
+  "reports": [
+    { "round_id": "3", "title": "把对方拉黑了 · 愤怒", "status": "ready",
+      "created_at": "2026-10-12T16:40:00", "updated_at": "2026-10-12T16:52:10",
+      "expires_at": "2026-10-19T16:40:00", "can_regenerate": "yes" }
+  ]
+}
+```
+
+| 字段 | 值 | 说明 |
+|---|---|---|
+| round_id | string | 轮次标识（`first_frame`/`done` 带回，见「3.1 first_frame」/「3.5 done」）；`legacy` = 升级前旧报告，轮次未知 |
+| title | string | 展示标题（如「考试没有考好 · 焦虑」）；与 latest 的 `title` 同源同值 |
+| status | `pending` \| `ready` | 生成中 / 可查看 |
+| created_at · updated_at · expires_at | iso 本地时间 | 首次生成 / 最近一次成功生成（含重新生成）/ 到期时刻（素材归档 + 7 天） |
+| can_regenerate | `yes` \| `no` \| `unknown` | 素材是否可用：`no`=已过期或已被治理清除；`unknown`=Redis 暂不可用，不承诺 |
 
 **语音转写请求/响应**（ADR-004）——请求 `POST /asr/transcribe`：
 
@@ -78,15 +104,17 @@
   "type": "first_frame",
   "session_id": "sess_abc",
   "route": "collect",
+  "round_id": "3",
   "template": "scene_default",
   "emotion_label": "疲惫",
-  "mood_select": true,
+  "mood_select": false,
   "text": ""
 }
 ```
 
 | 字段 | 值 | 说明 |
 |---|---|---|
+| round_id | string | **collect 才有（crisis 不带）**；本轮采集的稳定标识（round_seq 高水位分配，持久不复用），报告按 `(session_id, round_id)` 寻址（见「连接与会话」节补给站通道） |
 | route | `collect` \| `crisis` | **answer 型不发 first_frame**，直接 text_delta |
 | template | 模板 id | collect 才有，预告粗稿模板 |
 | emotion_label | 快速研判标签 | 喂 Live2D + 粗稿 |
@@ -154,9 +182,11 @@
 ### 3.5 done
 
 ```json
-{ "type": "done", "session_id": "sess_abc", "seq": 7 }
+{ "type": "done", "session_id": "sess_abc", "seq": 7, "round_id": "3", "station_ready": true }
 ```
 
+- `round_id`：collect 回合结束时带回本轮标识（answer/crisis 不带）；前端据此把该轮的「心灵补给站」邀请语链接绑定到这一轮
+- `station_ready`：**仅 collect 正常收尾（Finish）携带**——本轮素材是否已成功归档；false 时前端不得启用该轮报告入口（归档失败需显式提示，不得静默进入生成）；字段缺省按旧行为处理（旧后端兼容）
 - 前端：收起全部等待态（心情选择器、黑板"收尾中"提示）
 
 ### 3.6 replay（重连回放，ADR-005）
@@ -395,7 +425,7 @@ S→C  done
 事件（记忆与检索）： `memory_cleared` · `memory_clear_failed`（ERROR） · `semantic_recalled` · `semantic_saved` · `semantic_degraded` · `semantic_deleted` · `semantic_list_failed` · `semantic_delete_failed` · `semantic_clear_client_failed` · `semantic_clear_delete_failed` · `rag_retrieved` · `rag_bm25_cache_invalid` · `rag_bm25_cache_write_failed` · `rag_bm25_rebuild_failed` · `rag_ingest_state_update_failed`
 事件（模型配置）： `config_applied` · `config_aes_key_loaded` · `config_aes_key_generated`（WARN，密钥自举生成） · `config_aes_key_write_failed` · `llm_profile_created` · `llm_profile_deleted` · `llm_activated` · `llm_activate_rejected`（WARN，激活验证未过） · `llm_connection_verified` · `llm_persist_failed`（ERROR，落库失败） · `llm_config_key_unavailable`（WARN）
 事件（留言墙）： `wall_reply_pushed` · `wall_reply_failed`（WARN） · `wall_worker_degraded`（WARN，巡检异常不退出）
-事件（补给站）： `planner_llm_ok` · `station_report_accepted` · `station_report_ready` · `station_reports_schema_mismatch`（WARN，旧库自检重建）
+事件（补给站）： `planner_llm_ok` · `station_report_accepted` · `station_report_ready` · `station_report_superseded`（WARN，旧任务令牌失配拒绝覆盖） · `station_reports_schema_mismatch`（WARN，旧库自检重建） · `station_legacy_migrated`（WARN，旧表结构迁移） · `round_id_alloc_failed`（WARN，round_seq 分配失败该轮不产素材） · `station_legacy_refined` · `station_titles_backfilled`（启动遗留核价/旧式标题回填） · `station_reports_gc` · `station_report_gc_error`（WARN，清理失败不影响服务）
 REST 侧： `asr_transcribed` · `asr_empty`（归属 `/asr/transcribe`，ADR-004）。本清单为全量运行时事件名，与代码 `logger` 调用同步维护；启动生命周期与压测台日志（`startup_*`/`*_warm_*`/`memory_ready`/`memory_ping_failed`/`asr_model_*`/`rag_warm_*`/`watchdog_on`/`bench_events`，message 落点）不入本表。`preset_wav_missing`/`preset_wav_failed`/`station_auto_material_missing`/`station_auto_generate_failed`/`finish_archival_interrupted`/`semantic_note_llm_failed`/`empty_stream`/`llm_error`/`summary_llm_error`/`rag_failed`/`timeout`/`tts_failed`/`tts_send_failed`/`tts_sentence_failed`/`audio_send_failed`/`asr_failed`/`config_decrypt`/`config_load` 均为 `degraded` 事件的 reason 字段值而非独立事件名
 
 ### 9.4 脱敏（硬约束）
