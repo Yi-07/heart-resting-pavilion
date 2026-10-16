@@ -4,8 +4,7 @@
    → POST /station/report/generate?session_id&round_id → 轮询 latest 至 ready
    → 同一 session 再跑一轮 collect(round_id 递增)→ 两份报告互不覆盖
 2. 危机回合后 generate → 409(危机回合不分配轮次、不产素材)
-3. GET /admin/trends 200;GET /admin/config 200 且零密钥回显;
-   POST /admin/config(原 provider/model 回写,不动 api_key)→ 200
+3. GET /admin/trends 200;GET /admin/llm/profiles 200 且零密钥回显(旧 /admin/config 已退场)
 4. config.db 落库核验:api_key_enc 为 AES-GCM 结构(base64=nonce12+密文);
    若 .env 带 HRP_CONFIG_AES_KEY 则解密验证(只打印长度,不落明文)
 跑法:backend 在跑 `uv run hrp`,然后 `uv run python tests/e2e/e2e3_e_station_admin.py`。
@@ -117,20 +116,12 @@ def admin_flow() -> list[tuple[bool, str]]:
     checks.append((status == 200 and isinstance(moods, list),
                    f"trends: {status}, moods {len(moods) if isinstance(moods, list) else type(moods)}"))
 
-    status, body = get_json("/admin/config")
-    zero_echo = status == 200 and "api_key" not in body and isinstance(body.get("api_key_set"), bool)
-    provider = body.get("provider") if status == 200 else None
-    checks.append((zero_echo, f"config GET: {status}, provider={provider}, 零密钥回显"
-                   if zero_echo else f"config GET 异常或密钥回显: {status} {body}"))
-
-    if provider:
-        providers = body.get("providers") or []
-        model = next((p.get("model") for p in providers
-                      if isinstance(p, dict) and p.get("id") == provider), None)
-        status2, body2 = post_json("/admin/config", {"provider": provider, "model": model})
-        checks.append((status2 == 200 and body2.get("ok") is True,
-                       f"config POST 回写: {status2} {body2}"
-                       if status2 == 200 else f"config POST 回写异常: {status2} {body2}"))
+    # 模型配置单源 /admin/llm/profiles(T4 旧 /admin/config 已退场,404=预期);
+    # 零密钥回显核验照旧——响应里不得出现 api_key 明文(api_key_set 布尔计数合法)
+    status, body = get_json("/admin/llm/profiles")
+    zero_echo = status == 200 and "api_key" not in str(body).replace("api_key_set", "")
+    checks.append((zero_echo, f"llm profiles GET: {status}, 零密钥回显"
+                   if zero_echo else f"llm profiles 异常或密钥回显: {status} {body}"))
 
     # config.db 落库核验(只读;不打印任何密钥材料)
     try:
