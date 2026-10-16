@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import redis.asyncio as aioredis
 
@@ -41,8 +42,61 @@ def _warm_key(session_id: str) -> str:
     return f"{_PREFIX}:warm:{session_id}"
 
 
-def _station_key(session_id: str) -> str:
-    return f"{_PREFIX}:station:input:{session_id}"
+def _station_key(session_id: str, round_id: str | None = None) -> str:
+    """station:input 键。round_id=None = 旧键(升级前写入,只读用于遗留核价)；
+    新键带轮次后缀:每轮 collect 一份素材,互不覆盖。"""
+
+    if round_id is None:
+        return f"{_PREFIX}:station:input:{session_id}"
+    return f"{_PREFIX}:station:input:{session_id}:{round_id}"
+
+
+MaterialState = Literal["ok", "absent", "unknown"]
+"""素材三态:ok=可读且有效期可确定；absent=键不存在(无可整理素材/已过期)；
+unknown=Redis 异常或键无 TTL(非本代码写入格式)——有效期不可确认,不得放行生成。"""
+
+
+@dataclass(frozen=True)
+class StationMaterial:
+    """素材 + 可靠原始到期时刻 + 归档时刻。
+
+    deadline/collected_at 由素材自身证据得出(payload collected_at、Redis 剩余 TTL),
+    绝不以当前时间重新起算有效期。"""
+
+    payload: dict[str, Any]
+    deadline: datetime
+    collected_at: datetime
+
+
+def material_times(
+    payload: dict[str, Any], pttl_s: int | None, *, now: datetime
+) -> tuple[datetime, datetime] | None:
+    """(deadline, collected_at)——到期时刻唯一定价处;None=不可确认。
+
+    - payload 有 collected_at:归档时刻取它,deadline = 归档 + RETENTION;
+      若 Redis PTTL 也可得,deadline 取两者较早者(绝不延长原始有效期)
+    - 仅 PTTL 可得(旧格式素材):deadline = now + pttl(精确复原原始到期),
+      归档时刻按 deadline - RETENTION 回推(Redis 写入即 ex=RETENTION,同锚点)
+    """
+
+    retention = timedelta(seconds=config.STATION_RETENTION_S)
+    collected: datetime | None = None
+    raw = payload.get("collected_at")
+    if isinstance(raw, str):
+        try:
+            collected = datetime.fromisoformat(raw)
+        except ValueError:
+            collected = None
+    ttl_deadline: datetime | None = None
+    if pttl_s is not None and pttl_s >= 0:
+        ttl_deadline = now + timedelta(seconds=pttl_s)
+    if collected is not None:
+        payload_deadline = collected + retention
+        deadline = min(payload_deadline, ttl_deadline) if ttl_deadline else payload_deadline
+        return deadline, collected
+    if ttl_deadline is not None:
+        return ttl_deadline, ttl_deadline - retention
+    return None
 
 
 class Memory:
@@ -220,34 +274,99 @@ class Memory:
             logger.warning("memory_degraded", layer="warm", reason=str(exc)[:120])
 
     async def save_station_input(
-        self, session_id: str, formulation_json: str, summary: str, *, round_id: str = "0"
-    ) -> None:
+        self,
+        session_id: str,
+        round_id: str,
+        formulation_json: str,
+        summary: str,
+        collected_at: str | None = None,
+    ) -> bool:
         """station:input 懒生成素材(回合末写;步骤 9 补给站消费)。
 
-        round_id 随素材落账:方案书按回合键生成/历史保留(reports 表主键同源);
-        手动重生成从素材读回该回合号。
-        """
+        带轮次键 + collected_at(归档时刻,报告有效期锚点)。返回写成功与否
+        (供 Done.station_ready;Redis 失败记 memory_degraded 并回 false,不谎报)。"""
 
         payload = json.dumps(
-            {"formulation": formulation_json, "summary": summary, "round_id": round_id},
+            {
+                "formulation": formulation_json,
+                "summary": summary,
+                "collected_at": collected_at or _now_local().isoformat(timespec="seconds"),
+            },
             ensure_ascii=False,
         )
         try:
             await self._redis.set(
-                _station_key(session_id), payload, ex=config.MEMORY_WARM_TTL_S
+                _station_key(session_id, round_id), payload, ex=config.MEMORY_WARM_TTL_S
             )
+            return True
         except Exception as exc:  # noqa: BLE001 — 记忆降级:写失败不杀回合
             logger.warning("memory_degraded", layer="station", reason=str(exc)[:120])
+            return False
 
-    async def load_station_input(self, session_id: str) -> dict[str, Any] | None:
-        """读 station:input(步骤 9 用;先立读口防重复设计)。"""
+    async def load_station_input(
+        self, session_id: str, round_id: str
+    ) -> tuple[MaterialState, StationMaterial | None]:
+        """读本轮素材 + 可靠原始到期时刻(GET+PTTL 一次完成)。
+
+        - ok:payload 可解析且到期时刻可由素材自身证据确定
+        - absent:键不存在(无可整理素材或已过期)
+        - unknown:Redis 异常,或键无 TTL(非本代码写入格式)——不得放行生成
+        """
+
+        try:
+            key = _station_key(session_id, round_id)
+            raw = await self._redis.get(key)
+            pttl = await self._redis.pttl(key)
+            if raw is None:
+                return "absent", None
+            payload = json.loads(str(raw))
+            if not isinstance(payload, dict):
+                return "absent", None
+            if not isinstance(pttl, int) or pttl < 0:
+                # -1 = 键无过期时间:非本代码写入格式,有效期不可确认
+                return "unknown", None
+            times = material_times(payload, pttl // 1000, now=_now_local())
+            if times is None:
+                return "unknown", None
+            deadline, collected_at = times
+            return "ok", StationMaterial(payload=payload, deadline=deadline, collected_at=collected_at)
+        except Exception as exc:  # noqa: BLE001 — 记忆降级:读失败按不可确认处理
+            logger.warning("memory_degraded", layer="station_read", reason=type(exc).__name__)
+            return "unknown", None
+
+    async def probe_station_input(self, session_id: str, round_id: str) -> MaterialState:
+        """素材存在性三态(列表页 can_regenerate 用;unknown ≠ 可用)。"""
+
+        try:
+            raw = await self._redis.get(_station_key(session_id, round_id))
+            if raw is None:
+                return "absent"
+            pttl = await self._redis.pttl(_station_key(session_id, round_id))
+            if not isinstance(pttl, int) or pttl < 0:
+                return "unknown"
+            return "ok"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("memory_degraded", layer="station_probe", reason=type(exc).__name__)
+            return "unknown"
+
+    async def legacy_station_deadline(self, session_id: str) -> tuple[MaterialState, datetime | None]:
+        """遗留核价:旧键(无轮次后缀)的原始到期时刻。
+
+        ("ok", now+pttl)=旧素材仍在,精确复原 archive+7d；
+        ("absent", None)=键已消亡或无 TTL,无法核验；
+        ("unknown", None)=Redis 不可达(调用方应保持未定价,不猜不删)。"""
 
         try:
             raw = await self._redis.get(_station_key(session_id))
-            return json.loads(raw) if raw is not None else None
-        except Exception as exc:  # noqa: BLE001 — 记忆降级:读失败当无素材
-            logger.warning("memory_degraded", layer="station_read", reason=str(exc)[:120])
-            return None
+            if raw is None:
+                return "absent", None
+            pttl = await self._redis.pttl(_station_key(session_id))
+            if not isinstance(pttl, int) or pttl < 0:
+                return "absent", None
+            return "ok", _now_local() + timedelta(seconds=pttl // 1000)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("memory_degraded", layer="station_legacy", reason=type(exc).__name__)
+            return "unknown", None
 
     # ---- 内部 ----
 

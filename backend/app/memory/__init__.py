@@ -8,7 +8,9 @@ SemanticMemory 更轻(只存路径,chroma/embedder 首次读写才加载)。
 
 from app import config
 from app.memory.semantic import SemanticMemory
+from app.memory.store import MaterialState as MaterialState
 from app.memory.store import Memory
+from app.memory.store import StationMaterial as StationMaterial
 
 _memory: Memory | None = None
 _semantic: SemanticMemory | None = None

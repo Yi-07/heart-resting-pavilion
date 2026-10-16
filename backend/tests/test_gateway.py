@@ -396,10 +396,11 @@ def test_mood_select_recorded_to_cold_layer(fake_memory):
 
 
 def test_finish_archives_round_three_actions(monkeypatch, fake_memory, tmp_reports):
-    """回合三动作:温层摘要+station:input(研判 mood 需 emotion 已填,此处空态不记)。
+    """回合三动作:温层摘要+station:input(带轮次)+ 研判 mood;done 帧回带
+    round_id 与 station_ready。
 
-    方案书回合末自动生成(方案书裁定):归档后素材在 → start_auto_generate 被触发,
-    done 照发不等待;reports 表落 pending/ready 行(round_id=回合号)。"""
+    方案书回合末自动生成(R1 裁定):归档后素材在 → start_auto_generate 被触发,
+    done 照发不等待;reports 表落 pending/ready 行(round_id=round_seq 高水位)。"""
     from app.agents.state import Finish
 
     async def _stub_run(cs, emitter):
@@ -414,7 +415,11 @@ def test_finish_archives_round_three_actions(monkeypatch, fake_memory, tmp_repor
         _send_input(ws, "最近很焦虑睡不着")
         first = _recv(ws)
         assert first["type"] == "first_frame"
-        assert _recv(ws)["type"] == "done"  # done 照发:自动生成不拖收尾
+        assert first["round_id"] == "1"  # 轮次标识由后端下发(首帧,高水位从 1 起)
+        done = _recv(ws)
+        assert done["type"] == "done"
+        assert done["round_id"] == "1"
+        assert done["station_ready"] is True  # 素材已归档
         session_id = first["session_id"]
     names = [c[0] for c in fake_memory.calls]
     assert "save_round_summary" in names
@@ -422,15 +427,17 @@ def test_finish_archives_round_three_actions(monkeypatch, fake_memory, tmp_repor
     saved = {c[0]: c[1] for c in fake_memory.calls if c[0] in ("save_round_summary", "save_station_input")}
     assert saved["save_round_summary"]["summary"] == "测试总结文本"
     assert saved["save_station_input"]["summary"] == "测试总结文本"
+    assert saved["save_station_input"]["round_id"] == "1"
+    assert saved["save_station_input"]["collected_at"] is not None  # 有效期锚点
     assert "situation" in saved["save_station_input"]["formulation_json"]
     row = None
     for _ in range(200):  # 后台生成在 portal loop 落地,轮询行
-        row = get_reports().get_latest(session_id)
+        row = get_reports().get_active(session_id, "1")
         if row is not None and row["status"] == "ready":
             break
         time.sleep(0.02)
     assert row is not None and row["status"] == "ready" and row["report_md"] == "# 自动生成稿"
-    assert row["round_id"] == "r0"  # 挂起重试轮不计,entry 回合 round_index=0
+    assert row["round_id"] == "1"  # round_seq 高水位(首回合=1)
 
 
 def test_ask_llm_failed_suspends_collect(monkeypatch, fake_memory):
@@ -519,6 +526,55 @@ def test_collect_timeout_retains_state(monkeypatch, fake_memory):
     # state 保留:连接级断言经由 run_collect 的第 2 次进入不可行(stub 只调一次),
     # 语义由「抢占保留」同路径保证——这里钉超时路径不再有清空副作用
     assert captured["cs"] is not None
+
+
+def test_second_collect_round_gets_new_round_id(monkeypatch, fake_memory, tmp_reports):
+    """同 session 第二轮 collect:round_id 递增、素材不覆盖第一轮。"""
+    from app.agents.state import Finish
+
+    async def _stub_run(cs, emitter):
+        return Finish(cause="sufficient", summary=f"总结-{cs.round_id}")
+
+    monkeypatch.setattr("app.agents.run_collect", _stub_run)
+    sid = None
+    for _ in range(2):
+        with client.websocket_connect("/ws") as ws:
+            ws.send_text(
+                json.dumps(
+                    {
+                        "type": "user_input",
+                        "session_id": sid,
+                        "text": "最近很焦虑睡不着",  # 规则命中 collect,不触 LLM
+                        "ts": 7,
+                    }
+                )
+            )
+            _recv(ws)  # first_frame
+            done = _recv(ws)
+            sid = done["session_id"]
+    saved = [c[1] for c in fake_memory.calls if c[0] == "save_station_input"]
+    assert [s["round_id"] for s in saved] == ["1", "2"]  # 两轮各自归档,不覆盖
+    assert saved[0]["summary"] == "总结-1"
+    assert saved[1]["summary"] == "总结-2"
+
+
+def test_archive_failure_marks_station_not_ready(monkeypatch, fake_memory, tmp_reports):
+    """素材写失败:done.station_ready=false(前端据此禁用该轮入口)。"""
+    from app.agents.state import Finish
+
+    async def _stub_run(cs, emitter):
+        return Finish(cause="sufficient", summary="总结")
+
+    async def _fail(*a, **k):
+        return False
+
+    monkeypatch.setattr("app.agents.run_collect", _stub_run)
+    monkeypatch.setattr(fake_memory, "save_station_input", _fail)
+    with client.websocket_connect("/ws") as ws:
+        _send_input(ws, "最近很焦虑睡不着")
+        assert _recv(ws)["type"] == "first_frame"
+        done = _recv(ws)
+        assert done["station_ready"] is False
 
 
 def test_reconnect_adopts_session_id(monkeypatch):

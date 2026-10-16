@@ -86,6 +86,11 @@ class CollectState:
     ask_retry: bool = False
     """问话 LLM 失败挂起标记:挂起等下一条输入重试,消费(问话成功或终结)即复位。
     挂起期间 formulate/round_index 冻结(失败轮不填格不计数)。"""
+    round_id: str | None = None
+    """本轮 collect 的稳定标识(entry 时由 round_seq 高水位分配;SQLite 不可用时
+    =None → 本轮不产 station 素材,链接显式不可用)。只活连接内存。"""
+    collected_at: str | None = None
+    """素材归档时刻(= 报告有效期锚点);_archive_round 写入。"""
 
 
 # ---- 图出口事件(§3.4;网关按事件收尾,不读 state 内部) ----

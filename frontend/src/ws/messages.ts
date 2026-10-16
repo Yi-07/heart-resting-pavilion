@@ -70,6 +70,7 @@ export type TemplateData = Formulation | EmotionWheelData | StageMapData | Scene
 export interface FirstFrame {
   type: 'first_frame'
   session_id: string
+  round_id?: string | null // collect 才有;crisis 无;本轮采集稳定标识(契约 §3.1)
   route: Exclude<Route, 'answer'>
   template: TemplateId | null // collect 才有;crisis=null
   emotion_label: string | null
@@ -117,6 +118,10 @@ export interface Done {
   type: 'done'
   session_id: string
   seq: number
+  /** collect 回合结束带回的本轮标识(契约 §3.5);answer/crisis 无 */
+  round_id?: string | null
+  /** 仅 collect Finish 携带:本轮素材是否归档成功;false=不得启用该轮报告入口 */
+  station_ready?: boolean | null
 }
 
 /** 错误帧;不带 seq 不消耗号 */

@@ -23,7 +23,6 @@ class _ScriptedProvider:
         raise AssertionError("E2E 不应调用 chat")
 
     async def stream(self, messages: Any):
-        import asyncio
 
         system = messages[0].content if messages else ""
         # 按消息内容分发:问话流/陪聊流/总结流(调用计数在多轮下会错位)。

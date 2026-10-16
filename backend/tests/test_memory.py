@@ -8,10 +8,12 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 import pytest
 import redis as sync_redis
 
+from app import config
 from app.memory.store import Memory
 
 _TEST_URL = "redis://localhost:6379/15"
@@ -85,27 +87,52 @@ async def test_mood_recent_rolls_in_hot_layer(mem: Memory):
 async def test_station_input_write_and_load(mem: Memory):
     sid = "sess_m3"
     formulation = json.dumps({"situation": "加班", "emotion": {"label": "焦虑"}}, ensure_ascii=False)
-    await mem.save_station_input(sid, formulation, "总结文本")
-    loaded = await mem.load_station_input(sid)
-    assert loaded is not None
-    assert loaded["summary"] == "总结文本"
-    assert json.loads(loaded["formulation"])["emotion"]["label"] == "焦虑"
+    ok = await mem.save_station_input(sid, "1", formulation, "总结文本")
+    assert ok is True
+    state, loaded = await mem.load_station_input(sid, "1")
+    assert state == "ok" and loaded is not None
+    assert loaded.payload["summary"] == "总结文本"
+    assert json.loads(loaded.payload["formulation"])["emotion"]["label"] == "焦虑"
+    # deadline 由素材自身证据得出:payload collected_at + RETENTION,与 Redis TTL 同锚点
+    expected = loaded.collected_at + timedelta(seconds=config.STATION_RETENTION_S)
+    assert abs((loaded.deadline - expected).total_seconds()) <= 1
 
     r = sync_redis.from_url(_TEST_URL, decode_responses=True)
-    ttl = r.ttl(f"hrp:v1:station:input:{sid}")
+    ttl = r.ttl(f"hrp:v1:station:input:{sid}:1")
     r.close()
     assert 0 < ttl <= 7 * 24 * 3600  # TTL 已设(spec §4 L7 温层 7 天)
+
+
+async def test_station_input_round_scoped(mem: Memory):
+    """同 session 两轮各一份素材,互不覆盖。"""
+
+    sid = "sess_m3b"
+    await mem.save_station_input(sid, "1", '{"situation":"第一轮"}', "总结一")
+    await mem.save_station_input(sid, "2", '{"situation":"第二轮"}', "总结二")
+    _, one = await mem.load_station_input(sid, "1")
+    _, two = await mem.load_station_input(sid, "2")
+    assert one is not None and two is not None
+    assert json.loads(one.payload["formulation"])["situation"] == "第一轮"
+    assert json.loads(two.payload["formulation"])["situation"] == "第二轮"
+
+
+async def test_station_material_absent_and_probe(mem: Memory):
+    sid = "sess_m3c"
+    assert await mem.load_station_input(sid, "1") == ("absent", None)
+    assert await mem.probe_station_input(sid, "1") == "absent"
+    await mem.save_station_input(sid, "1", "{}", "s")
+    assert await mem.probe_station_input(sid, "1") == "ok"
 
 
 async def test_clear_all_wipes_redis_and_cold(mem: Memory):
     sid = "sess_m4"
     await mem.save_round_summary(sid, "摘要")
-    await mem.save_station_input(sid, "{}", "总结")
+    await mem.save_station_input(sid, "1", "{}", "总结")
     await mem.record_mood("低落", source="mood_select")
     cleared = await mem.clear_all()
     assert cleared["redis_keys"] >= 2  # warm + station(治理不降级,如实计数)
     assert cleared["mood_rows"] >= 1
-    assert await mem.load_station_input(sid) is None
+    assert await mem.load_station_input(sid, "1") == ("absent", None)
     ctx = await mem.snapshot(sid)
     assert ctx.history_summary is None
     assert mem.recent_moods() == []
@@ -116,10 +143,11 @@ async def test_degrade_when_redis_down(tmp_path: pytest.TempPathFactory):
     # 全部操作不抛;冷层照写(SQLite 本地),热/温降级吞掉
     await mem.record_mood("低落", source="mood_select", session_id="s")
     await mem.save_round_summary("s", "摘要")
-    await mem.save_station_input("s", "{}", "摘要")
     ctx = await mem.snapshot("s")
     assert ctx.history_summary is None
-    assert await mem.load_station_input("s") is None
+    assert await mem.save_station_input("s", "1", "{}", "x") is False  # 写失败回 false
+    assert await mem.load_station_input("s", "1") == ("unknown", None)  # 不可确认
+    assert await mem.probe_station_input("s", "1") == "unknown"
     assert [r["mood_label"] for r in mem.recent_moods()] == ["低落"]
 
 

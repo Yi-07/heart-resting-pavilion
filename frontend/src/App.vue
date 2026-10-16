@@ -28,7 +28,7 @@ import BoardCanvas from './board/BoardCanvas.vue'
 import ChatPanel from './chat/ChatPanel.vue'
 import MoodOverlay from './mood/MoodSelector.vue'
 import StationPanel from './station/StationPanel.vue'
-import { bindStation, openStation } from './station/station'
+import { bindStation, openStationList } from './station/station'
 import { appendDraft, transcribeAudio } from './voice/asr'
 import SettingsPanel from './admin/SettingsPanel.vue'
 import { openSettings } from './admin/settings'
@@ -264,8 +264,8 @@ onMounted(() => {
     round.transition({ kind: 'frame', msg: m })
     boardRef.value?.clear()
     lastTemplate.value = m.template
-    chat.beginBot(m.text)
-    moodOpen.value = false // 回合开始:心情浮层收起(回合内不可点)
+    chat.beginBot(m.text, m.round_id ?? null)  // 本条消息绑定本轮轮次标识(PR 按回合寻址)
+    moodOpen.value = false // 回合开始:心情浮层收起(回合内不可点;T5 终态,自动浮出已废弃)
   })
   track('draw', (m) => {
     round.transition({ kind: 'frame', msg: m })
@@ -274,13 +274,16 @@ onMounted(() => {
   })
   track('text_delta', (m) => {
     round.transition({ kind: 'frame', msg: m })
-    chat.appendDelta(m.text)
+    chat.appendDelta(m.text, round.backendRoundId)  // 用户发言后开的新消息也要绑本轮
   })
   track('audio_chunk', (m) => {
     audio.enqueue(m)
   })
   track('done', (m) => {
     round.transition({ kind: 'frame', msg: m })
+    // 素材归档完成信号:只点亮属于这一轮的消息(邀请语链接据此启用)
+    const archivedRound = m.round_id ?? null
+    if (archivedRound !== null && m.station_ready === true) chat.markStationReady(archivedRound)
     chat.finalize()
     mood.notifyDone() // 心情按钮组冷却解除(done 驱动;watch phase 同步回合外可点)
     spoke.value = null // 回合收口:辐条一并撤(挂起态不会收到 done,防御性清理)
@@ -456,7 +459,7 @@ function toggleMic(): void {
       >
         今日心情
       </button>
-      <button class="tb" type="button" data-testid="station-entry" @click="openStation()">心灵补给站</button>
+      <button class="tb" type="button" data-testid="station-entry" @click="openStationList()">心灵补给站</button>
       <button class="tb" type="button" data-testid="practice-entry" :class="{ active: practiceOpen }" @click="practiceOpen = true">心灵练习</button>
       <button class="tb" type="button" data-testid="wall-entry" :class="{ active: wallOpen }" @click="wallOpen = true">留言墙<span v-if="wallUnread" class="wall-dot" aria-label="有新的留言回复"></span></button>
       <button class="tb" type="button" title="模型配置 · 记忆治理" data-testid="settings-entry" @click="openSettings()">设置</button>

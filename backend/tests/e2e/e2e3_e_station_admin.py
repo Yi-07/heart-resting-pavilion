@@ -1,12 +1,13 @@
-"""e2e3 用例 E·station/admin REST(acceptance-v1 §6)。
+"""e2e3 用例 E·station/admin REST(acceptance-v1 §6,轮次维度)。
 
-1. 走一遍 mini collect 到 Finish(总结含心灵补给站邀请语,记 session_id)
-   → POST /station/report/generate 200 pending → 轮询 GET latest 至 ready(report_md 非空)。
-2. 危机回合后 generate → 409(危机回合不产素材)。
+1. mini collect 跑到 Finish(done 带回 round_id/station_ready)
+   → POST /station/report/generate?session_id&round_id → 轮询 latest 至 ready
+   → 同一 session 再跑一轮 collect(round_id 递增)→ 两份报告互不覆盖
+2. 危机回合后 generate → 409(危机回合不分配轮次、不产素材)
 3. GET /admin/trends 200;GET /admin/config 200 且零密钥回显;
-   POST /admin/config(原 provider/model 回写,不动 api_key)→ 200。
+   POST /admin/config(原 provider/model 回写,不动 api_key)→ 200
 4. config.db 落库核验:api_key_enc 为 AES-GCM 结构(base64=nonce12+密文);
-   若 .env 带 HRP_CONFIG_AES_KEY 则解密验证(只打印长度,不落明文)。
+   若 .env 带 HRP_CONFIG_AES_KEY 则解密验证(只打印长度,不落明文)
 跑法:backend 在跑 `uv run hrp`,然后 `uv run python tests/e2e/e2e3_e_station_admin.py`。
 """
 
@@ -29,63 +30,66 @@ TAIL = [
     "这种状态持续两三周了，白天上班完全没精神。",
     "一想到第二天要上班，我整晚都睡不着。",
 ]
+SECOND_OPEN = "我又想起一件事,最近总睡不好"
 
 
-async def mini_collect() -> tuple[str | None, list[tuple[bool, str]]]:
-    """走满采集到 Finish,返回 (session_id, 断言)。"""
+async def run_episode(
+    c: WsClient, sid: str | None, opening: str, answers: list[str]
+) -> tuple[str | None, str | None, bool | None]:
+    """跑完一个 collect 回合:entry → 逐轮回答 → 邀请语 → 等该轮 done。
+
+    返回 (session_id, round_id, station_ready);done 按 round_id 精确匹配,
+    避免队列里混入后续回合/支线的帧。"""
+
+    await c.send(user_text(opening, sid))
+    got = await c.wait_for(lambda m: m.get("type") == "first_frame", 60, "first_frame")
+    if got is None:
+        return None, None, None
+    sid = got[1].get("session_id") or sid
+    rid = got[1].get("round_id")
+    await c.wait_for(lambda m: m.get("type") == "text_delta", 60, "首问")
+    # 回合间沉降:网关「done 帧已发→Task 状态翻转」有调度窗口(已知边界,见
+    # ws_gateway/gateway.py 抢占段注记),发太快会被误判为抢占而重开回合
+    await asyncio.sleep(2.5)
+    for text in answers:
+        await c.send(user_text(text, sid))
+        inv = await c.wait_for(
+            lambda m: m.get("type") == "text_delta" and INVITE_KEY in (m.get("text") or ""),
+            60, "邀请语",
+        )
+        if inv:
+            break
+        await asyncio.sleep(2.5)
+    done = await c.wait_for(
+        lambda m: m.get("type") == "done" and m.get("round_id") == rid, 180, f"done(round={rid})"
+    )
+    ready = done[1].get("station_ready") if done else None
+    return sid, rid, ready
+
+
+async def station_flow(sid: str, rid: str) -> tuple[list[tuple[bool, str]], str]:
     checks: list[tuple[bool, str]] = []
-    sid: str | None = None
-    async with WsClient() as c:
-        await c.send(user_text(R1))
-        got = await c.wait_for(lambda m: m.get("type") == "first_frame", 60, "first_frame")
-        if got:
-            sid = got[1].get("session_id")
-        await c.wait_for(lambda m: m.get("type") == "draw", 60, "粗稿 draw")
-        await c.wait_for(lambda m: m.get("type") == "text_delta", 60, "首问")
-        await asyncio.sleep(4.0)
-        t_end = None
-        for i, text in enumerate(TAIL, start=2):
-            t_r = await c.send(user_text(text))
-            await c.wait_for(lambda m: m.get("type") == "draw", 60, f"R{i} draw")
-            first = await c.wait_for(lambda m: m.get("type") == "text_delta", 60, f"R{i} 文本")
-            if first and first[0] - t_r >= 8.0:
-                inv = await c.wait_for(
-                    lambda m: m.get("type") == "text_delta" and INVITE_KEY in (m.get("text") or ""),
-                    180, f"R{i} 邀请语")
-                if inv:
-                    t_end = inv[0]
-                    break
-            await asyncio.sleep(4.0)
-        if t_end:
-            # 等 Finish 收口 done:过早断连会 cancel station:input 归档(诊断#2 根因)
-            got_done = await c.wait_for(lambda m: m.get("type") == "done", 60, "Finish done")
-            checks.append((got_done is not None, "Finish done 收口" if got_done
-                           else "Finish done 未到(收尾或被截)"))
-        checks.append((t_end is not None, "Finish 总结+邀请语" if t_end
-                       else "mini collect 未走到 Finish"))
-        checks.append((sid is not None, f"session_id={sid}" if sid else "未取得 session_id"))
-    return sid, checks
-
-
-async def station_flow(sid: str) -> list[tuple[bool, str]]:
-    checks: list[tuple[bool, str]] = []
-    status, body = post_json(f"/station/report/generate?session_id={sid}")
+    status, body = post_json(f"/station/report/generate?session_id={sid}&round_id={rid}")
     checks.append((status == 200 and body.get("status") == "pending",
                    f"generate: {status} {body}" if status == 200 else f"generate 异常: {status} {body}"))
     ready = False
-    report_len = 0
+    report = ""
     for _ in range(50):  # 50 × 3s = 150s 上限
         await asyncio.sleep(3.0)
-        status, body = get_json(f"/station/report/latest?session_id={sid}")
+        status, body = get_json(f"/station/report/latest?session_id={sid}&round_id={rid}")
         if status == 200 and body.get("status") == "ready":
             ready = True
-            report_len = len(body.get("report_md") or "")
+            report = body.get("report_md") or ""
             break
-    checks.append((ready and report_len > 0,
-                   f"latest ready, report_md {report_len} 字" if ready else "轮询 150s 未 ready"))
+    checks.append((ready and len(report) > 0,
+                   f"latest ready, report_md {len(report)} 字" if ready else "轮询 150s 未 ready"))
     recs = log_records(event="station_report_ready", session_id=sid, since_epoch=epoch() - 300)
     checks.append((bool(recs), "station_report_ready 日志" if recs else "station_report_ready 日志未找到"))
-    return checks
+    status, body = get_json(f"/station/report/list?session_id={sid}")
+    rows = body.get("reports", []) if status == 200 else []
+    checks.append((any(r.get("round_id") == rid for r in rows),
+                   f"list 含 round_id={rid}(共 {len(rows)} 行)" if status == 200 else f"list 异常 {status}"))
+    return checks, report
 
 
 async def crisis_no_material() -> list[tuple[bool, str]]:
@@ -94,12 +98,14 @@ async def crisis_no_material() -> list[tuple[bool, str]]:
         await c.send(user_text("我不想活了"))
         got = await c.wait_for(lambda m: m.get("type") == "first_frame", 45, "crisis first_frame")
         sid = got[1].get("session_id") if got else None
+        checks.append((got is not None and got[1].get("round_id") is None,
+                       "危机首帧不带 round_id(不分配轮次)"))
         await c.wait_for(lambda m: m.get("type") == "done", 90, "crisis done")
     if not sid:
-        checks.append((False, "crisis 会话未取得 session_id"))
-        return checks
-    status, body = post_json(f"/station/report/generate?session_id={sid}")
-    checks.append((status == 409, f"危机回合 generate → {status}(预期 409): {body.get('detail', '')[:40]}"
+        return [(False, "crisis 会话未取得 session_id")]
+    # 危机回合不分配轮次、不产素材:按任一 round_id 询问都应 409
+    status, body = post_json(f"/station/report/generate?session_id={sid}&round_id=1")
+    checks.append((status == 409, f"危机回合 generate → {status}(预期 409)"
                    if status == 409 else f"危机回合 generate 预期 409 实得 {status}: {body}"))
     return checks
 
@@ -124,7 +130,7 @@ def admin_flow() -> list[tuple[bool, str]]:
         status2, body2 = post_json("/admin/config", {"provider": provider, "model": model})
         checks.append((status2 == 200 and body2.get("ok") is True,
                        f"config POST 回写: {status2} {body2}"
-                       if status2 == 200 else f"config POST 异常: {status2} {body2}"))
+                       if status2 == 200 else f"config POST 回写异常: {status2} {body2}"))
 
     # config.db 落库核验(只读;不打印任何密钥材料)
     try:
@@ -152,6 +158,7 @@ def admin_flow() -> list[tuple[bool, str]]:
 
 def try_decrypt_len(enc_b64: str) -> int | None:
     """用 .env 的 HRP_CONFIG_AES_KEY 解密,只返回明文长度;密钥缺失返 None。"""
+
     env_path = BACKEND_DIR / ".env"
     if not env_path.exists():
         return None
@@ -172,20 +179,41 @@ def try_decrypt_len(enc_b64: str) -> int | None:
 
 
 async def main() -> None:
-    print("===== e2e3 用例 E·station/admin REST =====")
+    print("===== e2e3 用例 E·station/admin REST(轮次维度) =====", flush=True)
     checks: list[tuple[bool, str]] = []
-    sid, collect_checks = await mini_collect()
-    checks += collect_checks
-    if sid:
-        print("-- station generate/poll --", flush=True)
-        checks += await station_flow(sid)
+    reports: dict[str, str] = {}
+
+    async with WsClient() as c:
+        sid, rid, ready = await run_episode(c, None, R1, TAIL)
+        checks.append((rid is not None, f"第 1 轮 round_id={rid}" if rid else "未拿到 round_id"))
+        checks.append((ready is True, f"第 1 轮 done.station_ready={ready}"))
+    if sid and rid:
+        print("-- station generate/poll(第 1 轮) --", flush=True)
+        flow, md1 = await station_flow(sid, rid)
+        checks += flow
+        if md1:
+            reports[rid] = md1
+        print("-- 第 2 轮 collect(同 session,round_id 递增) --", flush=True)
+        async with WsClient() as c2:
+            sid2, rid2, ready2 = await run_episode(c2, sid, SECOND_OPEN, TAIL[:3])
+        checks.append((sid2 == sid, f"第 2 轮回用 session_id={sid2}"))
+        checks.append((rid2 is not None and rid2 != rid, f"第 2 轮 round_id={rid2}(不与 {rid} 冲突)"))
+        checks.append((ready2 is True, f"第 2 轮 done.station_ready={ready2}"))
+        if sid2 and rid2:
+            flow2, md2 = await station_flow(sid2, rid2)
+            checks += flow2
+            if md2:
+                reports[rid2] = md2
+        checks.append((len(set(reports.values())) == len(reports),
+                       f"两轮报告独立存取({len(reports)} 份,正文互不相同)"))
+
     print("-- 危机回合不产素材 --", flush=True)
     checks += await crisis_no_material()
     print("-- admin REST --", flush=True)
     checks += admin_flow()
     ok = all(p for p, _ in checks)
     for passed, detail in checks:
-        print(f"  {'PASS' if passed else 'FAIL'}  {detail}")
+        print(f"  {'PASS' if passed else 'FAIL'}  {detail}", flush=True)
     result("E·station/admin", ok, "见上" if ok else "存在失败项")
 
 
