@@ -9,7 +9,7 @@
 
 交互图版本：[architecture-overview.html](docs/diagrams/architecture-overview.html)（浏览器打开可缩放查看）。
 
-> 图注：组件与数据流走向以此图为准；消息字段与格式请参阅 [ws-contract](docs/architecture/ws-contract.md)；TTL、提示词等参数以 spec 为准。route 现行为纯规则判定，LLM 分层判定为设计态（未接线）。
+> 图注：组件与数据流走向以此图为准；消息字段与格式请参阅 [ws-contract](docs/architecture/ws-contract.md)；TTL、提示词等参数以 spec 为准。route 走分层判定：规则速判在前，模糊输入才调 LLM。
 
 ## 2. 会话生命周期
 
@@ -31,14 +31,14 @@
 - **collect 图**（`backend/app/agents/`）：LangGraph StateGraph。CollectState 挂连接对象，确定性条件边分派，图出口为 CollectEvent 四变体；软信号经 LLM 复核可升级危机序列。细节请参阅 [backend-plan「采集驱动与图内黑板」节](docs/architecture/backend-plan.md)
 - **RAG 引擎**（`backend/app/rag/engine.py`）：混合检索走向量（Chroma）＋关键词（BM25）＋重排三路；科普/案例两库由 library 参数区分；重库懒加载。细节请参阅 [backend-plan「模块职责表」rag 行](docs/architecture/backend-plan.md)
 - **记忆层**（`backend/app/memory/store.py`）：热/温层 Redis，冷层 SQLite。层介质与生命周期请参阅 [spec「L7 · 数据与知识层」节](docs/architecture/architecture-spec.md)；故障降级不杀回合；重连回放读热/温层快照，冷层只喂 admin 趋势
-- **语音**（`backend/app/voice/`）：ASR 两步式转写，ffmpeg 转码在内，转写后即弃；TTS 走 CosyVoice sidecar；fillers 是预生成的等待语音
+- **语音**（`backend/app/voice/`）：ASR 两步式转写，ffmpeg 转码在内，转写后即弃；TTS 走 GPT-SoVITS remote（CosyVoice sidecar 为 local 回滚模式）；fillers 是预生成的等待语音
 - **station + admin REST**：补给站方案书懒生成与存取（SQLite reports）；admin 管理通道。端点请参阅 [ws-contract「连接与会话」节](docs/architecture/ws-contract.md)
 
 ### 前端（Vue3 + Vite + TS）
 
 职责与接口请参阅 [frontend-plan「模块职责表」节](docs/architecture/frontend-plan.md)。
 
-- **ws 客户端**（`frontend/src/ws/`）：连接、重连、seq 校验、消息分发；9 种消息类型定义；session_id 经 localStorage 持久化
+- **ws 客户端**（`frontend/src/ws/`）：连接、重连、seq 校验、消息分发；10 种消息类型定义；session_id 经 localStorage 持久化
 - **黑板渲染**（`frontend/src/board/`）：模板声明＋通用渲染器。draw 按 seq 与新字段做增量动画；定制模板只需加一份声明，渲染器零改动
 - **Live2D**（`frontend/src/l2d/`）：pixi-live2d-display 封装；情绪标签映射表情参数，口型随播放事件
 - **回放与小结卡**：replay 帧驱动；近期回放折叠幕布，隔天小结卡混流。细节请参阅 ADR-005
@@ -46,7 +46,7 @@
 
 ### TTS sidecar（独立进程）
 
-CosyVoice 独立进程，由后端启动时自动拉起并版本握手，退出有序关停；分句流式合成。细节请参阅 ADR-002
+CosyVoice 独立进程（local 回滚模式，`TTS_MODE=local` 时启用），由后端启动时自动拉起并版本握手，退出有序关停；分句流式合成。现行默认 `TTS_MODE=remote`，走 GPT-SoVITS remote HTTP 服务（PCM 流式，round 级打断）。细节请参阅 ADR-002 与 [backend-plan「模块职责表」voice 行](docs/architecture/backend-plan.md)
 
 ## 4. 决策记录索引
 

@@ -123,7 +123,7 @@ async def classify(
     if fast.source == "rule":
         return fast
 
-    # 模糊 → LLM;不等待(超时/失败即 collect 兜底,spec §4 L4)
+    # 模糊 → LLM;超时/失败/低 conf 均落 collect 兜底(安全侧,spec §4 L3)
     prov = provider or get_provider()
     timeout = timeout_s if timeout_s is not None else config.LLM_CLASSIFY_TIMEOUT_S
     try:

@@ -4,8 +4,8 @@
 - user_input 处理跑独立任务、不阻塞收包:新 user_input 即抢占——取消当前任务
   + 旧 emitter 标 dead(未发帧蒸发)→ 新回合 entry
 - 每条 user_input 先过危机闸门:命中 → 危机序列 + WARN 审计 + 销毁采集态
-- 未命中 → 分层判定(规则速判保 first_frame ≤300ms;模糊按 collect 走,
-  LLM 仅异步精化 emotion_label,不撤回,spec §4 L4):
+- 未命中 → 分层判定(规则速判在前保 first_frame ≤300ms;模糊调 LLM 语义判定,
+  超时/失败/低 conf 落 collect 兜底,spec §4 L3/L4):
   answer → RAG 门控 → LLM 流式直答;collect → first_frame → collect 图
 - collect:AskNext/EmpathChat 后保留状态等下一条;Finish → 回合三动作
   (温层摘要+station:input+研判 mood,memory 模块降级不杀回合)+ done + 销毁;
