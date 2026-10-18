@@ -1,8 +1,10 @@
 """分层判定(spec §4 L3):规则先判明显 case → 模糊才调 LLM(复用规则引擎,零新增组件)。
 
 - 规则三级(确定性,优先级从上到下):
-  1. 知识问法命中 → answer,needs_rag=True
-  2. 情绪困扰信号命中(第一人称近况/负面) → collect,顺带关键词快速研判标签
+  1. 情绪困扰信号命中且带第一人称/近况指涉 → collect,顺带关键词快速研判标签
+     (先行于知识问法:「我最近很痛苦,怎么办」是倾诉不是科普;纯知识问句
+      「怎么缓解焦虑」无第一人称指涉,不受影响)
+  2. 知识问法命中 → answer,needs_rag=True
   3. 问候命中 → answer,needs_rag=False(直接生成)
 - 其余模糊 → LLM 拿 {route, emotion_label, confidence};needs_rag 仍以知识问法
   词表判(RAG 门控复用同一分层判定,spec §4 L3)
@@ -10,7 +12,7 @@
   错了只是多问一句);LLM 失败/超时同样 collect 兜底
 - 规则路径 conf = CLASSIFIER_RULE_CONF(0.9)
 - 隔离约束:emotion_label 只随结果携带喂黑板/Live2D,绝不参与 route 判定
-词表为 MVP 最小占位,内容运行时补。
+词表为 MVP 最小占位,内容运行时补(评测集 backend/tests/test_rule_eval.py 先行)。
 """
 
 import asyncio
@@ -24,15 +26,29 @@ from app.llm import LLMError, Message, get_provider
 from app.llm.provider import OpenAICompatProvider
 
 KNOWLEDGE_PATTERNS: tuple[str, ...] = (
-    "什么是", "是什么", "为什么", "何为", "如何", "怎么", "怎样",
-    "区别", "原理", "方法", "介绍", "有用吗", "有没有用", "怎么办", "哪个",
-    "办法", "技巧", "建议", "缓解", "改善", "入睡", "帮助",
+    "什么是", "是什么", "为什么", "何为", "如何", "怎么", "怎样", "什么样",
+    "啥叫", "啥是", "区别", "原理", "方法", "介绍", "有用吗", "有没有用",
+    "有什么用", "怎么办", "哪个", "办法", "技巧", "建议", "缓解", "改善",
+    "入睡", "帮助",
 )
+"""「什么样/啥叫/啥是/有什么用」= 评测集错字与口语问式缺口(T2;评测集
+KNOWN_T2_PENDING 同批转正)。词表只当便宜入口筛,枚举不完的错字由 LLM 层兜。"""
 DISTRESS_SIGNALS: tuple[str, ...] = (
     "最近", "总是", "一直", "每天", "好累", "太累", "难受", "烦", "睡不着",
     "失眠", "压力大", "崩溃", "心情不好", "不开心", "emo", "焦虑", "紧张",
     "低落", "难过", "孤独", "委屈", "内耗",
 )
+SELF_CONTEXT_HINTS: tuple[str, ...] = ("我", "自己", "俺", "本人")
+"""第一人称/近况指涉线索:困扰信号须与其共现才先行于知识词——
+纯知识问句(「怎么缓解焦虑」「失眠有什么办法」)不带自指,不误入 collect。"""
+
+import re
+
+_CLAUSE_SPLIT = re.compile(r"[，。！？,!?…\n]")
+_TIME_LEAD_HINTS: tuple[str, ...] = ("最近", "总是", "一直", "每天")
+"""主语省略自指:首分句以时间副词开头(「总是很难受,有什么方法能改善」)
+= 用户在陈述自身状态,只认分句开头不认任意位置(防「介绍下缓解失眠的方法」
+宾语位置误伤)。"""
 GREETINGS: tuple[str, ...] = (
     "你好", "您好", "嗨", "哈喽", "早上好", "中午好", "下午好", "晚上好",
     "晚安", "在吗", "hi", "hello",
@@ -93,20 +109,37 @@ def _hit(patterns: tuple[str, ...], text: str) -> bool:
 
 _CLASSIFY_SYSTEM = (
     "你是心理陪伴应用的意图分类器。判断用户输入该走哪条路:\n"
-    "- answer:知识提问/科普查询/日常问候,用户想要一个回答\n"
+    "- answer:知识提问/科普查询/日常问候,用户想要一个回答。"
+    "含错别字、语序颠倒但明显在提问的输入,按其实际意图判\n"
     "- collect:用户在表达情绪困扰或近况倾诉,需要被倾听和梳理\n"
     '只输出 JSON:{"route":"answer|collect","emotion_label":"情绪词或null",'
     '"confidence":0到1的小数}'
 )
 
 
+def _distress_first(text: str) -> bool:
+    """困扰信号+自指共现(规则第一级):倾诉优先于知识问法。
+
+    「我最近很痛苦,怎么办」该被倾听而非科普抢答;纯知识问句
+    (「怎么缓解焦虑」)无自指线索,落不到这里,照走知识路径。
+    主语省略的陈述(「总是很难受,...」)按首分句时间副词开头视同自指。
+    """
+    if not _hit(DISTRESS_SIGNALS, text):
+        return False
+    if _hit(SELF_CONTEXT_HINTS, text):
+        return True
+    first_clause = _CLAUSE_SPLIT.split(text.strip(), maxsplit=1)[0]
+    return first_clause.startswith(_TIME_LEAD_HINTS)
+
+
 def classify_rules(text: str) -> Classification:
-    """规则速判(零 LLM,保 first_frame ≤300ms);模糊输入按 collect+中性兜底
-    (spec §4 L4:LLM 未返不等待)。LLM 精化 emotion_label 异步做,不撤回已发帧。"""
-    knowledge = _hit(KNOWLEDGE_PATTERNS, text)
-    if knowledge:
+    """规则速判(零 LLM,规则命中时保 first_frame ≤300ms);三级次序见模块 docstring。"""
+    if _distress_first(text):
+        return Classification("collect", quick_label(text) or "低落", config.CLASSIFIER_RULE_CONF, False, "rule")
+    if _hit(KNOWLEDGE_PATTERNS, text):
         return Classification("answer", quick_label(text), config.CLASSIFIER_RULE_CONF, True, "rule")
     if _hit(DISTRESS_SIGNALS, text):
+        # 困扰信号但无自指线索:倾向倾诉(这些词本身少见于纯知识问句)
         return Classification("collect", quick_label(text) or "低落", config.CLASSIFIER_RULE_CONF, False, "rule")
     if _hit(GREETINGS, text):
         return Classification("answer", None, config.CLASSIFIER_RULE_CONF, False, "rule")
@@ -123,7 +156,7 @@ async def classify(
     if fast.source == "rule":
         return fast
 
-    # 模糊 → LLM;不等待(超时/失败即 collect 兜底,spec §4 L4)
+    # 模糊 → LLM;超时/失败/低 conf 均落 collect 兜底(安全侧,spec §4 L3)
     prov = provider or get_provider()
     timeout = timeout_s if timeout_s is not None else config.LLM_CLASSIFY_TIMEOUT_S
     try:

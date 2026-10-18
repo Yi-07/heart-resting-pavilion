@@ -81,6 +81,12 @@ class CollectState:
     """黑板选材状态机(白名单+熔断);None=选材关闭(测试/降级)。"""
     pending_assets: dict[str, str] | None = None
     """最近一轮 extract 的原始选材输出(待校验);每轮重置,只活单次图调用。"""
+    risk_signal: bool = False
+    """最近一轮 extract 附带输出的风险暗示信号(risk_signal);只活单次图调用,
+    softscan/risk 消费后随轮重置——词典外委婉表述经此进入复核通道,只触发复核不直接升级。"""
+    risk_reviewed_answers: set[str] = field(default_factory=set)
+    """risk_signal 已复核回答的指纹集(sha16);同段表述被 LLM 重复判出时不重复复核,
+    成本有界;只活连接内存。与 risk_reviewed_terms(词级)互补,词可去重、表述无词可记。"""
     recalled_memories: list[dict[str, Any]] = field(default_factory=list)
     """回合内已召回的语义记忆条目(注入点暂存;笔记 LLM 状态闭环语境,回合末消费后随态弃)。"""
     ask_retry: bool = False

@@ -51,11 +51,11 @@
   <div class="frame">
     <p class="eyebrow">Architecture · 心栖阁 heart-resting-pavilion</p>
     <h1>架构总览：三链路情感陪伴系统</h1>
-    <p class="note">组件与数据流走向以本图为准。消息格式请参阅 <code>docs/architecture/ws-contract.md</code>；机制参数请参阅 <code>architecture-spec.md</code>。route 分流现行为纯规则判定，LLM 分层判定为设计态（未接线）。</p>
+    <p class="note">组件与数据流走向以本图为准。消息格式请参阅 <code>docs/architecture/ws-contract.md</code>；机制参数请参阅 <code>architecture-spec.md</code>。route 走分层判定：规则速判在前，模糊输入才调 LLM。</p>
 
     <svg viewBox="0 0 1120 780" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="hrp-arch-title hrp-arch-desc">
       <title id="hrp-arch-title">心栖阁架构总览</title>
-      <desc id="hrp-arch-desc">架构图：用户经 Vue3 前端以 WebSocket 与 REST 两种通道接入 FastAPI 后端；每条输入先过危机闸门，命中走危机序列，未命中按规则分流 answer 直答或 collect 多轮采集；RAG 引擎、记忆层、TTS sidecar 为后端支撑组件。</desc>
+      <desc id="hrp-arch-desc">架构图：用户经 Vue3 前端以 WebSocket 与 REST 两种通道接入 FastAPI 后端；每条输入先过危机闸门，命中走危机序列，未命中经分层判定（规则速判+模糊 LLM）分派 answer 直答或 collect 多轮采集；RAG 引擎、记忆层、语音服务为后端支撑组件。</desc>
       <defs>
         <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
         <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
@@ -173,13 +173,13 @@
       <text x="208" y="254" fill="#4f5d75" font-size="9" font-family="Consolas, monospace" text-anchor="middle">seq 校验 · 重连</text>
       <text x="208" y="272" fill="#4f5d75" font-size="9" font-family="Consolas, monospace" text-anchor="middle">回放幕布 · 小结卡</text>
 
-      <!-- TTS sidecar -->
+      <!-- TTS 服务 -->
       <rect x="256" y="80" width="124" height="56" rx="6" fill="#f5f5f5"/>
       <rect x="256" y="80" width="124" height="56" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
       <rect x="264" y="88" width="32" height="12" rx="2" fill="none" stroke="#2d3142" stroke-opacity="0.22" stroke-width="0.8"/>
       <text x="280" y="97" fill="#7a8399" font-size="7" font-family="Consolas, monospace" text-anchor="middle" letter-spacing="0.08em">PROC</text>
-      <text x="318" y="112" fill="#2d3142" font-size="12" font-weight="600" font-family="'Microsoft YaHei','PingFang SC',sans-serif" text-anchor="middle">TTS sidecar</text>
-      <text x="318" y="128" fill="#4f5d75" font-size="9" font-family="Consolas, monospace" text-anchor="middle">CosyVoice</text>
+      <text x="318" y="112" fill="#2d3142" font-size="12" font-weight="600" font-family="'Microsoft YaHei','PingFang SC',sans-serif" text-anchor="middle">TTS 服务</text>
+      <text x="318" y="128" fill="#4f5d75" font-size="9" font-family="Consolas, monospace" text-anchor="middle">GPT-SoVITS</text>
 
       <!-- 网关 -->
       <rect x="452" y="152" width="200" height="120" rx="6" fill="#f5f5f5"/>

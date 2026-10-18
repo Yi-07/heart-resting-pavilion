@@ -138,12 +138,16 @@ def test_answer_seq_global_across_rounds(monkeypatch):
     monkeypatch.setattr("app.rag.get_engine", lambda: _RagStub([]))
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "什么是正念")  # answer 路(RAG 关,无种子库则降级直答)
-        assert _recv(ws)["type"] == "draw"  # 场景帧先行
+        first = _recv(ws)  # 新回合起点(契约 §6.1):三路统一下发
+        assert first["type"] == "first_frame"
+        assert first["route"] == "answer"
+        assert _recv(ws)["type"] == "draw"  # 场景帧随行
         text1 = _recv(ws)
         assert text1["type"] == "text_delta"
         assert _recv(ws)["type"] == "done"
 
         _send_input(ws, "如何缓解焦虑")
+        assert _recv(ws)["type"] == "first_frame"
         assert _recv(ws)["type"] == "draw"
         text2 = _recv(ws)
         assert text2["seq"] > text1["seq"]
@@ -327,16 +331,16 @@ def test_answer_streams_without_blackboard(monkeypatch):
 
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "什么是正念")
-        frames = [_recv(ws), _recv(ws), _recv(ws), _recv(ws)]
+        frames = [_recv(ws) for _ in range(5)]
 
     types = [f["type"] for f in frames]
-    assert types == ["draw", "text_delta", "text_delta", "done"]
-    assert frames[0]["template"] == "scene_answer"  # 空板缺口:场景帧先行
-    assert not any(t == "first_frame" for t in types)  # 判据:无 first_frame(§3.1)
-    joined = frames[1]["text"] + frames[2]["text"]
+    assert types == ["first_frame", "draw", "text_delta", "text_delta", "done"]
+    assert frames[0]["route"] == "answer"  # 新回合起点(§6.1):chip 立即切 answer
+    assert frames[1]["template"] == "scene_answer"  # 空板缺口:场景帧随行
+    joined = frames[2]["text"] + frames[3]["text"]
     assert joined == "A" * 20 + "B" * 20 + "C" * 5
-    assert frames[2]["final"] is True
-    assert frames[3]["type"] == "done"
+    assert frames[3]["final"] is True
+    assert frames[4]["type"] == "done"
 
     assert rag.calls == [("什么是正念", 3, RagLibrary.KNOWLEDGE)]  # answer 查科普库,默认 k=3
     assert stub.messages is not None
@@ -349,7 +353,8 @@ def test_answer_llm_error_falls_back(monkeypatch):
     monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "什么是正念")
-        assert _recv(ws)["type"] == "draw"  # 场景帧先行
+        assert _recv(ws)["type"] == "first_frame"  # 新回合起点(§6.1)
+        assert _recv(ws)["type"] == "draw"  # 场景帧随行
         text = _recv(ws)
         assert text["type"] == "text_delta"
         assert text["final"] is True
@@ -362,7 +367,8 @@ def test_answer_timeout_bails_out(monkeypatch):
     monkeypatch.setattr("app.ws_gateway.gateway.get_provider", lambda: stub)
     with client.websocket_connect("/ws") as ws:
         _send_input(ws, "什么是正念")
-        assert _recv(ws)["type"] == "draw"  # 场景帧先行,超时后仍降级兜底
+        assert _recv(ws)["type"] == "first_frame"  # 新回合起点(§6.1)
+        assert _recv(ws)["type"] == "draw"  # 场景帧随行,超时后仍降级兜底
         err = _recv(ws)
         assert err == {**err, "type": "error", "code": "timeout"}
         text = _recv(ws)
@@ -593,7 +599,8 @@ def test_reconnect_adopts_session_id(monkeypatch):
                 }
             )
         )
-        assert _recv(ws)["type"] == "draw"  # 场景帧先行
+        assert _recv(ws)["type"] == "first_frame"  # 新回合起点(§6.1)
+        assert _recv(ws)["type"] == "draw"  # 场景帧随行
         text = _recv(ws)
         assert text["type"] == "text_delta"
         done = _recv(ws)

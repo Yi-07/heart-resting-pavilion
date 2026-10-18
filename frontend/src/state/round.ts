@@ -1,8 +1,7 @@
 // 回合状态机(frontend-plan §3/§4):transition(event),非法迁移忽略记 DEBUG 不崩。
 // 增量 draw 与精稿 draw 前端无法实时区分(契约无专用信号)→ 按「纯前端推断」落:
 //   轮次回答提交(collecting/final)→ analysis(显示梳理中);draw 到达 → final(精稿绘制)。
-// emotionLabel 写序:first_frame.emotion_label → draw.data.emotion.label;
-// 只喂 Live2D/黑板,绝不进路由。(mood_select 手点写情绪联动已随自动浮出废弃,T5)
+// emotionLabel 写序:first_frame.emotion_label → draw.data.emotion.label;// 只喂 Live2D/黑板,绝不进路由。(mood_select 手点写情绪联动已随自动浮出废弃,T5)
 
 import { defineStore } from 'pinia'
 import { logger } from '../logger'
@@ -15,8 +14,8 @@ export type RSEvent = { kind: 'user_sent' } | { kind: 'frame'; msg: S2CMsg }
 export const useRoundStore = defineStore('round', {
   state: () => ({
     phase: 'idle' as Phase,
-    /** 当前回合路由(first_frame 才有;answer 无 first_frame 保持旧值) */
-    route: 'collect' as 'collect' | 'crisis',
+    /** 当前回合路由(first_frame 下发;三路都发,采集期打岔除外) */
+    route: 'collect' as 'collect' | 'crisis' | 'answer',
     crisis: false,
     emotionLabel: null as string | null,
     /** first_frame 递增,驱动黑板清板 */
@@ -38,6 +37,12 @@ export const useRoundStore = defineStore('round', {
       this.onFrame(event.msg)
     },
     onUserSent(): void {
+      // 危机展示态(热线横幅/chip/黑板状态行)存活到用户下一次开口:done 即撤会
+      // 短于危机回合预置语音的播放期(回合零 LLM,毫秒级走完),横幅先于声音消失;
+      // 挂到 user_sent——下一轮输入瞬间清掉,新回合不背危机残留。route 同步复位,
+      // 横幅与 chip 不允许一个撤一个留(crisis 中插话的抢占路径也在内)
+      this.crisis = false
+      this.route = 'collect'
       switch (this.phase) {
         case 'idle':
           this.phase = 'awaiting'
@@ -56,7 +61,7 @@ export const useRoundStore = defineStore('round', {
     onFrame(msg: S2CMsg): void {
       switch (msg.type) {
         case 'first_frame':
-          this.enterCollect(msg)
+          this.enterRound(msg)
           break
         case 'draw':
           if (this.phase === 'collecting') {
@@ -70,7 +75,11 @@ export const useRoundStore = defineStore('round', {
           this.applyEmotion(msg.data)
           break
         case 'text_delta':
-          if (this.phase === 'awaiting') this.phase = 'final'
+          if (this.phase === 'awaiting') {
+            this.phase = 'final'
+            // 契约兜底:answer 应先发 first_frame(§6.1);迟到/缺帧时按流式原语义
+            // 转 final 显示内容,route 推断作废(前端零路由逻辑,不猜)
+          }
           else if (this.phase === 'analysis') {
             // P7 等待话术单帧 final=true(后随精稿 draw):不推 phase——
             // 推了 final 会让精稿走 illegal 丢情绪复核;final=false=流式文本
@@ -114,13 +123,15 @@ export const useRoundStore = defineStore('round', {
           break
       }
     },
-    enterCollect(msg: FirstFrame): void {
+    enterRound(msg: FirstFrame): void {
+      // 三路共用(first_frame 全链路统一下发,采集期打岔除外):answer 回合
+      // phase 也叫 collecting——内部相名,语义=回合进行中,用户不可见
       this.phase = 'collecting'
       this.roundId += 1
       this.route = msg.route
       this.crisis = msg.route === 'crisis'
       this.emotionLabel = msg.emotion_label
-      this.backendRoundId = msg.round_id ?? null  // 后端权威:报告寻址用它
+      this.backendRoundId = msg.round_id ?? null  // 后端权威:报告寻址用它(answer/crisis 不带)
       this.stationReady = false  // 回合未结束前不可认为素材已归档
     },
     /** draw 的 formulation.emotion 覆盖(wheel/stage 无此字段) */

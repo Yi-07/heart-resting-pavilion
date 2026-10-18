@@ -66,13 +66,13 @@ export type TemplateData = Formulation | EmotionWheelData | StageMapData | Scene
 
 // ---------- S→C(契约 §3) ----------
 
-/** 新回合起点(清黑板/重置 seq 基线/收起选择器计时);answer 型不发 */
+/** 新回合起点(清黑板/重置 seq 基线/收起选择器计时);采集期打岔不发(黑板保活) */
 export interface FirstFrame {
   type: 'first_frame'
   session_id: string
-  round_id?: string | null // collect 才有;crisis 无;本轮采集稳定标识(契约 §3.1)
-  route: Exclude<Route, 'answer'>
-  template: TemplateId | null // collect 才有;crisis=null
+  round_id?: string | null // collect 才有;crisis/answer 无;本轮采集稳定标识(契约 §3.1)
+  route: Route
+  template: TemplateId | null // collect 才有;crisis/answer=null
   emotion_label: string | null
   mood_select: boolean // 恒 false:自动浮出已废弃,心情上报走「今日心情」按钮(契约 §3.1/§4.2)
   text: string

@@ -4,8 +4,8 @@
 - user_input 处理跑独立任务、不阻塞收包:新 user_input 即抢占——取消当前任务
   + 旧 emitter 标 dead(未发帧蒸发)→ 新回合 entry
 - 每条 user_input 先过危机闸门:命中 → 危机序列 + WARN 审计 + 销毁采集态
-- 未命中 → 分层判定(规则速判保 first_frame ≤300ms;模糊按 collect 走,
-  LLM 仅异步精化 emotion_label,不撤回,spec §4 L4):
+- 未命中 → 分层判定(规则速判在前保 first_frame ≤300ms;模糊调 LLM 语义判定,
+  超时/失败/低 conf 落 collect 兜底,spec §4 L3/L4):
   answer → RAG 门控 → LLM 流式直答;collect → first_frame → collect 图
 - collect:AskNext/EmpathChat 后保留状态等下一条;Finish → 回合三动作
   (温层摘要+station:input+研判 mood,memory 模块降级不杀回合)+ done + 销毁;
@@ -141,7 +141,7 @@ class Connection:
     async def send_first_frame(
         self,
         *,
-        route: Literal["collect", "crisis"],
+        route: Literal["collect", "crisis", "answer"],
         text: str,
         template: TemplateId | None = None,
         emotion_label: str | None = None,
@@ -476,6 +476,17 @@ async def _process_user_input(conn: Connection, msg: UserInput) -> None:
         conn.log("route_decided", trace_id=trace, route="crisis")
         await _crisis_sequence(conn)
         return
+    if result.matched:
+        # 软词命中未达危机:留痕供审计与词表迭代(answer 路径软复核不存在,
+        # collect 路径由图内 softscan/risk 接手,answer 路径此后再无人看——
+        # 不拦截(不越权危机判定),但绝不可无痕)
+        conn.log(
+            "soft_signal_matched",
+            level="WARN",
+            trace_id=trace,
+            matched=result.matched,
+            severity=result.severity,
+        )
 
     try:
         # 分层判定(spec §4 L4):classify() 内部规则速判在前(命中即返,零 LLM),
@@ -505,9 +516,10 @@ async def _process_user_input(conn: Connection, msg: UserInput) -> None:
                     ask_count=state.pending_ask_count,
                 )
                 # 采集期打岔(ADR-003):场景帧由 _answer_sequence 统一先发,answer 场景淡入
-                # 接管黑板;恢复=下一 collect 轮照常发全量 draw,模板切换触发前端转场
+                # 接管黑板;不发 first_frame(黑板保活,无清板);恢复=下一 collect 轮照常
+                # 发全量 draw,模板切换触发前端转场
                 await asyncio.wait_for(
-                    _answer_sequence(conn, text, cls), timeout=config.LLM_TIMEOUT_S
+                    _answer_sequence(conn, text, cls, in_round=True), timeout=config.LLM_TIMEOUT_S
                 )
                 return
             state.pending_ask_count += 1
@@ -1014,7 +1026,9 @@ async def _answer_with_voice(
     )
 
 
-async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> None:
+async def _answer_sequence(
+    conn: Connection, text: str, cls: Classification, *, in_round: bool = False
+) -> None:
     from app import diag
 
     # 一回合一文件:无条件重新 enable(清掉上一回合的记录),末尾 dump+disable。
@@ -1023,6 +1037,14 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
     if diag_on:
         diag.enable()
     diag.mark("seq_start", needs_rag=cls.needs_rag)
+
+    if not in_round:
+        # 纯 answer 回合起点发 first_frame(契约 §6.1):chip 立即切 answer、
+        # 清黑板开新回合;emotion_label 随帧(Live2D 表情不回落平静)。
+        # 采集期打岔(ADR-003,in_round=True)不发——黑板保活,增量语义不变
+        await conn.send_first_frame(
+            route="answer", text="", emotion_label=cls.emotion_label
+        )
 
     # 纯 answer 回合起点发场景帧(空板缺口):同模板不转场、同 data 不重画,前端幂等
     await conn.send_draw("scene_answer", SceneNoteData(note=None))
