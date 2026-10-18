@@ -187,6 +187,74 @@ TTS_SERVICE_URL = os.getenv("TTS_SERVICE_URL", "http://127.0.0.1:9001")
 TTS_SERVICE_TIMEOUT_S = float(os.getenv("TTS_SERVICE_TIMEOUT_S", "600"))
 """远程 TTS 合成流整体超时(秒);首包超时 30s 固定在客户端"""
 
+# ---- GPT-SoVITS tts_service 进程编排(方案 B:backend 拉起子进程,免手工开第二个终端) ----
+# 为什么是子进程而不是同进程:两套推理栈装不到一个 venv 里
+# (torch 2.6.0+cu124 vs 2.12.1+cu126;transformers 4.50 vs 4.51;numpy 1.26 vs 2.2),
+# 同进程意味着二选一,而 tts_infer.yaml 的推理参数是按当前这套钉版标定的。
+# 两个进程各持独立 CUDA context,显存互不干扰。
+
+TTS_SERVICE_SPAWN = os.getenv("TTS_SERVICE_SPAWN", "1") != "0"
+"""1=由 backend 拉起 tts_service 子进程(默认);0=只连不拉(外部已起服务时用)"""
+
+TTS_SERVICE_PYTHON = os.getenv(
+    "TTS_SERVICE_PYTHON",
+    os.path.join(_BACKEND_DIR, "..", "GPT-SoVITS", ".venv", "Scripts", "python.exe"),
+)
+"""GPT-SoVITS venv 里的 python;与 backend 是两个 venv,不能用同一个解释器"""
+
+TTS_SERVICE_CWD = os.getenv(
+    "TTS_SERVICE_CWD",
+    os.path.join(_BACKEND_DIR, "..", "GPT-SoVITS"),
+)
+"""子进程工作目录 —— **硬需求,别改**。
+GPT_SoVITS/sv.py:5 用 `os.getcwd()/GPT_SoVITS/eres2net` 找模型代码,
+GPT_SoVITS/configs/tts_infer.yaml 里的权重路径也是相对路径;
+cwd 不对就是 FileNotFoundError。"""
+
+TTS_SERVICE_SCRUB_ENV = os.getenv("TTS_SERVICE_SCRUB_ENV", "1") != "0"
+"""清掉 CONDA_PREFIX / PYTHONPATH / PYTHONHOME / VIRTUAL_ENV,并把 GPT-SoVITS venv
+的 Scripts 前置到子进程 PATH。
+
+说明:子进程解释器是绝对路径,父进程的 sys.path 不会跨进程传染,所以这不是
+"torch 版本冲突"问题;真风险在 PATH 顺序 —— tts_service 内部按名解析的外部命令
+(ffmpeg 等)不该优先命中 backend venv 里的同名物。"""
+
+TTS_SERVICE_PROCESS_GROUP = os.getenv("TTS_SERVICE_PROCESS_GROUP", "1") != "0"
+"""Windows 下 CREATE_NEW_PROCESS_GROUP + CREATE_NO_WINDOW:
+不弹控制台黑框,且关停能走 taskkill /T /F 杀整棵树。
+只用 terminate() 的话,torch / onnxruntime 的后代进程会变孤儿,
+backend 被强杀(Task Manager 结束任务/断电)时更是连 shutdown 都不执行,
+孤儿会一直占着 1.6GB 显存和 9001 端口。"""
+
+TTS_SERVICE_KILL_ON_EXIT = os.getenv("TTS_SERVICE_KILL_ON_EXIT", "1") != "0"
+"""backend 退出时是否关停自己拉起的 tts_service;--reload 热载开发设 0,
+免得每重载一次就拉起一个模型进程(重载模型分钟级)"""
+
+TTS_SERVICE_STDOUT_LOG = os.getenv("TTS_SERVICE_STDOUT_LOG", "logs/tts_service_stdout.log")
+"""子进程 stdout/stderr 落盘位置(相对 TTS_SERVICE_CWD)。
+
+tts_service 自己的 logger 已经是双输出(终端 + GPT-SoVITS/logs/tts_service_*.log),
+但**上游 GPT-SoVITS 的 print 不走 loguru**:`Loading ... weights`、`curr_ptr:`
+以及第三方库(fast_langdetect / huggingface_hub / jieba)的 warning 与 traceback,
+全都只在进程输出流里。重定向到文件才能在报错时一次看全,backend 终端也不会被淹。"""
+
+TTS_SERVICE_STDOUT_TO_CONSOLE = os.getenv("TTS_SERVICE_STDOUT_TO_CONSOLE", "0") != "0"
+"""1=子进程输出同时打到 backend 终端(默认 0,只落文件);调试时开 1 即可实时看"""
+
+TTS_SERVICE_STDOUT_MAX_BYTES = int(os.getenv("TTS_SERVICE_STDOUT_MAX_BYTES", "10485760"))
+"""子进程输出日志的单文件上限,超了轮转(默认 10MB,与 tts_service 自己 logger 同量级)"""
+
+TTS_SERVICE_STDOUT_BACKUP_COUNT = int(os.getenv("TTS_SERVICE_STDOUT_BACKUP_COUNT", "3"))
+"""轮转保留份数:tts_service_stdout.log.1 / .2 / .3"""
+
+TTS_SERVICE_PYTHONIOENCODING = os.getenv("TTS_SERVICE_PYTHONIOENCODING", "utf-8")
+"""子进程 stdio 的编码,经 PYTHONIOENCODING 注入。
+
+必须显式定死:Windows 上子进程 stdout 默认跟本机 ANSI 代码页走(本机 cp936 → gbk),
+而父进程抽水时是按这个值解码的。不定死就会按代码页解码成乱码 —— 实测
+`starting · hrp-...` 的 `·`(UTF-8 `C2 B7`)会被解成两个 U+FFFD,中文全废。
+定死成 utf-8 后日志与机器语言/代码页无关,换机器也一致。"""
+
 SERVICE_AUTH_TOKEN = os.getenv("SERVICE_AUTH_TOKEN", "")
 """远程服务共享认证 token(Bearer header);空=跳过验证(开发环境)"""
 

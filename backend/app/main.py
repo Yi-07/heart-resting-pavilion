@@ -54,6 +54,36 @@ async def _warm_sidecar() -> None:
         )
 
 
+async def _warm_tts_service() -> None:
+    """拉起 GPT-SoVITS tts_service 子进程并等就绪(方案 B,`TTS_SERVICE_SPAWN=1`)。
+
+    spawn 走 to_thread(Popen + Windows 进程组标志是阻塞调用,不能占 loop);
+    就绪探测复用 tts_client.wait_ready 的轮询。任一步失败只 WARN ——
+    TTS 降级成纯文字,回合照常,backend 不会因此退出。
+
+    超时 ≠ 失败:子进程在自己那边继续加载模型,下一回合请求就自动恢复语音。
+    """
+    from app.voice import tts_service_process
+
+    if config.TTS_SERVICE_SPAWN:
+        try:
+            proc = await asyncio.to_thread(tts_service_process.spawn)
+        except Exception as exc:  # noqa: BLE001 — 拉起链路任何意外都不挡主进程
+            _logger.warning("tts_spawn_error · tts_service 拉起异常",
+                            detail=str(exc)[:160])
+        else:
+            if proc is None:
+                _logger.warning("tts_spawn_skipped · 未拉起 tts_service(解释器缺失)")
+            elif not await asyncio.to_thread(tts_service_process.is_running):
+                # 起了但立刻退了:最常见是 9001 被占(上次 backend 崩了留下的孤儿)
+                _logger.warning(
+                    "tts_spawn_exited · tts_service 启动后立即退出",
+                    url=config.TTS_SERVICE_URL,
+                    hint=f"查 {config.TTS_SERVICE_URL} 是否被残留进程占用",
+                )
+    await _check_tts_ready()
+
+
 async def _check_tts_ready() -> None:
     """远程 TTS 就绪检查:等待远程服务模型加载完成;失败只 WARN,TTS 降级。"""
     from app.voice import tts_client
@@ -91,6 +121,35 @@ async def _warm_rag() -> None:
                         detail=str(exc)[:160])
         return
     _logger.info(f"rag_warm_ready · RAG 检索库预热完成({time.perf_counter() - t0:.1f}s)")
+
+
+async def _warm_llm_catalog() -> None:
+    """后台预热 litellm(首次 import + model_cost 目录构建)。
+
+    **为什么必须挪出事件循环**:litellm 冷启动实测 import 20s+(几百个模块,
+    从 `Starting component Posthog` 到开始建 aiohttp transport 之间静默
+    16s),实测发生在 20:40:33→20:40:54。这活是纯 CPU/GIL 活,写在协程里
+    会把 loop 堵死 20s —— Windows 上后果是致命的:`asyncio.proactor_events
+    ._start_serving.loop` 在 accept 抛 OSError 时执行 `sock.close()`
+    (proactor_events.py:849)且**不重新 arm**,监听套接字永久关闭。进程不死、
+    已建立的 WS 照常收发,但新连接一律被拒,所有 REST(报告列表/admin)全废。
+
+    失败只 WARN:预热是优化不是依赖,真失败时 /admin/llm/* 会走 provider
+    里的懒加载兜底(那次会堵 loop,但不会丢功能)。懒导入:litellm 只在
+    预热路径进内存,启动本身零成本。
+    """
+
+    from app.llm import catalog  # 懒加载:重依赖不进模块顶部(同 _warm_rag)
+
+    _logger.info("llm_catalog_warm_begin · 正在预热 litellm 模型目录")
+    t0 = time.perf_counter()
+    try:
+        await asyncio.to_thread(catalog.get_catalog)
+    except Exception as exc:  # noqa: BLE001 — 预热失败不挡主进程
+        _logger.warning("llm_catalog_warm_failed · 模型目录预热失败",
+                        detail=str(exc)[:160])
+        return
+    _logger.info(f"llm_catalog_warm_ready · 模型目录预热完成({time.perf_counter() - t0:.1f}s)")
 
 
 async def _loop_watchdog() -> None:
@@ -156,12 +215,10 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
         _logger.info("memory_ready · Redis 连接正常")
     else:
         _logger.warning("memory_ping_failed · Redis 连接失败")
-    # TTS: remote 模式检查远程服务就绪;local 模式拉起 sidecar
-    if config.TTS_MODE == "remote":
-        warm = asyncio.create_task(_check_tts_ready())
-    else:
-        warm = asyncio.create_task(_warm_sidecar())
+    # TTS: 拉起 GPT-SoVITS tts_service 子进程并等就绪(TTS_SERVICE_SPAWN=0 时只连不拉)
+    warm = asyncio.create_task(_warm_tts_service())
     rag_warm = asyncio.create_task(_warm_rag())
+    llm_warm = asyncio.create_task(_warm_llm_catalog())
     watchdog = asyncio.create_task(_loop_watchdog())
     start_wall_worker()
     # 方案书过期清理：先核价+扫一遍(先于服务)，再挂周期任务
@@ -171,13 +228,18 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
     warm.cancel()  # 没就绪就退了:不再等
     rag_warm.cancel()
+    llm_warm.cancel()  # 取消的是协程;线程里的 import 不强杀,跑完即止
     watchdog.cancel()
     report_gc.cancel()
-    # local 模式才关停 sidecar;remote 模式不持有子进程
-    if config.TTS_MODE != "remote":
+    # 关停自己拉起的 tts_service(local=sidecar 模式另走 tts.shutdown_spawned)
+    if config.TTS_MODE == "local":
         from app.voice import tts  # 懒加载(同 warmup)
 
         tts.shutdown_spawned()
+    else:
+        from app.voice import tts_service_process  # 懒加载(同 warmup)
+
+        tts_service_process.stop()
     from app.llm.provider import close_llm_session
 
     await close_llm_session()

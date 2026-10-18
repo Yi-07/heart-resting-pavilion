@@ -48,3 +48,9 @@ backend/tests/voices/
 
 # 注:GPT-SoVITS/ 为项目内 TTS 组件,源码与推理配置入库;排除规则
 # (.venv、pretrained_models、G2PWModel 等权重与环境)由 GPT-SoVITS/.gitignore 承接
+
+# RAG 向量库(chroma 本地索引,由 uv run python -m app.rag.ingest 生成;不入库)
+.rag_store/
+
+# 环境依赖基线快照(pip freeze 风格,本机实测产出;真源是 uv.lock)
+baseline-*.txt

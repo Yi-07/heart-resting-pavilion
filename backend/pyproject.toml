@@ -1,24 +1,56 @@
 [project]
 name = "backend"
 version = "0.1.0"
-requires-python = ">=3.10"
+description = "心栖阁 backend(文字链路 / 危机闸门 / RAG / TTS 客户端 / ASR / 记忆)"
+# 锁死 3.10:x86 是 numpy 2.2.6 / scipy 1.15.3 的钉版区间,放到 3.11+ 会解析到
+# 另一套传递依赖,与 4060 上实测过的组合不一致。解释器版本由 .python-version 定。
+requires-python = ">=3.10,<3.11"
+
+# 版本一律 == 钉死:这份清单是从跑通的 conda test 环境 pip freeze 反推的,
+# 已按 RTX 4060 实测标定。改版本号 = 主动变更,不是顺手升级。
 dependencies = [
-    "chromadb>=1.5.9",
-    "cryptography>=50.0.0",
-    "fastapi>=0.141.1",
-    "funasr[knf]>=1.4.8",
-    "jieba>=0.42.1",
-    "langgraph>=1.2.11",
-    "litellm>=1.74.0",
-    "loguru>=0.7.3",
-    "onnxruntime<1.24",
-    "openai>=3.6.0",
-    "python-dotenv>=1.2.3",
-    "rank-bm25>=0.2.2",
-    "redis>=8.1.0",
-    "aiohttp>=3.9.0",
-    "sentence-transformers>=6.0.0",
-    "uvicorn[standard]>=0.52.4",
+    # ── Web / 协议 ──
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.53.0",
+    "websockets==16.1.1",
+    "pydantic==2.13.5",
+
+    # ── LLM 传输(litellm 托管协议翻译/异步/流式,见 app/llm/provider.py) ──
+    "litellm==1.105.1",
+    "openai==2.54.0",
+    "tiktoken==0.14.0",
+
+    # ── 会话编排 ──
+    "langgraph==1.2.11",
+    "langchain-core==1.6.4",
+
+    # ── RAG(嵌入/重排走本地绝对路径,不依赖 hub) ──
+    "chromadb==1.5.9",
+    "sentence-transformers==4.1.0",
+    "transformers==4.51.3",
+    "tokenizers==0.21.4",
+    "safetensors==0.8.0",
+    "huggingface-hub==0.36.2",
+    "rank-bm25==0.2.2",
+    "jieba==0.42.1",
+
+    # ── ASR(SenseVoice 首次调用自动下权重,走 ModelScope) ──
+    "funasr==1.4.16",
+    "modelscope==1.40.1",
+
+    # ── torch:Windows 上 PyPI 只有 CPU 版(195MB vs CUDA 版 2499MB,
+    #    且 nvidia-* 依赖全带 platform_system=="Linux"),必须走 pytorch 索引。
+    #    索引在下面的 [[tool.uv.index]]。国内网络差时见 README 的 --find-links 兜底。
+    "torch==2.12.1+cu126",
+    "torchaudio==2.11.0+cu126",
+    "numpy==2.2.6",
+
+    # ── 基础设施 ──
+    "redis==8.1.0",
+    "aiohttp==3.14.3",
+    "loguru==0.7.3",
+    "python-dotenv==1.2.3",
+    "cryptography==50.0.1",
 ]
 
 [project.scripts]
@@ -33,11 +65,23 @@ packages = ["app"]
 
 [dependency-groups]
 dev = [
-    "mypy>=2.3.1",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.2.0",
-    "ruff>=0.16.5",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.5",
+    "mypy==2.3.1",
 ]
+
+# ── PyTorch CUDA 索引 ──
+# explicit = true:只有 [tool.uv.sources] 显式指向它的包才会从这里取,
+# 其余包照旧走默认索引(uv.lock 里会逐包记录实际来源)。
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchaudio = { index = "pytorch-cu126" }
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
