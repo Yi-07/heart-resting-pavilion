@@ -18,6 +18,7 @@ analysis:emotion 复核(两级标签第二级)→ 精稿 draw → RAG 引用 →
 """
 
 import asyncio
+import hashlib
 from collections.abc import AsyncIterator
 from typing import Literal, TypedDict, cast
 
@@ -163,12 +164,13 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
         target = collect.next_field(cs) or "situation"
         selector = cs.asset_selector
         asset_hint = asset_system(selector.catalog) if selector is not None else None
-        entry_values, raw_assets = await extract_fields(
+        entry_values, raw_assets, risk_signal = await extract_fields(
             "(开场,用户主动倾诉,无提问)", target, answer,
             _open_fields(cs, target),
             asset_hint=asset_hint, raw_fallback=False,
         )
         cs.pending_assets = raw_assets or None
+        cs.risk_signal = risk_signal
         if entry_values:
             for field, value in entry_values.items():
                 _fill(cs, field, value)
@@ -207,11 +209,12 @@ async def _prepare(state: GraphState, config: RunnableConfig) -> dict:
     if reason is None:
         selector = cs.asset_selector
         asset_hint = asset_system(selector.catalog) if selector is not None else None
-        values, raw_assets = await extract_fields(
+        values, raw_assets, risk_signal = await extract_fields(
             pending.text, pending.target_field, answer, _open_fields(cs, pending.target_field),
             asset_hint=asset_hint,
         )
         cs.pending_assets = raw_assets or None
+        cs.risk_signal = risk_signal
         if not values:
             reason = "off_topic"
 
@@ -314,6 +317,8 @@ _RISK_SYSTEM = (
     "标准:出现明确自伤意图/计划/工具才 risky;单纯情绪痛苦为 false。"
 )
 
+_RISK_RETRY_DELAY_S = 1.0
+
 
 def _soft_matched(cs: CollectState) -> set[str]:
     """软预筛(纯规则):SOFT_TERMS 子串过全部 user 轮(spec §4 L5 每轮)。"""
@@ -323,15 +328,28 @@ def _soft_matched(cs: CollectState) -> set[str]:
 
 async def _soft_review(cs: CollectState, em: ConnEmitter, new_terms: set[str]) -> None:
     """软信号 LLM 复核(唯一升级验收点):risky → escalated 置位,由条件边统一
-    走 escalate_end 出 Escalate 事件;复核失败不升级(WARN 留痕,硬闸门已每条过)。"""
+    走 escalate_end 出 Escalate 事件;失败重试一次再放行(复核失败静默放行是
+    漏报方向的 fail-open,与全局偏安全侧基调相反——重试成本只落在故障路径,
+    两次都挂才降级放行并 WARN 留痕,硬闸门已每条过)。"""
     user_texts = [t.text for t in cs.turns if t.role == "user"]
     recent = "\n".join(user_texts[-6:])
-    try:
-        out = await get_provider().chat_json(
-            [Message("system", _RISK_SYSTEM), Message("user", recent)], _RiskOut
+    out = None
+    for attempt in (1, 2):
+        try:
+            out = await get_provider().chat_json(
+                [Message("system", _RISK_SYSTEM), Message("user", recent)], _RiskOut
+            )
+            break
+        except LLMError:
+            if attempt == 1:
+                await asyncio.sleep(_RISK_RETRY_DELAY_S)
+    if out is None:
+        em.log(
+            "risk_review_failed",
+            level="WARN",
+            matched=sorted(new_terms),
+            attempts=2,
         )
-    except LLMError:
-        em.log("risk_review_failed", level="WARN", matched=sorted(new_terms))
         return
     if out.risky:
         cs.escalated = True
@@ -345,30 +363,49 @@ async def _soft_review(cs: CollectState, em: ConnEmitter, new_terms: set[str]) -
         )
 
 
+def _last_answer_fp(cs: CollectState) -> str:
+    """最近一条 user 轮的指纹(sha16):risk_signal 会话级去重的记号——词可进
+    risk_reviewed_terms 去重,词典外表述无词可记,按回答指纹记。"""
+    answer = next((t.text for t in reversed(cs.turns) if t.role == "user"), "")
+    return hashlib.sha256(answer.encode("utf-8")).hexdigest()[:16]
+
+
 async def _softscan(state: GraphState, config: RunnableConfig) -> dict:
-    """每轮软预筛+命中复核(spec §4 L5):新增命中才复核;risk_reviewed_terms
-    去重——同一软词整会话只复核一次,新表述出现再复核(成本有界)。"""
+    """每轮软预筛+命中复核(spec §4 L5):软词新增命中或提取附带的 risk_signal 才复核。
+    去重双轨:risk_reviewed_terms 记词级命中(同词整会话复核一次,新表述出现再复核);
+    risk_reviewed_answers 记 risk_signal 回答指纹(同段表述被 LLM 重复判出不重复复核)。"""
     cs = state["cs"]
     em = _emitter(config)
     matched = _soft_matched(cs)
     new = matched - cs.risk_reviewed_terms
-    if not new:
+    signal_new = cs.risk_signal and _last_answer_fp(cs) not in cs.risk_reviewed_answers
+    if not new and not signal_new:
         return {}
-    cs.risk_reviewed_terms |= matched
-    await _soft_review(cs, em, new)
+    cs.risk_signal = False  # 本轮一次性消费(去重挡下的信号同样弃)
+    if new:
+        cs.risk_reviewed_terms |= matched
+    if signal_new:
+        cs.risk_reviewed_answers.add(_last_answer_fp(cs))
+    await _soft_review(cs, em, new or {"risk_signal"})
     return {}
 
 
 async def _risk(state: GraphState, config: RunnableConfig) -> dict:
-    """终结路径软复核:只补 softscan 未覆盖的新增命中(已复核零 LLM 成本)。"""
+    """终结路径软复核:只补 softscan 未覆盖的新增命中与 risk_signal(已复核零 LLM 成本)。
+    去重双轨同 _softscan。"""
     cs = state["cs"]
     em = _emitter(config)
     matched = _soft_matched(cs)
     new = matched - cs.risk_reviewed_terms
-    if not new:
+    signal_new = cs.risk_signal and _last_answer_fp(cs) not in cs.risk_reviewed_answers
+    if not new and not signal_new:
         return {}
-    cs.risk_reviewed_terms |= matched
-    await _soft_review(cs, em, new)
+    cs.risk_signal = False
+    if new:
+        cs.risk_reviewed_terms |= matched
+    if signal_new:
+        cs.risk_reviewed_answers.add(_last_answer_fp(cs))
+    await _soft_review(cs, em, new or {"risk_signal"})
     return {}
 
 

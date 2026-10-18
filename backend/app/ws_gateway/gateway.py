@@ -476,6 +476,17 @@ async def _process_user_input(conn: Connection, msg: UserInput) -> None:
         conn.log("route_decided", trace_id=trace, route="crisis")
         await _crisis_sequence(conn)
         return
+    if result.matched:
+        # 软词命中未达危机:留痕供审计与词表迭代(answer 路径软复核不存在,
+        # collect 路径由图内 softscan/risk 接手,answer 路径此后再无人看——
+        # 不拦截(不越权危机判定),但绝不可无痕)
+        conn.log(
+            "soft_signal_matched",
+            level="WARN",
+            trace_id=trace,
+            matched=result.matched,
+            severity=result.severity,
+        )
 
     try:
         # 分层判定(spec §4 L4):classify() 内部规则速判在前(命中即返,零 LLM),

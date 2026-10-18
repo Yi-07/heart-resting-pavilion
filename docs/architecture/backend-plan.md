@@ -94,9 +94,11 @@
 ### 3.3 回合生命周期
 
 ```
-entry 调用:字段提取+选材(首条输入即提取,entry 即提取)→ 粗稿 draw(带实质字段)→ 第 1 问
-每轮:softscan 软预筛+新增命中 LLM 复核(spec §4 L5「每轮预筛/命中复核」;
-  risk_reviewed_terms 去重,同一软词整会话只复核一次)
+entry 调用:字段提取+选材(首条输入即提取,entry 即提取;同一调用附带输出自伤/自杀
+  暗示判定 risk_signal,只触发复核不直接升级)→ 粗稿 draw(带实质字段)→ 第 1 问
+每轮:softscan 软预筛+新增命中或 risk_signal LLM 复核(spec §4 L5「每轮预筛/命中复核」;
+  去重双轨:risk_reviewed_terms 记词级命中,risk_reviewed_answers 记 risk_signal 回答指纹;
+  复核失败重试一次,两败降级放行 WARN 留痕)
 轮次调用:填 formulation → draw 增量 → 充分度重算 → where_next
   → 继续问:第 i 问(问话 LLM 流式,确认语自然带出;陪聊轮不填格、无 draw、
     不计轮,回应后带出指向挂起提问信息需求的引导语句)
@@ -240,5 +242,7 @@ gate(网关前置,每条 user_input 先过)+classifier 定 route;危机不入图
 | LLMProvider | chat_json 校验失败路径；LLMError 降级（stub 实现） |
 | Emitter | dead 标记后发帧蒸发 |
 | 契约对齐 | 抽 ws-contract「数据对象」formulation 字段名与 schema 比对，防两端漂移 |
+
+- **规则层评测集**：`tests/test_rule_eval.py` 五组带标注回归集（危机/困扰/知识含错字/歧义/降级），零 LLM 全量跑分；词表/规则类改动必过，扩词表先在评测集加 case 再改码
 
 - **分步冒烟**：构建顺序每步完成即跑对应用例（用例定义见 [acceptance-v1.md](../tests/acceptance-v1.md)「三链路验收」，后端链路判据见「10. 验收（后端视角，4 用例）」），不全套重跑

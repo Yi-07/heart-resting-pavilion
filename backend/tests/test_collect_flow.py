@@ -32,11 +32,16 @@ class _ScriptedProvider:
         assets: dict[str, str] | None = None,
         ask_parts: list[str] | None = None,
         ask_error: bool = False,
+        risk_signal: bool = False,
+        risk_fail_times: int = 0,
     ) -> None:
         self.extract = extract if extract is not None else {"value": "提炼后的短句", "off_topic": False}
         self.review = review if review is not None else {"label": "焦虑", "intensity": 0.8}
         self.risky = risky
         self.risk_error = risk_error
+        self.risk_signal = risk_signal
+        self.risk_fail_times = risk_fail_times
+        self.risk_calls = 0
         self.stream_parts = stream_parts or ["总结第一段", "总结第二段"]
         self.stream_delay = stream_delay
         self.assets = assets or {}
@@ -84,16 +89,19 @@ class _ScriptedProvider:
                     fields={} if self.extract.get("off_topic") else {asked: "提炼后的短句"},
                     assets=dict(self.assets),
                     off_topic=False,
+                    risk_signal=self.risk_signal,
                 )
             off_topic = bool(self.extract.get("off_topic", False))
             custom = self.extract.get("fields")
             if isinstance(custom, dict):  # 跨字段编程:直接按给定 dict 填
-                return schema(fields=dict(custom), assets=dict(self.assets), off_topic=off_topic)
+                return schema(fields=dict(custom), assets=dict(self.assets), off_topic=off_topic,
+                              risk_signal=self.risk_signal)
             value = str(self.extract.get("value", "提炼后的短句"))
             return schema(
                 fields={} if off_topic else {asked: value},
                 assets=dict(self.assets),
                 off_topic=off_topic,
+                risk_signal=self.risk_signal,
             )
         if name == "RouteLabel":
             # fallback 输入走 classifier 的 LLM 分支;低 conf 落 collect 兜底
@@ -101,7 +109,8 @@ class _ScriptedProvider:
         if name == "_ReviewOut":
             return schema(**self.review)  # type: ignore[return-value]
         if name == "_RiskOut":
-            if self.risk_error:
+            self.risk_calls += 1
+            if self.risk_calls <= self.risk_fail_times or self.risk_error:
                 raise LLMError("复核断流")
             return schema(risky=self.risky)  # type: ignore[return-value]
         raise AssertionError(f"未预期 schema: {name}")
@@ -394,6 +403,94 @@ async def test_risk_review_failure_does_not_escalate(monkeypatch):
         ev = await run_collect(cs, rec)
 
     assert isinstance(ev, Finish)  # 复核失败不升级,按常规收尾
+    assert "risk_review_failed" in rec.logs
+
+
+# ---- T3:提取附带 risk_signal + 复核失败重试 ----
+
+
+async def test_extract_risk_signal_triggers_review_and_escalates(monkeypatch):
+    """词典外委婉表述(不含任何软词):提取附带 risk_signal=True → 触发复核 → 升级。"""
+    provider = _ScriptedProvider(risk_signal=True, risky=True)
+    _patch_llm(monkeypatch, provider)
+    cs = _state()
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很累,有时候真想一走了之"))  # 无软词命中
+    ev = await run_collect(cs, rec)
+
+    assert isinstance(ev, Escalate)
+    assert cs.escalated is True
+    assert provider.risk_calls >= 1
+    assert "crisis_gate_hit" in rec.logs  # 升级审计留痕(via=risk_review 由 emitter fields 承载)
+
+
+async def test_extract_risk_signal_consumed_once(monkeypatch):
+    """risk_signal 本轮消费后,下一轮无新信号则零复核调用(成本有界)。"""
+    provider = _ScriptedProvider(risk_signal=True, risky=False)
+    _patch_llm(monkeypatch, provider)
+    cs = _state()
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很累,有时候真想一走了之"))
+    ev1 = await run_collect(cs, rec)  # softscan 消费 risk_signal,复核一次(not risky)
+    assert isinstance(ev1, AskNext)
+    calls_after_first = provider.risk_calls
+    assert calls_after_first >= 1
+
+    provider.risk_signal = False  # 下一轮提取无风险暗示(真实 LLM 对新回答重判)
+    cs.turns.append(Turn(role="user", text="后来开会也是这样,正常回答填格"))
+    ev2 = await run_collect(cs, rec)
+    assert isinstance(ev2, AskNext)
+    assert provider.risk_calls == calls_after_first  # 无新增信号,无重复复核
+
+
+async def test_risk_signal_same_answer_not_re_reviewed(monkeypatch):
+    """同一段表述被 LLM 重复判出风险:回答指纹去重,不重复复核。"""
+    provider = _ScriptedProvider(risk_signal=True, risky=False)  # 常量桩=每轮 extract 恒吐 True
+    _patch_llm(monkeypatch, provider)
+    cs = _state()
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很累,有时候真想一走了之"))
+    ev1 = await run_collect(cs, rec)
+    assert isinstance(ev1, AskNext)
+    calls_after_first = provider.risk_calls
+
+    # 不追加新轮:同一回答在挂起重试/重放场景下被再次消费,extract 再次吐 True
+    ev2 = await run_collect(cs, rec)
+    assert isinstance(ev2, AskNext)
+    assert provider.risk_calls == calls_after_first  # 指纹命中,零重复复核
+
+
+async def test_risk_review_retry_succeeds_second_attempt(monkeypatch):
+    """复核失败重试一次:第二次成功则正常判定(fail-open 收紧,只落故障路径延迟)。"""
+    provider = _ScriptedProvider(risk_fail_times=1, risky=True)
+    _patch_llm(monkeypatch, provider)
+    cs = _state()
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
+    await run_collect(cs, rec)
+    for answer in ("被否定了", "很绝望,撑不住了", "躲开了会议"):
+        cs.turns.append(Turn(role="user", text=answer))
+        ev = await run_collect(cs, rec)
+
+    assert provider.risk_calls == 2  # 首次失败+重试成功
+    assert isinstance(ev, Escalate)
+    assert "risk_review_failed" not in rec.logs
+
+
+async def test_risk_review_retry_both_fail_then_releases(monkeypatch):
+    """两次都失败:降级放行(不升级),risk_review_failed 留痕含 attempts。"""
+    provider = _ScriptedProvider(risk_fail_times=2)
+    _patch_llm(monkeypatch, provider)
+    cs = _state()
+    rec = _Recorder()
+    cs.turns.append(Turn(role="user", text="最近很焦虑睡不着"))
+    await run_collect(cs, rec)
+    for answer in ("被否定了", "很绝望", "躲开了会议"):
+        cs.turns.append(Turn(role="user", text=answer))
+        ev = await run_collect(cs, rec)
+
+    assert provider.risk_calls == 2
+    assert isinstance(ev, Finish)
     assert "risk_review_failed" in rec.logs
 
 
