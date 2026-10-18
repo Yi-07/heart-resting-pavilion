@@ -1,6 +1,8 @@
 # TTS sidecar 回滚版本参照清单(sidecar 历史可用环境的 pip freeze 导出)。
+# 状态:legacy。与 freeze_gpu_blueprint.txt 同属 CosyVoice sidecar 时期的留存,
+#   现行 TTS 路径(GPT-SoVITS)不读这两份清单。
 # 用途:sidecar 升级后异常需回滚时,对照本清单恢复关键包版本;不整文件 pip install -r。
-# 重建流程与坑位说明 = docs/guides/option.md「TTS · CosyVoice 2」节;现行蓝本 = freeze_gpu_blueprint.txt。
+# 重建流程与坑位说明见 CosyVoice 官方 README(本文不复述);现行蓝本 = freeze_gpu_blueprint.txt。
 absl-py==2.5.0
 aiofiles==23.2.1
 aiohappyeyeballs==2.7.1

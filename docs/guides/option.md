@@ -1,130 +1,286 @@
-# 环境搭建操作手册
+﻿# 环境搭建操作手册
 
 > **职能**：队友 clone 后本地部署的唯一操作文档，按节顺序执行到项目启动。
+> **路径**：TTS 走仓库内 vendored 的 GPT-SoVITS，后端自动拉起它的 tts_service 子进程。
+> **深度与排障**：实测值、踩坑成因、日志对照表见 [jl-option.md](jl-option.md)（本文的实测与排障附录）。
+> 命令均按 Windows PowerShell 编写，`<仓库>` 指本仓库根目录。
 
-## 1. 环境构建前自查
+## 1. 准备工具
 
-系统与硬件（本文命令均按 Windows/PowerShell 编写）：
+安装并确认以下工具：
 
-| 项 | 要求 | 验证 | 参考环境 |
-|---|---|---|---|
-| 操作系统 | Windows 11 | `winver` | — |
-| WSL2 | Docker Desktop 的后端，默认版本 2 | `wsl --status` | Ubuntu |
-| GPU 与驱动 | NVIDIA GPU，TTS 合成用 | `nvidia-smi` | RTX 4050 Laptop 6GB · 驱动 566.24 |
+| 工具 | 要求 | 检查命令 |
+|---|---|---|
+| Python | 后端 3.10；GPT-SoVITS 3.12.14 | `python --version` |
+| uv | ≥0.11，已加入 PATH | `uv --version` |
+| Node.js | `>=22.18.0` 或 `>=24.12.0` | `node -v` |
+| ffmpeg | 含 libopus，已加入 PATH | `ffmpeg -version` |
+| Redis | 本机监听 `6379` | `redis-cli PING` |
+| NVIDIA GPU | TTS 合成与 RAG 检索用 | `nvidia-smi` |
 
-工具版本：
+后端需要 DeepSeek API key。准备好后，在第 8 节写入 `.env`。
 
-| 工具 | 要求 | 验证 | 参考版本 |
-|---|---|---|---|
-| Python | 3.10（pyproject 已锁） | `python --version` | 3.10.11 |
-| uv | ≥0.11 | `uv --version` | 0.11.31 |
-| Node.js | ≥22.18 或 ≥24.12 | `node -v` | 24.20 |
-| Docker Desktop | WSL2 后端（或 Hyper-V 后端）运行中 | `docker version` | 29.7.2 |
-| ffmpeg | 含 libopus | `ffmpeg -version` | 8.0-full |
-| git | 近期版本 | `git --version` | 2.52 |
+Redis 未安装时，可以使用 Docker：
 
-另自备 DeepSeek API key（后端构建时填入 `.env`）。
-
-## 2. 后端构建
-
-### 2.1 Redis
-
-```bash
+```powershell
 docker run -d --name hrp-redis -p 6379:6379 --restart unless-stopped redis:7-alpine
-docker exec hrp-redis redis-cli ping        # 应答 PONG
+docker exec hrp-redis redis-cli ping
 ```
 
-### 2.2 依赖与配置
+检查结果应为 `PONG`。
 
-```bash
-cd backend
+## 2. 设置模型缓存目录
+
+模型较大，建议把缓存放在空间充足且路径只含 ASCII 字符的磁盘。以下变量只对当前 PowerShell 窗口生效：
+
+```powershell
+$env:HF_HOME = 'D:\model-cache\huggingface'
+$env:MODELSCOPE_CACHE = 'D:\model-cache\modelscope'
+```
+
+需要长期生效时，把这两个变量写入 `backend/.env`。
+`HF_HOME` 用于 RAG 模型。
+`MODELSCOPE_CACHE` 用于首次调用 SenseVoice 时下载的 ASR 模型。
+
+## 3. 安装后端依赖
+
+没有本地 CUDA wheel 时，从仓库根目录执行：
+
+```powershell
+cd <仓库>\backend
+uv sync --default-index https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+`uv sync` 会创建 `backend/.venv`。torch 和 torchaudio 按 `backend/pyproject.toml` 使用 PyTorch `cu126` 索引。
+清华源只提供未指定其他索引的依赖，torch 仍从 PyTorch 官方索引下载。
+
+有本地 CUDA wheel 时，先安装 torch，再安装其余依赖：
+
+```powershell
+cd <仓库>\backend
+uv venv
+uv pip install --python .venv `
+  --default-index https://pypi.tuna.tsinghua.edu.cn/simple `
+  --find-links <wheel目录> `
+  "torch==2.12.1+cu126" "torchaudio==2.11.0+cu126"
+uv sync --default-index https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+`uv sync` 会保留已安装且满足锁定版本的 torch。
+
+检查 CUDA 版 torch：
+
+```powershell
+.\.venv\Scripts\python.exe -c "import torch; print(torch.__version__, '| cuda:', torch.cuda.is_available())"
+```
+
+结果应包含 `2.12.1+cu126` 和 `cuda: True`。
+`+cuXXX` 后缀必须保留。无后缀的 torch 是 CPU 版，`torch.cuda.is_available()` 会返回 `False`。这是静默降级，不报错。
+
+## 4. 安装 GPT-SoVITS 依赖
+
+后端和 GPT-SoVITS 必须使用两个独立环境。没有本地 CUDA wheel 时，进入 TTS 目录执行：
+
+```powershell
+cd <仓库>\GPT-SoVITS
+uv sync --default-index https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+有本地 CUDA wheel 时，使用 Python 3.12 对应的三个 wheel：
+
+```powershell
+cd <仓库>\GPT-SoVITS
+uv venv
+uv pip install --python .venv `
+  --default-index https://pypi.tuna.tsinghua.edu.cn/simple `
+  --find-links <wheel目录> `
+  "torch==2.6.0+cu124" "torchaudio==2.6.0+cu124" "torchvision==0.21.0+cu124"
+uv sync --default-index https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+wheel 文件必须与 Python 版本匹配：
+
+```text
+torch-2.12.1+cu126-cp310-cp310-win_amd64.whl
+torchaudio-2.11.0+cu126-cp310-cp310-win_amd64.whl
+torch-2.6.0+cu124-cp312-cp312-win_amd64.whl
+torchaudio-2.6.0+cu124-cp312-cp312-win_amd64.whl
+torchvision-0.21.0+cu124-cp312-cp312-win_amd64.whl
+```
+
+`cp310` 对应 Python 3.10，`cp312` 对应 Python 3.12。两个环境不能合并，torch、transformers 和 numpy 版本不同。
+
+没有镜像访问条件时，分别在两个项目目录执行 `uv sync`：
+
+```powershell
+cd <仓库>\backend
 uv sync
-cp .env.example .env
+cd ..\GPT-SoVITS
+uv sync
 ```
 
-编辑 `.env`：填 `DEEPSEEK_API_KEY`（必填）；其余键有默认，改前读注释（provider 切换、Redis 地址、TTS sidecar 端口）。
+其余依赖会从 `pypi.org` 下载，torch 仍使用 PyTorch 官方索引。
 
-就绪判据（验证）：
+检查 CUDA 版 torch：
 
-```bash
-uv run python -V                                            # 3.10.x
-uv run python -c "import fastapi, langgraph, chromadb, funasr; print('deps ok')"
+```powershell
+.\.venv\Scripts\python.exe -c "import torch; print(torch.__version__, '| cuda:', torch.cuda.is_available())"
 ```
 
-## 3. 前端构建
+结果应包含 `2.6.0+cu124` 和 `cuda: True`。
 
-```bash
-cd frontend
+## 5. 下载 TTS 模型
+
+在 `GPT-SoVITS` 目录使用仓库内脚本：
+
+```powershell
+uv run python down-model.py
+```
+
+脚本会下载并放置以下资源（幂等，已存在的跳过）：
+
+- `GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large/`
+- `GPT_SoVITS/pretrained_models/chinese-hubert-base/`
+- `GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/`
+- `GPT_SoVITS/pretrained_models/fast_langdetect/lid.176.bin`
+- `GPT_SoVITS/text/G2PWModel/`
+
+脚本默认使用 `https://hf-mirror.com`。
+
+确认关键文件（以下命令在 `<仓库>` 根目录执行）：
+
+```powershell
+cd <仓库>
+$base = 'GPT-SoVITS\GPT_SoVITS'
+Test-Path "$base\pretrained_models\chinese-roberta-wwm-ext-large\pytorch_model.bin"
+Test-Path "$base\pretrained_models\chinese-hubert-base\pytorch_model.bin"
+Test-Path "$base\pretrained_models\gsv-v2final-pretrained\s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt"
+Test-Path "$base\pretrained_models\gsv-v2final-pretrained\s2G2333k.pth"
+Test-Path "$base\pretrained_models\fast_langdetect\lid.176.bin"
+Test-Path "$base\text\G2PWModel\g2pW.onnx"
+```
+
+六条结果都应为 `True`。
+
+> `lid.176.bin` 容易漏：`langsegmenter.py` 在 import 时把 fast_langdetect 的 detector 整个替换掉，`cache_dir` 写死在项目内那个路径，`FTLANG_CACHE` 对它无效。脚本不可用时的手工补法见 jl-option.md「手工补 `lid.176.bin`」节。
+
+## 6. 下载 RAG 模型
+
+进入后端目录，把模型直接下载到代码读取的目录：
+
+```powershell
+cd <仓库>\backend
+$env:HF_ENDPOINT = 'https://hf-mirror.com'
+uv run hf download BAAI/bge-m3 `
+  --local-dir models\bge-m3 `
+  --exclude 'onnx/*' 'imgs/*' 'README.md' '.gitattributes'
+uv run hf download BAAI/bge-reranker-v2-m3 `
+  --local-dir models\bge-reranker-v2-m3 `
+  --exclude 'onnx/*' 'imgs/*' 'assets/*' 'README.md' '.gitattributes'
+```
+
+必须保留 `--local-dir`。应用从 `backend/models/` 读取模型，不会从 Hugging Face 缓存目录查找这两个模型。
+
+SenseVoice 使用 `iic/SenseVoiceSmall`，首次执行语音转写时由 `funasr` 自动下载到 `MODELSCOPE_CACHE`，不需要手动下载。
+
+## 7. 安装前端依赖和 Live2D 素材
+
+```powershell
+cd <仓库>\frontend
 npm install
-node scripts/fetch-l2d.mjs        # Live2D 素材本地化(幂等;产出 public/vendor/live2d/)
+node scripts/fetch-l2d.mjs
 ```
 
-自定义数字人模型：把模型目录按原名放入 `public/vendor/live2d/models/`，在 `models.json` 手工加一行。
+素材会写入 `frontend/public/vendor/live2d/`。该目录已被 gitignore，每台机器都要执行素材下载。
 
-## 4. 模型下载
+抓不到 Cubism Core 时脚本会 `exit 1`，后面的模型一个都不下；兜底办法见 jl-option.md「Live2D 素材本地化」节。
 
-模型有两类落点：RAG 检索模型落 `backend/models/`，TTS 权重落仓库根 `models/voices/`。两类落点不同，下载前先看对应节说明。
+## 8. 创建配置文件
 
-### 4.1 RAG 检索模型与灌库
+在 `backend` 目录复制配置模板：
 
-**模型下载前需要注意**：代码按本地路径读模型（`backend/app/config.py`：`RAG_EMBED_MODEL`/`RAG_RERANK_MODEL` = `backend/models/<模型名>`），下载时必须用 `--local-dir` 落到 `backend/models/`。不加 `--local-dir` 的下载命令会把模型下载到 C 盘默认缓存（`C:\Users\<用户名>\.cache\huggingface\`）：
-
-```bash
-cd backend
-uv run hf download BAAI/bge-m3 --local-dir models/bge-m3
-uv run hf download BAAI/bge-reranker-v2-m3 --local-dir models/bge-reranker-v2-m3
+```powershell
+cd <仓库>\backend
+Copy-Item .env.example .env
 ```
 
-> [!note]
-> 说明：模型权重共约 4.3GB，`backend/models/` 已 gitignore 不入库。下载失败、超时、报 Xet 元数据错时挂镜像重试（命令同上，前面加 `HF_ENDPOINT=https://hf-mirror.com`）。
+编辑 `backend/.env`，至少填写：
 
----
+```dotenv
+DEEPSEEK_API_KEY=你的密钥
+```
 
-**灌库前需要注意**：向量库 `backend/.rag_store/` 是运行时产物，不入 git——**clone 后首次必跑一次**；已灌过的环境重跑无害但费时（全量重新 embed），勿重复执行；语料 jsonl（`backend/data/`）变更后才需重跑，结构变更加 `--reset` 清空两库重建：
+需要修改模型缓存目录时，在同一个文件中填写 `HF_HOME` 和 `MODELSCOPE_CACHE`。
+默认配置会让后端自动启动 `GPT-SoVITS` 的 TTS 服务。
+确认以下配置仍指向仓库内路径：
 
-```bash
+```dotenv
+TTS_SERVICE_SPAWN=1
+TTS_SERVICE_PYTHON=../GPT-SoVITS/.venv/Scripts/python.exe
+TTS_SERVICE_CWD=../GPT-SoVITS
+```
+
+## 9. 初始化运行数据
+
+先生成 RAG 向量库：
+
+```powershell
 uv run python -m app.rag.ingest
 ```
 
-### 4.2 ASR · SenseVoice
-
-**模型下载前需要注意**：引擎 `funasr` 已随「后端构建」节的依赖装好，只有权重需要下载。权重 `iic/SenseVoiceSmall` 首次调用自动下载，约 900MB，落到系统环境变量 `MODELSCOPE_CACHE` 指定的目录（如 `D:\modelscope_cache`）。不设该变量会默认存到 C 盘（`C:\Users\<用户名>\.cache\modelscope\`）。
-
-### 4.3 TTS · CosyVoice 2
-
-**模型下载前需要注意**：本节命令在**仓库根目录**执行（不是`backend/`）。CosyVoice 独立 venv 与权重共约 5.3GB，落仓库根 `models/voices/`（gitignored）。RAG 模型落的是 `backend/models/`，两者落点不同，勿混：
-
-```bash
-git clone https://github.com/QwenAudio/CosyVoice.git models/voices/CosyVoice
-cd models/voices/CosyVoice
-uv venv --python 3.10
-"setuptools<81" | Out-File -Encoding ascii build-constraints.txt
-uv pip install --python .venv/Scripts/python.exe --index-strategy unsafe-best-match --build-constraints build-constraints.txt -r requirements.txt
-```
-
-> [!note]
-> 说明：独立 venv（与 `backend/.venv` 混装会失败）；`--index-strategy unsafe-best-match`（双 extra-index 跨源解析）；`--build-constraints`（setuptools≥81 已删 `pkg_resources`，不加会构建失败）。版本核对参照 `backend/scripts/freeze_gpu_blueprint.txt`（重建用）与 `freeze_sidecar_rollback.txt`（回滚用）。模型权重（`CosyVoice2-0.5B`，ModelScope/HF）以官方 README 现行命令为准（下载命令随上游更新，先核对再执行）。requirements 含 GPU 相关依赖，装不上时查「故障排查」节。
-
-## 5. 故障排查
-
-| 症状 | 处置 |
-|---|---|
-| hf/ModelScope 下载超时 | 挂 `HF_ENDPOINT=https://hf-mirror.com`（见「模型下载」节）；ModelScope 同理查 `MODELSCOPE_CACHE` |
-| 6379 端口被占 | `docker ps` 查旧容器；只动 `hrp-redis`，无关容器勿删 |
-| 8000/9880 残留进程 | `taskkill //F /PID <pid>`（后端与 sidecar 都要清） |
-| node 版本不对 | 系统环境变量 PATH 删旧 Node 条目，重开终端 |
-| 脚本中文乱码 | 配 `PYTHONIOENCODING=utf-8` |
-| RAG 模型路径找不到 | `backend/models/bge-m3`、`backend/models/bge-reranker-v2-m3` 两目录须有模型文件；重跑「模型下载」节的下载命令（带 `--local-dir`） |
-| 模型装错位置 | RAG 模型须在 `backend/models/`，TTS 权重与 venv 须在仓库根 `models/voices/`。装到别处就整个目录移动过去，勿重下 |
-| SenseVoice 权重找不到 | `MODELSCOPE_CACHE` 须系统级生效，重开终端再验 |
-| CosyVoice 构建崩 | 查 `build-constraints.txt` 在位；详见 `freeze_gpu_blueprint.txt` 头注 |
-
-## 6. 项目启动
-
-```bash
-cd backend && uv run hrp        # 默认 127.0.0.1:8000;lifespan 自动拉 TTS sidecar 并版本握手,RAG 预热
-cd frontend && npm run dev      # http://localhost:5173
-```
+语料变更后重跑。需要清空并重建时使用 `--reset`。向量库 `backend/.rag_store/` 不入 git，clone 后首次必跑。
 
 > [!tip]
-> 后端启动后，可查看终端日志情况校验前四节是否全部就位：sidecar 拉起失败查「TTS · CosyVoice 2」节，Redis 连不上查「Redis」节。开发热载：`uv run hrp --reload`，配 `TTS_SIDECAR_KILL_ON_EXIT=0`。
+> 固定话术音频依赖正在运行的 TTS 服务。先执行「启动项目」中的命令，确认 `http://127.0.0.1:9001/ready` 返回就绪，再回到这里执行下面的命令。
+
+```powershell
+uv run python -m app.voice.fillers
+```
+
+音频写入 `backend/data/fillers/`。该目录为空时，危机话术仍有文字，但没有预置语音。
+
+## 常用检查
+
+```powershell
+# 后端目录
+uv run ruff check app
+uv run mypy app
+uv run pytest
+
+# 前端目录
+cd ..\frontend
+npm run type-check
+npm run lint
+npm run test:unit
+```
+
+## 10. 启动项目
+
+后端会自动拉起 TTS 子进程。打开两个 PowerShell 窗口，分别执行：
+
+```powershell
+# 窗口一
+cd <仓库>\backend
+uv run hrp
+```
+
+```powershell
+# 窗口二
+cd <仓库>\frontend
+npm run dev
+```
+
+前端默认地址为 `http://localhost:5173`，后端默认地址为 `http://127.0.0.1:8000`。
+
+## 排障入口
+
+只列上手后最常撞的四条，成因与完整排障见 [jl-option.md](jl-option.md)「排障」节。
+
+| 现象 | 处置 |
+|---|---|
+| 后端起不来，不知道健康没有 | backend **没有** `/health` 路由，打它必然 404，与监听好坏无关。改打真路由：`curl.exe -s -o NUL -w "%{http_code}`n" http://127.0.0.1:8000/openapi.json`（期望 200）、`/admin/trends`（期望 200）、TTS 的 `http://127.0.0.1:9001/ready`（期望 200） |
+| 聊天正常但所有 REST 接口打不开 | `netstat -ano | findstr :8000` 只看得到 `ESTABLISHED`、没有 `LISTENING`，就是监听套接字已失效，重启后端。成因见 jl-option.md「聊天正常但所有 REST 接口打不开」 |
+| 危机路径只有文字没有声音 | `backend/data/fillers/` 是空的，回第 9 节跑 `app.voice.fillers` |
+| TTS 日志里中文或符号变成 `?` / `�` | 子进程 stdio 跟本机 ANSI 代码页走了，确认 `.env` 里 `TTS_SERVICE_PYTHONIOENCODING=utf-8` 生效 |
+
+排查 TTS 权重、依赖缺失时，看 `GPT-SoVITS/logs/tts_service_stdout.log`——`Loading … weights` 那几行只在它里面，日志对照表见 jl-option.md「日志分三处」。
