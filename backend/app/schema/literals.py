@@ -6,7 +6,7 @@
 from typing import Literal
 
 Route = Literal["answer", "collect", "crisis"]
-"""路由三值;first_frame 只取 collect|crisis(answer 型不发首帧,§3.1)"""
+"""路由三值;first_frame 三路统一下发(采集期打岔不发,§3.1/§6.1)"""
 
 TemplateId = Literal[
     "beck_formulation", "emotion_wheel", "stage_map",

@@ -141,7 +141,7 @@ class Connection:
     async def send_first_frame(
         self,
         *,
-        route: Literal["collect", "crisis"],
+        route: Literal["collect", "crisis", "answer"],
         text: str,
         template: TemplateId | None = None,
         emotion_label: str | None = None,
@@ -505,9 +505,10 @@ async def _process_user_input(conn: Connection, msg: UserInput) -> None:
                     ask_count=state.pending_ask_count,
                 )
                 # 采集期打岔(ADR-003):场景帧由 _answer_sequence 统一先发,answer 场景淡入
-                # 接管黑板;恢复=下一 collect 轮照常发全量 draw,模板切换触发前端转场
+                # 接管黑板;不发 first_frame(黑板保活,无清板);恢复=下一 collect 轮照常
+                # 发全量 draw,模板切换触发前端转场
                 await asyncio.wait_for(
-                    _answer_sequence(conn, text, cls), timeout=config.LLM_TIMEOUT_S
+                    _answer_sequence(conn, text, cls, in_round=True), timeout=config.LLM_TIMEOUT_S
                 )
                 return
             state.pending_ask_count += 1
@@ -1014,7 +1015,9 @@ async def _answer_with_voice(
     )
 
 
-async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> None:
+async def _answer_sequence(
+    conn: Connection, text: str, cls: Classification, *, in_round: bool = False
+) -> None:
     from app import diag
 
     # 一回合一文件:无条件重新 enable(清掉上一回合的记录),末尾 dump+disable。
@@ -1023,6 +1026,14 @@ async def _answer_sequence(conn: Connection, text: str, cls: Classification) -> 
     if diag_on:
         diag.enable()
     diag.mark("seq_start", needs_rag=cls.needs_rag)
+
+    if not in_round:
+        # 纯 answer 回合起点发 first_frame(契约 §6.1):chip 立即切 answer、
+        # 清黑板开新回合;emotion_label 随帧(Live2D 表情不回落平静)。
+        # 采集期打岔(ADR-003,in_round=True)不发——黑板保活,增量语义不变
+        await conn.send_first_frame(
+            route="answer", text="", emotion_label=cls.emotion_label
+        )
 
     # 纯 answer 回合起点发场景帧(空板缺口):同模板不转场、同 data 不重画,前端幂等
     await conn.send_draw("scene_answer", SceneNoteData(note=None))

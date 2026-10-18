@@ -114,12 +114,12 @@
 
 | 字段 | 值 | 说明 |
 |---|---|---|
-| round_id | string | **collect 才有（crisis 不带）**；本轮采集的稳定标识（round_seq 高水位分配，持久不复用），报告按 `(session_id, round_id)` 寻址（见「连接与会话」节补给站通道） |
-| route | `collect` \| `crisis` | **answer 型不发 first_frame**，直接 text_delta |
+| round_id | string | **collect 才有（crisis/answer 不带）**；本轮采集的稳定标识（round_seq 高水位分配，持久不复用），报告按 `(session_id, round_id)` 寻址（见「连接与会话」节补给站通道） |
+| route | `collect` \| `crisis` \| `answer` | **采集期打岔（ADR-003）不发 first_frame**（黑板保活，增量续画）；纯 answer 回合发（route=answer，chip 立即切换） |
 | template | 模板 id | collect 才有，预告粗稿模板 |
-| emotion_label | 快速研判标签 | 喂 Live2D + 粗稿 |
+| emotion_label | 快速研判标签 | 喂 Live2D + 粗稿；answer 携研判标签（表情不回落） |
 | mood_select | bool | 恒 false（心情选择器自动浮出废弃，心情上报由用户主动点「今日心情」按钮，见「mood_select」节；字段保留作协议兼容预留） |
-| text | 开场文案（可空） | collect 现行恒空串（开场不设安抚语，第一句话由问话 LLM 生成后随 text_delta 到达）；crisis 携郑重安抚文案 |
+| text | 开场文案（可空） | collect 现行恒空串（开场不设安抚语，第一句话由问话 LLM 生成后随 text_delta 到达）；crisis 携郑重安抚文案；answer 恒空串 |
 
 **前端语义**：收到 first_frame 即**新回合起点 → 清空黑板、重置 seq 基线、收起心情选择器计时**（基线是旧帧判定起点；后端计数不重置，见 §3.2）。`text` 为空串时前端直接开空 bot 消息等待 text_delta，不渲染任何占位语。
 
@@ -306,13 +306,15 @@
 
 ```
 C→S  user_input
-S→C  draw (template:"scene_answer", data:{note:null})   ← 回合起点发（空板缺口补场景），无 first_frame（§3.1 语义不变）
+S→C  first_frame (route=answer, text="", emotion_label=研判标签)
+S→C  draw (template:"scene_answer", data:{note:null})   ← 回合起点发,读书场景淡入
 S→C  text_delta ×N   (流式;知识型走 RAG 后同)
      S→C  audio_chunk ×N (逐句语音,与 text_delta 交错,可选)
 S→C  done
 ```
 
 - 模板切换触发前端转场管线（空板→场景淡入）；重复 answer 回合同模板不转场、同 data 不重画
+- **打岔例外**（ADR-003）：采集期打岔不发 first_frame（无清板，黑板保活），仅发 `draw (scene_answer)` 接管；恢复采集时模板切回触发转场（§6.2）
 - **语音与文字交错**：句子泵把 LLM 流增量切句，凑够一句就送 TTS，出声不等全文生成完。两者共用 seq 计数（§3.2），顺序以到达为准
 - **文字不被音频拖住**：LLM 出字比合成快一个量级，两条队列分开走
 - **语音缺席不杀回合**：TTS 失败只记 degraded，文字链路照常；`TTS_ANSWER_VOICE=0` 可整体关停 answer 语音（调试用）

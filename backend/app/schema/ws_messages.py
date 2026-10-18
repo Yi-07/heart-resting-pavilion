@@ -16,16 +16,16 @@ from .literals import ErrorCode, MoodKey, TemplateId
 
 
 class FirstFrame(BaseModel):
-    """§3.1 新回合起点(清黑板/重置 seq 基线);answer 型不发"""
+    """§3.1 新回合起点(清黑板/重置 seq 基线);采集期打岔不发(黑板保活)"""
 
     type: Literal["first_frame"] = "first_frame"
     session_id: str
-    round_id: str | None = None  # collect 才有;crisis=None;本轮采集稳定标识(§3.1)
-    route: Literal["collect", "crisis"]
-    template: TemplateId | None = None  # collect 才有;crisis=None
+    round_id: str | None = None  # collect 才有;crisis/answer=None;本轮采集稳定标识(§3.1)
+    route: Literal["collect", "crisis", "answer"]
+    template: TemplateId | None = None  # collect 才有;crisis/answer=None
     emotion_label: str | None = None
     mood_select: bool = False  # 恒 false:自动浮出废弃,心情上报走「今日心情」按钮(契约「mood_select」节)
-    text: str  # 安抚语(phrases 话术库)
+    text: str  # 安抚语(phrases 话术库);answer 恒空串
 
 
 class Draw(BaseModel):

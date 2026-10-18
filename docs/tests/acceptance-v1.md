@@ -24,12 +24,12 @@
 ### 1.1 answer
 
 **A1-简单** 输入 `什么是正念`:
-- [ ] **无 first_frame、无 draw 帧**
-- [ ] text_delta 流式到达,含正念相关内容,最终 final=True
+- [ ] first_frame(route=answer)先行,chip 立即切 answer(ws-contract「6.1 answer」三路统一)
+- [ ] draw(scene_answer)读书场景随行;text_delta 流式到达,含正念相关内容,最终 final=True
 - [ ] done 收尾,回合完整结束
 
 **A1-复杂** 输入 `我听朋友说冥想和正念好像是一回事,又有人说正念能治失眠,到底正念是什么,跟冥想有什么区别,对睡不着真的有用吗`:
-- [ ] 判据同上:无 first_frame/draw;text_delta 流式+final=True;done 收尾
+- [ ] 判据同上:first_frame(route=answer)+draw 随行;text_delta 流式+final=True;done 收尾
 - [ ] 内容覆盖问句中的多个信息点(正念定义/与冥想关系/对睡眠的作用,≥2 点有针对性回应,非只答首句)
 
 ### 1.2 collect

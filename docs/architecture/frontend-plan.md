@@ -46,7 +46,7 @@
 
 - 材质分层：面板为重玻璃，按钮/输入条为 tinted 轻玻璃（语义靠色调不靠厚度）；玻璃只用于悬浮层，不进内容层；尺寸/时长等数值以该文件为准，不复制到本文
 - 工具栏：logo 为 heart-handshake 裸图标；route-tabs → 单状态 chip（图标+英文链路+灯点，三部分同步切换过渡，crisis 态转暖色）；工具按钮 hover 边缘流光（conic + `@property --ang`，注册见 main.css）+ 按压即缩
-- 输入条：薄玻璃 + focus 光晕；发送钮为纸飞机圆钮，聚焦时从右缘「液芽分体」（goo 滤镜剪影只在动画瞬间显形，静止零重影），失焦收回；chip 无 answer 态——answer 无 first_frame 帧（ws-contract「3.1 first_frame」），与旧 route-tabs 同局限
+- 输入条：薄玻璃 + focus 光晕；发送钮为纸飞机圆钮，聚焦时从右缘「液芽分体」（goo 滤镜剪影只在动画瞬间显形，静止零重影），失焦收回；chip 四态（idle/collect/answer/crisis），route 随 first_frame 三路统一下发切换；awaiting 期路由未定，chip 显示 idle 等待
 - 设置/补给站面板：重玻璃浮层 + 分组卡 + 分段药丸（provider 选择）+ 高危确认层（文字与按钮居中）
 - 图标为 Lucide 内联 SVG，不引 CDN 运行时；颜色变量唯一记录处见 main.css `:root`
 
@@ -78,7 +78,7 @@ final ──done──▶ idle
 - **抢占恢复**：采集期新输入后端**不发新 first_frame**（采集态保留，见 ws-contract「回合与中断」）——前端无清板，增量 draw 直接续画；发送（user_sent）即封口旧流式消息（chat.finalize），新回复另起一条
 
 - **心情选择器**：工具栏点开表情组，回合内置灰，点选后置灰至 done（危机不浮）；自动浮出已废弃（ws-contract「mood_select」节）
-- **crisis**：first_frame（route=crisis）→ 显示热线横幅 + 支持性画面（scene_crisis）；危机展示态随 done 收口（answer 回合无 first_frame 可复位，展示态不跨回合残留）
+- **crisis**：first_frame（route=crisis）→ 显示热线横幅 + 支持性画面（scene_crisis）；危机展示态存活到下一次 user_sent（危机回合毫秒级走完，done 即撤会短于预置语音播放期）
 - **analysis**：最后回答提交 → 精稿 draw 之间，前端显示"收尾中"（纯前端推断，无专用消息）
 
 ---

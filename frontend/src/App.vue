@@ -96,19 +96,23 @@ function showToast(payload: { message: string; tone?: ToastTone }): void {
 }
 
 // ── 状态 chip(prototypes/ui-taste 定稿):图标+英文链路+状态灯,三部分同步切换 ──
-// answer 无 first_frame 帧信号(契约 §3.1),chip 沿用上一回合 route;crisis 展示态随 done 复位(round.ts)。
+// route 由 first_frame 下发(三路统一切换);awaiting 期路由未定显示 idle 等待。
+// 打岔路径不发 first_frame,awaiting 相 text_delta 到达即按流式转 final(round.ts)。
 const SVG_IC = (d: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`
 const CHIP_ICONS = {
   idle: SVG_IC('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>'),
   collect: SVG_IC('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>'),
+  answer: SVG_IC('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
   crisis: SVG_IC(
     '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>',
   ),
 } as const
 type ChipState = keyof typeof CHIP_ICONS
+// awaiting 期路由未定(分流在后端分类器),chip 显示 idle 等待,不冒认上一回合
+// 的 route;first_frame/text_delta 到达后按实际路由切(round.ts 推断 answer)
 const chipState = computed<ChipState>(() =>
-  round.crisis ? 'crisis' : round.phase === 'idle' ? 'idle' : round.route,
+  round.crisis ? 'crisis' : round.phase === 'idle' || round.phase === 'awaiting' ? 'idle' : round.route,
 )
 const chipLabel = ref<ChipState>('idle')
 const chipIcon = ref<string>(CHIP_ICONS.idle)

@@ -84,10 +84,23 @@ describe('round 状态机', () => {
     expect(store.phase).toBe('final')
   })
 
-  it('answer 直答:无 first_frame,text_delta 直通 final → done', () => {
+  it('answer 直答:first_frame(route=answer) → text_delta 流式 → done', () => {
+    store.transition({ kind: 'user_sent' })
+    store.transition({ kind: 'frame', msg: ff({ route: 'answer', template: null }) })
+    expect(store.phase).toBe('collecting')
+    expect(store.route).toBe('answer')
+    // 流式文本不推相(与 collect 同构),done 收口
+    store.transition({ kind: 'frame', msg: { type: 'text_delta', seq: 1, text: '正念是…', final: true } })
+    expect(store.phase).toBe('collecting')
+    store.transition({ kind: 'frame', msg: { type: 'done', session_id: 's1', seq: 2 } })
+    expect(store.phase).toBe('idle')
+  })
+
+  it('answer 契约兜底:缺 first_frame 的迟到流式按原语义转 final,route 不猜', () => {
     store.transition({ kind: 'user_sent' })
     store.transition({ kind: 'frame', msg: { type: 'text_delta', seq: 1, text: '正念是…', final: true } })
     expect(store.phase).toBe('final')
+    expect(store.route).toBe('collect') // 前端零路由逻辑:不推断,维持复位值
     store.transition({ kind: 'frame', msg: { type: 'done', session_id: 's1', seq: 2 } })
     expect(store.phase).toBe('idle')
   })
@@ -127,19 +140,25 @@ describe('round 状态机', () => {
     expect(store.phase).toBe('idle')
   })
 
-  it('crisis 展示态随 done 复位:后续 answer 回合(无 first_frame)不残留', () => {
+  it('crisis 展示态存活到下一次 user_sent:期间不残留到 answer/collect', () => {
     store.transition({ kind: 'user_sent' })
     store.transition({ kind: 'frame', msg: ff({ route: 'crisis', template: null, emotion_label: null }) })
     expect(store.crisis).toBe(true)
     expect(store.route).toBe('crisis')
 
+    // done 收口:回合结束但展示态保留(危机回合毫秒级走完,横幅要陪住热线语音播放期)
     store.transition({ kind: 'frame', msg: { type: 'done', session_id: 's1', seq: 2 } })
+    expect(store.crisis).toBe(true)
+    expect(store.route).toBe('crisis')
+
+    // 下一次开口:展示态瞬间清掉,新回合(无论 answer/collect)不背危机残留
+    store.transition({ kind: 'user_sent' })
     expect(store.crisis).toBe(false)
     expect(store.route).toBe('collect')
 
-    // 危机后问其他链路:answer 无 first_frame,危机态不得延续到新回合
-    store.transition({ kind: 'user_sent' })
-    store.transition({ kind: 'frame', msg: { type: 'text_delta', seq: 3, text: '正念是…', final: true } })
+    // answer 回合 first_frame(route=answer)照常接管
+    store.transition({ kind: 'frame', msg: ff({ route: 'answer', template: null }) })
+    expect(store.route).toBe('answer')
     expect(store.crisis).toBe(false)
   })
 
