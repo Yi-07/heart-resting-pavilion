@@ -86,7 +86,7 @@
 ### L3 · 智能路由决策器
 
 - **职责**：安全前置：危机信号第一时间被确定性规则捕获，一条消息三种去向
-- **关键机制**：危机闸门（规则硬判，目标 ≤10ms/条——纯本地词典+打分，无 LLM/网络调用；作用于每条 user_input）· 分类器**分层判定**（复用规则引擎，零新增组件）：规则先判明显 case（问候、知识词表命中）→ 模糊才调 LLM 拿 `{route, emotion_label, confidence}`；规则路径 conf 记 0.9（可调常量）；LLM conf < 0.6（可调常量）→ 兜底 collect（collect 比 answer 安全：错了只是多问一句）；LLM 超时/失败同样落 collect 兜底，conf 记 0.0 · RAG 门控复用同一分层判定
+- **关键机制**：危机闸门（规则硬判，目标 ≤10ms/条——纯本地词典+打分，无 LLM/网络调用；作用于每条 user_input）· 分类器**分层判定**（复用规则引擎，零新增组件）：规则先判明显 case（困扰信号+第一人称/自指共现 → collect 先行——倾诉不被科普抢答，纯知识问句无自指不受影响；知识问法命中 → answer；问候 → 直接生成）→ 模糊才调 LLM 拿 `{route, emotion_label, confidence}`，含错别字但明显提问的输入按实际意图判；规则路径 conf 记 0.9（可调常量）；LLM conf < 0.6（可调常量）→ 兜底 collect（collect 比 answer 安全：错了只是多问一句）；LLM 超时/失败同样落 collect 兜底，conf 记 0.0 · RAG 门控复用同一分层判定 · 规则层带标注评测集回归（backend/tests/test_rule_eval.py，词表/规则改动必过）
 - **隔离约束**：**crisis 与 route 走规则/确定性判定；emotion_label 只喂黑板/Live2D，绝不进路由**
 - **两级标签**：快速研判（粗稿）+ RAG/LLM（精稿）；优先级链：用户选择 > 关键词研判 > 中性兜底
 

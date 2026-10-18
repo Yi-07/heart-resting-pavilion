@@ -115,17 +115,43 @@ def test_distress_collect(text: str, label: str | None) -> None:
         assert c.emotion_label == label, f"{text} label={c.emotion_label}"
 
 
-# T2 前「什么样正念」等规则层 miss 是已知状态;改码前先让评测集如实呈现基线,
-# xfail 钉住——T2 扩词表落地时从本集合删除即自动转正。
-KNOWN_T2_PENDING = {"什么样正念", "啥叫认知行为疗法", "正念有什么用"}
+# T2 词表扩容已落地,基线 miss 全部转正;集合留空位,新缺口先入此再改码。
+KNOWN_T2_PENDING: set[str] = set()
 
 
 @pytest.mark.parametrize(("text", "needs_rag"), KNOWLEDGE_CASES)
 def test_knowledge_route(text: str, needs_rag: bool) -> None:
     if text in KNOWN_T2_PENDING:
-        pytest.xfail("T2 词表扩容目标:基线已知 miss,扩词表后从 KNOWN_T2_PENDING 删除转正")
+        pytest.xfail("词表扩容目标:基线已知 miss,扩词表后从 KNOWN_T2_PENDING 删除转正")
     c = classifier.classify_rules(text)
     assert c.route == "answer" and c.needs_rag is needs_rag
+
+
+# ---- T2 规则序纠偏钉:倾诉优先于知识问法(双方向防回退) ----
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "我最近很痛苦,怎么办",  # 人报案例:原知识词先行→answer 科普抢答
+        "我睡不着,有什么办法",
+        "总是很难受,有什么方法能改善",
+        "我很焦虑,你有什么建议",
+    ],
+)
+def test_distress_beats_knowledge(text: str) -> None:
+    c = classifier.classify_rules(text)
+    assert c.route == "collect" and c.source == "rule", f"倾诉被科普抢答: {text} → {c}"
+
+
+@pytest.mark.parametrize(
+    ("text", "needs_rag"),
+    [("怎么缓解焦虑", True), ("失眠有什么办法", True), ("有什么方法可以缓解紧张", True)],
+)
+def test_pure_knowledge_still_answer(text: str, needs_rag: bool) -> None:
+    # 无自指线索的纯知识问句不受规则序调整影响(防按下葫芦浮起瓢)
+    c = classifier.classify_rules(text)
+    assert c.route == "answer" and c.needs_rag is needs_rag, f"{text} → {c}"
 
 
 # ---- degrade 层全量 ----
