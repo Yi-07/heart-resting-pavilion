@@ -114,6 +114,24 @@ describe('BoardRenderer', () => {
     }
   })
 
+  it('clear 后淡出中同模板 draw:完整落纸不吞帧(crisis 连触回归)', () => {
+    vi.useFakeTimers()
+    try {
+      // 第一次危机:场景上板
+      renderer.render('scene_crisis', { note: null })
+      vi.advanceTimersByTime(600)
+      expect(mount.querySelectorAll('g[data-scene-icon="crisis.catching"]').length).toBeGreaterThanOrEqual(1)
+      // 二连触发:clear(first_frame)与 draw 同模板,间隔短于淡出窗
+      renderer.clear()
+      renderer.render('scene_crisis', { note: null })
+      vi.advanceTimersByTime(600)
+      // 板式身份已在 clear 即失忆:draw 走转场重画整幅,不误判同模板增量吞帧
+      expect(mount.querySelectorAll('g[data-scene-icon="crisis.catching"]').length).toBeGreaterThanOrEqual(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('scene 板式:底图预绑定图标渲染,collect 字段增量浮现', () => {
     const data: SceneFormulationData = {
       situation: '工作压力大',

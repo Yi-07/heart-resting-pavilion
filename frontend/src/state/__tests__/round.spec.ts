@@ -127,6 +127,22 @@ describe('round 状态机', () => {
     expect(store.phase).toBe('idle')
   })
 
+  it('crisis 展示态随 done 复位:后续 answer 回合(无 first_frame)不残留', () => {
+    store.transition({ kind: 'user_sent' })
+    store.transition({ kind: 'frame', msg: ff({ route: 'crisis', template: null, emotion_label: null }) })
+    expect(store.crisis).toBe(true)
+    expect(store.route).toBe('crisis')
+
+    store.transition({ kind: 'frame', msg: { type: 'done', session_id: 's1', seq: 2 } })
+    expect(store.crisis).toBe(false)
+    expect(store.route).toBe('collect')
+
+    // 危机后问其他链路:answer 无 first_frame,危机态不得延续到新回合
+    store.transition({ kind: 'user_sent' })
+    store.transition({ kind: 'frame', msg: { type: 'text_delta', seq: 3, text: '正念是…', final: true } })
+    expect(store.crisis).toBe(false)
+  })
+
   it('新回合抢占:任意状态新 first_frame → collecting,roundId 递增', () => {
     store.transition({ kind: 'user_sent' })
     store.transition({ kind: 'frame', msg: ff() })

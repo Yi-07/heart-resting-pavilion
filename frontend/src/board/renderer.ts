@@ -262,8 +262,13 @@ export class BoardRenderer {
     }
   }
 
-  /** first_frame 清黑板:淡出旧画面(如有)→ 回到空板 */
+  /** first_frame 清黑板:淡出旧画面(如有)→ 回到空板。
+   *  板式身份即时失忆(不待淡出完):淡出中到达的 draw 才走转场 latest-frame-wins,
+   *  不误判同模板增量——crisis 连触 first_frame→draw 间隔短于淡出窗,场景画不出的根因 */
   clear(): void {
+    this.templateId = null
+    this.lastData = null
+    this.lastSubjectId = null
     this.transitionTo(() => {
       this.templateId = null
       this.lastData = null

@@ -15,7 +15,7 @@ export type RSEvent = { kind: 'user_sent' } | { kind: 'frame'; msg: S2CMsg }
 export const useRoundStore = defineStore('round', {
   state: () => ({
     phase: 'idle' as Phase,
-    /** 当前回合路由(first_frame 才有;answer 无 first_frame 保持旧值) */
+    /** 当前回合路由(first_frame 才有;answer 无 first_frame 沿用旧值,done 复位) */
     route: 'collect' as 'collect' | 'crisis',
     crisis: false,
     emotionLabel: null as string | null,
@@ -92,6 +92,10 @@ export const useRoundStore = defineStore('round', {
             return
           }
           this.phase = 'idle'
+          // 危机展示态(热线横幅/chip/黑板状态行)随回合收口:answer 无 first_frame
+          // 可复位(契约 §3.1),done 是全链路通用收口帧,挂到它身上
+          this.crisis = false
+          this.route = 'collect'
           {
             // PR 按回合寻址:done 回带本轮 round_id;answer/crisis 支线不带 →
             // 清掉当前轮次,免得支流文本消息(appendDelta 兜底)继承上一轮编号

@@ -78,7 +78,7 @@ final ──done──▶ idle
 - **抢占恢复**：采集期新输入后端**不发新 first_frame**（采集态保留，见 ws-contract「回合与中断」）——前端无清板，增量 draw 直接续画；发送（user_sent）即封口旧流式消息（chat.finalize），新回复另起一条
 
 - **心情选择器**：工具栏点开表情组，回合内置灰，点选后置灰至 done（危机不浮）；自动浮出已废弃（ws-contract「mood_select」节）
-- **crisis**：first_frame（route=crisis）→ 显示热线横幅 + 支持性画面（scene_crisis）
+- **crisis**：first_frame（route=crisis）→ 显示热线横幅 + 支持性画面（scene_crisis）；危机展示态随 done 收口（answer 回合无 first_frame 可复位，展示态不跨回合残留）
 - **analysis**：最后回答提交 → 精稿 draw 之间，前端显示"收尾中"（纯前端推断，无专用消息）
 
 ---

@@ -96,7 +96,7 @@ function showToast(payload: { message: string; tone?: ToastTone }): void {
 }
 
 // ── 状态 chip(prototypes/ui-taste 定稿):图标+英文链路+状态灯,三部分同步切换 ──
-// answer 无 first_frame 帧信号(契约 §3.1),chip 显示 idle/collect/crisis 三态,与旧 route-tabs 同局限。
+// answer 无 first_frame 帧信号(契约 §3.1),chip 沿用上一回合 route;crisis 展示态随 done 复位(round.ts)。
 const SVG_IC = (d: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`
 const CHIP_ICONS = {
@@ -145,7 +145,7 @@ const boardNote = computed(() => {
   if (lastTemplate.value === null) return '等一句你的话,我在听。'
   return '小栖在听,黑板会慢慢长出来'
 })
-const boardWarn = computed(() => round.crisis)
+const boardWarn = computed(() => round.crisis || lastTemplate.value === 'scene_crisis')
 
 function brief(msg: S2CMsg): string {
   switch (msg.type) {
