@@ -45,6 +45,9 @@ from .settings import ROOT, Settings, get_settings
 PCM_FORMAT = "pcm_s16le"
 """plan §12:v2 固定的 PCM 编码。与 frontend AudioBuffer 侧一一对应。"""
 
+LONG_FORM_THRESHOLD = 80
+"""超过该字数走长文本模式(整段一次 tts.run + cut2)。句子泵单句 ≤30 字,不受影响。"""
+
 
 class GuardError(ValueError):
     """输入守卫拒绝:带 code,由 server 映射为 HTTP 400。"""
@@ -519,7 +522,9 @@ class TTSEngine:
 
     # ---------------- 合成 ----------------
 
-    def _build_req(self, sentence: str, voice: str | None) -> dict[str, Any]:
+    def _build_req(
+        self, sentence: str, voice: str | None, split_method: str | None = None
+    ) -> dict[str, Any]:
         cfg = self._cfg
         if voice and voice != cfg.voice:
             ref = f"reference/{voice}.wav"
@@ -537,7 +542,7 @@ class TTSEngine:
             "top_k": cfg.top_k,
             "top_p": cfg.top_p,
             "temperature": cfg.temperature,
-            "text_split_method": cfg.text_split_method,
+            "text_split_method": split_method or cfg.text_split_method,
             "batch_size": 1,
             "batch_threshold": 0.75,
             "split_bucket": True,
@@ -685,11 +690,16 @@ class TTSEngine:
 
             import numpy as np  # noqa: PLC0415
 
-            for i, sentence in enumerate(sentences):
+            # 长文本整段一次 tts.run(cut2 约 50 字一片),减少段间 BERT/prefill 死区。
+            long_form = len(text) > LONG_FORM_THRESHOLD
+            units = [text] if long_form else sentences
+            for i, sentence in enumerate(units):
                 if token.cancelled:
                     break
                 t_sent = time.perf_counter()
-                req = self._build_req(sentence, voice)
+                req = self._build_req(
+                    sentence, voice, split_method="cut2" if long_form else None
+                )
                 ttfb = 0.0
 
                 for chunk_sr, chunk in tts.run(req):
