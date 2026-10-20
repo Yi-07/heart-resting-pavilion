@@ -350,7 +350,11 @@ class RagEngine:
         with self._state_lock:
             if self._reranker is None and not self._reranker_failed:
                 try:
-                    self._reranker = CrossEncoder(_RERANK_MODEL, max_length=512)
+                    # 设备由 config.RAG_RERANK_DEVICE 决定；留空则沿用 sentence-transformers 自选
+                    kwargs: dict[str, str | int] = {"max_length": 512}
+                    if config.RAG_RERANK_DEVICE:
+                        kwargs["device"] = config.RAG_RERANK_DEVICE
+                    self._reranker = CrossEncoder(_RERANK_MODEL, **kwargs)
                 except Exception:  # noqa: BLE001 — 任意加载失败都降级到 RRF 序,不致命
                     self._reranker_failed = True
                     logger.warning("reranker 加载失败,检索按 RRF 序降级")

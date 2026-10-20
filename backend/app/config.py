@@ -68,6 +68,11 @@ RAG_EMBED_MODEL = os.path.join(RAG_MODELS_DIR, "bge-m3")
 RAG_RERANK_MODEL = os.path.join(RAG_MODELS_DIR, "bge-reranker-v2-m3")
 """reranker 重排模型"""
 
+RAG_RERANK_DEVICE = os.getenv("RAG_RERANK_DEVICE", "")
+"""重排模型的设备。留空=不指定，交给 sentence-transformers 自选（有 CUDA 用 CUDA）；
+显式填 "cpu" 可强制走 CPU，用于显存紧张时把重排让出显存（实测重排 12 对：GPU 92ms / CPU 1176ms）。
+详见 docs/architecture/architecture-spec.md 性能节。"""
+
 RAG_TOP_K = 3
 """retrieve 默认返回条数(k=None 时用)"""
 
