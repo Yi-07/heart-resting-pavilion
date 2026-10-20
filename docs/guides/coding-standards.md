@@ -24,6 +24,7 @@
 - 不可变数据的落点：值对象、结果、图出口事件用 frozen dataclass（`GateResult`、`Turn`、`Message` 式）；`CollectState` 是唯一可变黑板（图节点读写、网关持有）。
 - 深模块：新模块设计与重构按 [deep-module.md](deep-module.md) 判据执行，新模块开工必读。
 - 重依赖（chroma、sentence-transformers、语音模型、LangGraph、pixi.js）函数内懒加载，不在模块顶部 import；类型标注走 `TYPE_CHECKING`，预热路径同样函数内 import。
+- 唯一例外是 litellm：`backend/app/main.py` 在模块层调用 `_preload_litellm()`（`import` 语句仍在函数内）。原因是 litellm 的密钥脱敏过滤器会在 `asyncio`/`httpx`/`uvicorn.error` 上懒导入 litellm 自身，与后台预热线程交叉时触发 CPython 跨线程导入死锁，回滚后 `sys.modules['litellm']` 消失并反复失败，LLM 链路整体不可用。预导入必须早于事件循环的并发调度；测试会话（`pytest` 已加载）跳过以省下 4~5 秒冷启动。
 
 ## 错误与日志
 

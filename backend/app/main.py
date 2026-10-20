@@ -5,6 +5,7 @@ shutdown 有序关停自己拉起的子进程(外部启动的不越权,版本握
 
 import asyncio
 import os
+import sys
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -27,6 +28,36 @@ from app.ws_gateway import handle_connection
 
 setup_logger(verbose=os.getenv("HRP_VERBOSE") == "1")
 _logger = app_logger.logger.bind(service=app_logger.SERVICE, module="main")
+
+
+def _preload_litellm() -> None:
+    """启动期预导入 litellm,避免与日志过滤器懒导入形成跨线程导入死锁。
+
+    背景:litellm 的 SecretRedactionFilter 挂在 asyncio/httpx/uvicorn.error 上,
+    处理日志时会懒导入 litellm 自身(diagnostics.run → rust_bridge.catalog)。
+    若此时另一个线程正在导入 litellm,CPython 的模块锁会判定跨线程死锁
+    (_DeadlockError),导入失败回滚删除 sys.modules['litellm'],随后命名空间包
+    `_NamespacePath` 解析父包路径抛 KeyError:'litellm'。更糟的是顶层条目消失后,
+    每条经过该过滤器的日志都会重新触发导入并再次失败,litellm 长期无法加载,
+    LLM 链路整体不可用。
+
+    因此导入必须早于事件循环的并发调度。uvicorn 在 config.load() 阶段 import
+    本模块(server.py:97),此时只有主线程,单线程导入不会触发死锁;该时点也早于
+    `uvicorn.error` 打第一条日志(server.py:103)。--reload 的子进程同样走这里。
+
+    失败只 WARN:这是稳定性措施,不该反过来挡启动;真失败时 /admin/llm/* 仍会走
+    provider 的懒加载兜底(此时已回到原有的偶发风险,而非启动期必然窗口)。
+    """
+    try:
+        from app.llm.provider import load_litellm
+
+        load_litellm()
+    except Exception as exc:  # noqa: BLE001 — 预导入失败不挡启动
+        _logger.warning("litellm_preload_failed", detail=str(exc)[:160])
+
+
+if "pytest" not in sys.modules:  # 测试会话不付这 4~5 秒冷启动
+    _preload_litellm()
 
 
 async def _warm_sidecar() -> None:
